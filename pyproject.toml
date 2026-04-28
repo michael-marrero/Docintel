@@ -7,11 +7,24 @@ requires-python = ">=3.11,<3.13"
 [tool.uv.workspace]
 members = ["packages/*"]
 
+# PyTorch CPU-only index for Linux x86_64 / aarch64 wheels.
+# Without this uv resolves the default GPU torch wheel which pulls in
+# nvidia-cudnn / nvidia-cublas / nvidia-cusparse etc. and blows the
+# Docker image past the 3 GiB CONTEXT.md D-08 cap. macOS (arm64) is
+# unaffected — there are no CUDA wheels for darwin.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
 docintel-core = { workspace = true }
 docintel-api  = { workspace = true }
 docintel-ui   = { workspace = true }
 docintel-eval = { workspace = true }
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
 
 [dependency-groups]
 dev = [

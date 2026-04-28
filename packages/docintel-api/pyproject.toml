@@ -7,6 +7,11 @@ dependencies = [
     "docintel-core",
     "fastapi==0.136.1",
     "uvicorn[standard]==0.46.0",
+    # torch is pinned BEFORE sentence-transformers so the workspace's
+    # [tool.uv.sources] CPU-only index applies. Without this pin the
+    # default GPU torch wheel pulls in nvidia-* libs and the api Docker
+    # image jumps from ~1.5 GiB to >6 GiB (CONTEXT.md D-08 fail).
+    "torch==2.11.0",
     "sentence-transformers==5.4.1",
 ]
 

@@ -18,7 +18,7 @@ concurrency:
 
 env:
   DOCINTEL_LLM_PROVIDER: stub
-  UV_VERSION: "0.5.13"
+  UV_VERSION: "0.11.8"
   PYTHON_VERSION: "3.11"
 
 jobs:
