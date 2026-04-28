@@ -13,6 +13,15 @@ docintel-api  = { workspace = true }
 docintel-ui   = { workspace = true }
 docintel-eval = { workspace = true }
 
+[dependency-groups]
+dev = [
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
+    "ruff==0.15.12",
+    "black>=25.0.0",
+    "mypy>=1.13.0",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

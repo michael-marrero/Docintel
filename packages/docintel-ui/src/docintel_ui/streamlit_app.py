@@ -7,7 +7,7 @@ Phase 1 scope (CONTEXT.md D-16):
     This proves the docker-compose network plumbing AND the X-Trace-Id propagation
     path on day 1 (lands again in Phase 12 with full trace context).
 
-This module MUST NOT call os.environ / os.getenv — read everything via Settings.
+This module MUST NOT read env vars directly — read everything via Settings.
 """
 from __future__ import annotations
 
