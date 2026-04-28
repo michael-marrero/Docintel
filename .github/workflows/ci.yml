@@ -1,0 +1,190 @@
+# CI for docintel — Phase 1 gate stack.
+# Runs on every push to any branch (FND-05) and on PRs to main.
+# CONTEXT.md D-10: single workflow, full gate stack.
+# CONTEXT.md D-11: DOCINTEL_LLM_PROVIDER=stub explicit in env (belt-and-suspenders).
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCINTEL_LLM_PROVIDER: stub
+  UV_VERSION: "0.5.13"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+
+  lint-and-test:
+    name: lint + types + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: uv lock --check (lockfile in sync)
+        # Run BEFORE uv sync --frozen so a drifted lockfile produces an actionable
+        # "lockfile out of date" error instead of a generic --frozen failure.
+        run: uv lock --check
+
+      - name: Sync workspace (frozen)
+        run: uv sync --all-packages --frozen
+
+      - name: ruff check
+        run: uv run ruff check packages/
+
+      - name: black --check
+        run: uv run black --check packages/ tests/
+
+      - name: mypy --strict (Phase 1 surface)
+        # CONTEXT.md D-12: ignore_missing_imports until Phase 2 lands typed protocols.
+        run: uv run mypy --strict packages/*/src
+
+      - name: pytest
+        run: uv run pytest -ra -q
+
+  gitleaks:
+    name: gitleaks (secrets scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans history; full clone required.
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  docker-build-and-size:
+    name: docker build + image size cap
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build api image
+        run: |
+          docker build \
+            --target api \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            -t docintel-api:ci \
+            -f docker/Dockerfile \
+            --load \
+            .
+
+      - name: Build ui image
+        run: |
+          docker build \
+            --target ui \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            -t docintel-ui:ci \
+            -f docker/Dockerfile \
+            --load \
+            .
+
+      - name: Assert image size < 3 GiB (CONTEXT.md D-08)
+        run: |
+          set -euo pipefail
+          MAX=3221225472  # 3 * 1024^3
+          for img in docintel-api:ci docintel-ui:ci; do
+            sz=$(docker image inspect "$img" --format='{{.Size}}')
+            echo "  $img: $sz bytes"
+            if [ "$sz" -ge "$MAX" ]; then
+              echo "FAIL: $img is $sz bytes (>= $MAX = 3 GiB)"
+              exit 1
+            fi
+          done
+
+      - name: Save images for compose-smoke job
+        run: |
+          docker save docintel-api:ci -o /tmp/docintel-api.tar
+          docker save docintel-ui:ci  -o /tmp/docintel-ui.tar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docintel-images
+          path: |
+            /tmp/docintel-api.tar
+            /tmp/docintel-ui.tar
+          retention-days: 1
+
+  compose-smoke:
+    name: docker-compose smoke (curl /health)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: docker-build-and-size
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: docintel-images
+          path: /tmp
+
+      - name: Load prebuilt images
+        run: |
+          docker load -i /tmp/docintel-api.tar
+          docker load -i /tmp/docintel-ui.tar
+          # Tag with the names docker-compose.yml expects so it does NOT rebuild.
+          docker tag docintel-api:ci docintel-api:local
+          docker tag docintel-ui:ci  docintel-ui:local
+
+      - name: Bring up the stack
+        env:
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          # `--no-build` forces compose to use the loaded images.
+          docker compose up -d --no-build
+          docker compose ps
+
+      - name: Wait for healthchecks
+        run: |
+          set -euo pipefail
+          for svc in api ui; do
+            for i in {1..30}; do
+              health=$(docker inspect --format='{{.State.Health.Status}}' "docintel-$svc" 2>/dev/null || echo "missing")
+              echo "  $svc: $health (attempt $i/30)"
+              if [ "$health" = "healthy" ]; then break; fi
+              sleep 2
+            done
+            if [ "$health" != "healthy" ]; then
+              echo "FAIL: $svc never became healthy"
+              docker compose logs "$svc"
+              exit 1
+            fi
+          done
+
+      - name: Curl /health (api) and /_stcore/health (ui)
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:8000/health | tee /tmp/health.json
+          jq -e '.status == "ok" and .service == "docintel-api" and .provider == "stub"' /tmp/health.json
+          curl -fsS http://localhost:8501/_stcore/health
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
