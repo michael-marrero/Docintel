@@ -1,1 +1,48 @@
 .planning/
+
+# Secrets / env files (Pitfall #26 — career-grade)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Project data (corpus, indices, traces — never committed)
+data/corpus/
+data/indices/
+data/traces/
+data/eval/cache/
+
+# Python build / packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# uv
+# uv.lock IS committed (deterministic builds); .uv-cache/ is local
+.uv-cache/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Test fixtures that intentionally contain leaked-key shapes
+# (the file is *.example so it's tracked, but a copy named leaked_key.txt is not)
+tests/fixtures/leaked_key.txt
