@@ -1,1 +1,17 @@
 .planning/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs / uv
+.venv/
+.env
+
+# Editor / agent
+.claude/
