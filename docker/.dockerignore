@@ -1,0 +1,49 @@
+# Build context exclusions for docker/Dockerfile.
+# Keeps the build context small and prevents committed-secret leakage into images.
+
+# Planning + version control
+.planning/
+.git/
+.github/
+
+# Secrets and runtime data
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+data/
+
+# Python build / cache artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# uv local cache (we use the in-image one)
+.uv-cache/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Tests do not ship in production images
+tests/
+**/tests/
+
+# Documentation source
+*.md
+!README.md

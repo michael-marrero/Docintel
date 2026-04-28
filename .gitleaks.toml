@@ -1,0 +1,23 @@
+# Gitleaks config for docintel.
+# Used by both .pre-commit-config.yaml and .github/workflows/ci.yml.
+# Inherits the latest default rule set; we only add an allowlist for legitimate
+# template files that intentionally contain key-shaped placeholders.
+
+title = "docintel gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Files that legitimately contain API-key-shaped strings as placeholders or documentation."
+paths = [
+    '''^\.env\.example$''',
+    '''^\.gitleaks\.toml$''',
+    '''^tests/fixtures/leaked_key\.example$''',
+    '''^\.planning/''',
+]
+# Common placeholder regexes used in docs/examples. Tighten if false-positives appear.
+regexes = [
+    '''sk-EXAMPLE[0-9A-Za-z_-]+''',
+    '''sk-ant-api03-EXAMPLE[0-9A-Za-z_-]+''',
+]

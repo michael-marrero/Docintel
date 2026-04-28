@@ -1,0 +1,18 @@
+[project]
+name = "docintel-eval"
+version = "0.1.0"
+description = "Eval CLI scaffold for docintel (Phase 1 placeholder)"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "docintel-core",
+]
+
+[project.scripts]
+docintel-eval = "docintel_eval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docintel_eval"]
