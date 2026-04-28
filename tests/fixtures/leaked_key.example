@@ -1,0 +1,13 @@
+# Fixture template for the gitleaks-rejects-fake-key test (Plan 09 / Task: test_gitleaks).
+#
+# DO NOT rename this file to leaked_key.txt and commit it.
+# tests/fixtures/leaked_key.txt is gitignored.
+#
+# The pytest case copies this file's content into a tmp file and asserts that
+# `gitleaks detect --no-git --source=<tmpfile> --config=.gitleaks.toml`
+# exits non-zero (i.e. the leak IS detected).
+#
+# The string below is the canonical OpenAI test/sentinel pattern. It is NOT a real key
+# and matches the same regex shape gitleaks scans for; the allowlist above intentionally
+# does not cover this exact form.
+sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
