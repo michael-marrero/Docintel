@@ -7,23 +7,23 @@ adapter introspection — do NOT add it here.
 Per CONTEXT.md D-18, this module MUST NOT read environment variables directly.
 All configuration flows through docintel_core.config.Settings.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Literal
-
-from fastapi import FastAPI
-from pydantic import BaseModel
 
 from docintel_core import __version__
 from docintel_core.config import Settings
 from docintel_core.log import configure_logging
-
+from fastapi import FastAPI
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Configuration / app construction
 # ---------------------------------------------------------------------------
+
 
 @lru_cache(maxsize=1)
 def _settings() -> Settings:
@@ -46,8 +46,7 @@ app = FastAPI(
     title="docintel API",
     version=__version__,
     description=(
-        "Production-shaped RAG over SEC 10-K filings. "
-        "Phase 1: scaffold + /health only."
+        "Production-shaped RAG over SEC 10-K filings. " "Phase 1: scaffold + /health only."
     ),
 )
 
@@ -55,6 +54,7 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 # /health
 # ---------------------------------------------------------------------------
+
 
 class HealthResponse(BaseModel):
     """Locked /health JSON shape — see CONTEXT.md D-15.
@@ -80,13 +80,14 @@ def health() -> HealthResponse:
         version=__version__,
         provider=settings.llm_provider,
         git_sha=settings.git_sha,
-        timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     )
 
 
 # ---------------------------------------------------------------------------
 # Console-script entrypoint (referenced by packages/docintel-api/pyproject.toml)
 # ---------------------------------------------------------------------------
+
 
 def run() -> None:
     """Launch uvicorn against this app. Used by the `docintel-api` console script."""

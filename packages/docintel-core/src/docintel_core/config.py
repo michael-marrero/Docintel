@@ -4,6 +4,7 @@ CI greps for direct env-reading calls (os dot environ / os dot getenv) outside t
 and fails on any match. This module is the single allowed reader; pydantic-settings handles
 the actual env loading internally.
 """
+
 from __future__ import annotations
 
 from typing import Literal

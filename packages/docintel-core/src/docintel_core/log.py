@@ -2,6 +2,7 @@
 
 Phase 1 ships a minimal configuration. Phase 12 will add contextvars trace_id propagation.
 """
+
 from __future__ import annotations
 
 import logging

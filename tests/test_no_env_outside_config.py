@@ -11,19 +11,17 @@ false positives (e.g. the strings appearing in a docstring) — the cost of a
 trivial workaround is far smaller than the cost of letting a real escape
 slip through CI.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-
 # Repo root is two levels up from this file: tests/<file>.py -> repo root.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PACKAGES = _REPO_ROOT / "packages"
-_ALLOWED_FILE = (
-    _PACKAGES / "docintel-core" / "src" / "docintel_core" / "config.py"
-).resolve()
+_ALLOWED_FILE = (_PACKAGES / "docintel-core" / "src" / "docintel_core" / "config.py").resolve()
 
 _FORBIDDEN_TOKENS = ("os.environ", "os.getenv")
 
@@ -44,9 +42,8 @@ def test_only_config_reads_env() -> None:
             if token in text:
                 offenders.append((path, token))
 
-    assert not offenders, (
-        "Direct env reads found outside docintel_core.config:\n"
-        + "\n".join(f"  - {p.relative_to(_REPO_ROOT)}: {tok}" for p, tok in offenders)
+    assert not offenders, "Direct env reads found outside docintel_core.config:\n" + "\n".join(
+        f"  - {p.relative_to(_REPO_ROOT)}: {tok}" for p, tok in offenders
     )
 
 

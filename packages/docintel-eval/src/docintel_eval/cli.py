@@ -7,6 +7,7 @@ expected to fail in Phase 1. The real CLI lands in Phases 9-11.
 This module MUST NOT read env vars directly. When the real implementation
 arrives it will read configuration via docintel_core.config.Settings.
 """
+
 from __future__ import annotations
 
 import sys

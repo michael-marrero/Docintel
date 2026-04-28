@@ -9,6 +9,7 @@ Phase 1 scope (CONTEXT.md D-16):
 
 This module MUST NOT read env vars directly — read everything via Settings.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -16,14 +17,13 @@ from typing import Any
 
 import httpx
 import streamlit as st
-
 from docintel_core import __version__
 from docintel_core.config import Settings
-
 
 # ---------------------------------------------------------------------------
 # Settings & helpers
 # ---------------------------------------------------------------------------
+
 
 @st.cache_resource
 def _settings() -> Settings:
@@ -53,6 +53,7 @@ def _probe_health(api_url: str, trace_id: str) -> tuple[bool, dict[str, Any] | s
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     settings = _settings()

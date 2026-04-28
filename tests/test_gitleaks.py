@@ -9,6 +9,7 @@ The fixture under ``tests/fixtures/leaked_key.example`` contains a sentinel
 ``sk-...`` style key. We expect gitleaks (run with the repo's
 ``.gitleaks.toml`` config) to flag it and exit non-zero.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -16,7 +17,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _FIXTURE = Path(__file__).resolve().parent / "fixtures" / "leaked_key.example"

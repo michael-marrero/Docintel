@@ -14,6 +14,7 @@ Two responsibilities:
    lru_cache) so the cache is cleared between tests after the env has been
    sanitised by ``clean_docintel_env``.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator

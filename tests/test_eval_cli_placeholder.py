@@ -8,6 +8,7 @@ D-22) and is expected to fail visibly until those phases land.
 This test pins both behaviours so a future contributor can't accidentally
 ship a no-op ``return 0`` and silently make ``make eval`` look green.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -28,7 +29,11 @@ def test_eval_cli_exits_nonzero_with_pointer_message() -> None:
     )
 
     # The message must point future readers at the real implementation phases.
-    assert "Phase 9" in result.stderr or "Phase 9-10" in result.stderr or (
-        "lands in Phase 9" in result.stderr.lower()
-        or "lands in phase 9" in result.stderr.lower()
+    assert (
+        "Phase 9" in result.stderr
+        or "Phase 9-10" in result.stderr
+        or (
+            "lands in Phase 9" in result.stderr.lower()
+            or "lands in phase 9" in result.stderr.lower()
+        )
     ), f"placeholder message missing Phase 9/10 pointer; stderr={result.stderr!r}"

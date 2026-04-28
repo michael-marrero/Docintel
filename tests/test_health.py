@@ -4,10 +4,10 @@ The /health JSON shape is locked by CONTEXT.md D-15 and the
 ``HealthResponse`` model in ``docintel_api.main``. Phase 2 may add fields
 (e.g. an ``adapters`` block) but MUST NOT rename or reshape the fields below.
 """
+
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-
 
 _REQUIRED_FIELDS = {
     "status",
