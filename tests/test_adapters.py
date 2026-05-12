@@ -8,10 +8,25 @@ Wave 1-4 land the production adapter code.
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 
 import pytest
+
+
+def _can_import(*names: str) -> bool:
+    """Return True iff every listed module name is importable.
+
+    Used by @pytest.mark.skipif to gate real-adapter tests on the presence
+    of SDK dependencies (anthropic, openai) that land in Wave 5's lockfile.
+    """
+    for name in names:
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            return False
+    return True
 
 # ---------------------------------------------------------------------------
 # xfail marker applied to all tests in this file — waves 1-4 remove them
@@ -161,10 +176,12 @@ def test_stub_no_sdk_import() -> None:
         ), f"stub mode imported {banned!r} — lazy import gate violated (D-12)"
 
 
-@pytest.mark.xfail(
-    raises=(ImportError, AttributeError, NotImplementedError, AssertionError, ValueError),
-    strict=False,
-    reason="awaits Wave 4 — real adapter classes AnthropicAdapter + CrossFamilyJudge",
+@pytest.mark.skipif(
+    not _can_import("anthropic", "openai"),
+    reason=(
+        "anthropic + openai SDKs not yet in lockfile — Wave 5 promotes them "
+        "to direct deps of docintel-core; test runs automatically once importable"
+    ),
 )
 def test_make_adapters_real_dispatch() -> None:
     """make_adapters in real/anthropic mode selects AnthropicAdapter as generator.
@@ -172,16 +189,20 @@ def test_make_adapters_real_dispatch() -> None:
     Also verifies the cross-family judge (D-04): judge uses OpenAIAdapter when
     generator is Anthropic. No real API calls are made — dummy keys satisfy the
     Settings validation but complete() is never invoked.
+
+    Skipped in Wave 3 (anthropic/openai not in lockfile yet).
+    Runs automatically starting in Wave 5 when SDKs enter the lockfile.
     """
     from docintel_core.adapters import make_adapters
     from docintel_core.config import Settings
+    from pydantic import SecretStr
 
     bundle = make_adapters(
         Settings(
             llm_provider="real",
             llm_real_provider="anthropic",
-            anthropic_api_key="dummy-anthropic-key-for-test",  # type: ignore[arg-type]
-            openai_api_key="dummy-openai-key-for-test",  # type: ignore[arg-type]
+            anthropic_api_key=SecretStr("dummy-anthropic-key-for-test"),
+            openai_api_key=SecretStr("dummy-openai-key-for-test"),
         )
     )
     assert type(bundle.llm).__name__ == "AnthropicAdapter"
