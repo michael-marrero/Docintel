@@ -74,13 +74,9 @@ class AnthropicAdapter:
         import anthropic  # lazy — only executed when real branch runs
 
         if cfg.anthropic_api_key is None:
-            raise ValueError(
-                "DOCINTEL_ANTHROPIC_API_KEY is required when llm_provider='real'"
-            )
+            raise ValueError("DOCINTEL_ANTHROPIC_API_KEY is required when llm_provider='real'")
         # SP-4: the ONLY call to .get_secret_value() in this file.
-        self._client = anthropic.Anthropic(
-            api_key=cfg.anthropic_api_key.get_secret_value()
-        )
+        self._client = anthropic.Anthropic(api_key=cfg.anthropic_api_key.get_secret_value())
         self._model = _DEFAULT_MODEL
         log.info("anthropic_adapter_initialized", model=self._model)
 
@@ -132,8 +128,11 @@ class AnthropicAdapter:
         )
         cost = cost_for("anthropic", self._model, usage.prompt_tokens, usage.completion_tokens)
 
+        # response.content[0] is typed as a union of block types by the anthropic SDK stubs.
+        # For standard text completions (no tool_choice, no thinking), the first block is
+        # always a TextBlock. The type: ignore[union-attr] is narrow — only the .text access.
         return CompletionResponse(
-            text=response.content[0].text,
+            text=response.content[0].text,  # type: ignore[union-attr]
             usage=usage,
             cost_usd=cost,
             latency_ms=latency_ms,

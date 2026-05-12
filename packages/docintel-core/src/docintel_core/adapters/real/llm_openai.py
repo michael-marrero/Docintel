@@ -78,13 +78,9 @@ class OpenAIAdapter:
         import openai  # lazy — only executed when real branch runs
 
         if cfg.openai_api_key is None:
-            raise ValueError(
-                "DOCINTEL_OPENAI_API_KEY is required when llm_provider='real'"
-            )
+            raise ValueError("DOCINTEL_OPENAI_API_KEY is required when llm_provider='real'")
         # SP-4: the ONLY call to .get_secret_value() in this file.
-        self._client = openai.OpenAI(
-            api_key=cfg.openai_api_key.get_secret_value()
-        )
+        self._client = openai.OpenAI(api_key=cfg.openai_api_key.get_secret_value())
         self._model = _DEFAULT_MODEL
         log.info("openai_adapter_initialized", model=self._model)
 
@@ -131,10 +127,13 @@ class OpenAIAdapter:
         )
         latency_ms = (time.perf_counter() - t0) * 1000
 
-        # OpenAI SDK: prompt_tokens / completion_tokens (differs from Anthropic)
+        # OpenAI SDK: prompt_tokens / completion_tokens (differs from Anthropic).
+        # response.usage is typed as CompletionUsage | None by the openai stubs; for
+        # standard chat completions it is always populated. The type: ignore[union-attr]
+        # is narrow — only the .prompt_tokens / .completion_tokens field accesses.
         usage = TokenUsage(
-            prompt_tokens=response.usage.prompt_tokens,
-            completion_tokens=response.usage.completion_tokens,
+            prompt_tokens=response.usage.prompt_tokens,  # type: ignore[union-attr]
+            completion_tokens=response.usage.completion_tokens,  # type: ignore[union-attr]
         )
         cost = cost_for("openai", self._model, usage.prompt_tokens, usage.completion_tokens)
 

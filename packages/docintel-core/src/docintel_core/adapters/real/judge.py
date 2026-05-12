@@ -137,9 +137,8 @@ class CrossFamilyJudge:
             from docintel_core.adapters.real.llm_openai import OpenAIAdapter
 
             degraded = (
-                (isinstance(complement_llm, AnthropicAdapter) and cfg.anthropic_api_key is None)
-                or (isinstance(complement_llm, OpenAIAdapter) and cfg.openai_api_key is None)
-            )
+                isinstance(complement_llm, AnthropicAdapter) and cfg.anthropic_api_key is None
+            ) or (isinstance(complement_llm, OpenAIAdapter) and cfg.openai_api_key is None)
         except ImportError:
             degraded = False
 
