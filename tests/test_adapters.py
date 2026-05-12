@@ -28,7 +28,6 @@ _XFAIL = pytest.mark.xfail(
 # ---------------------------------------------------------------------------
 
 
-@_XFAIL
 def test_stub_embedder_shape(stub_bundle) -> None:
     """StubEmbedder.embed(['a','b']) returns np.ndarray shape (2, 384)."""
     import numpy as np
@@ -38,7 +37,6 @@ def test_stub_embedder_shape(stub_bundle) -> None:
     assert result.shape == (2, 384)
 
 
-@_XFAIL
 def test_stub_embedder_deterministic(stub_bundle) -> None:
     """Same text input always yields the identical 384-dim unit vector."""
     r1 = stub_bundle.embedder.embed(["same text here"])
@@ -51,7 +49,6 @@ def test_stub_embedder_deterministic(stub_bundle) -> None:
 # ---------------------------------------------------------------------------
 
 
-@_XFAIL
 def test_stub_reranker_sorted(stub_bundle) -> None:
     """StubReranker.rerank returns list[RerankedDoc] sorted descending by score."""
     docs = ["revenue grew 20%", "net loss widened", "R&D investment doubled"]
@@ -67,7 +64,6 @@ def test_stub_reranker_sorted(stub_bundle) -> None:
         assert hasattr(r, "original_rank")
 
 
-@_XFAIL
 def test_stub_reranker_deterministic(stub_bundle) -> None:
     """Same (query, docs) input always yields identical ranking."""
     docs = ["alpha document", "beta document", "gamma document"]
@@ -82,7 +78,6 @@ def test_stub_reranker_deterministic(stub_bundle) -> None:
 # ---------------------------------------------------------------------------
 
 
-@_XFAIL
 def test_stub_llm_complete(stub_bundle) -> None:
     """StubLLMClient.complete returns CompletionResponse with non-empty text and model='stub'."""
     prompt = "Context: [chunk_1] Revenue was $10B. [chunk_2] Margins improved.\n\nQuestion: What happened?"
@@ -98,7 +93,6 @@ def test_stub_llm_complete(stub_bundle) -> None:
     assert hasattr(response.usage, "completion_tokens")
 
 
-@_XFAIL
 def test_stub_llm_refusal(stub_bundle) -> None:
     """StubLLMClient returns canonical refusal text when prompt contains no chunk IDs."""
     response = stub_bundle.llm.complete("What is the weather today?")
@@ -110,7 +104,6 @@ def test_stub_llm_refusal(stub_bundle) -> None:
 # ---------------------------------------------------------------------------
 
 
-@_XFAIL
 def test_stub_judge_score_range(stub_bundle) -> None:
     """StubLLMJudge.judge returns JudgeVerdict with score in [0, 1]."""
     prediction = "Revenue grew [chunk_1] and margins improved [chunk_2]."
@@ -126,7 +119,6 @@ def test_stub_judge_score_range(stub_bundle) -> None:
     assert isinstance(verdict.unsupported_claims, list)
 
 
-@_XFAIL
 def test_stub_judge_no_match(stub_bundle) -> None:
     """StubLLMJudge with no matching chunks returns score=0.0, passed=False."""
     prediction = "Revenue grew [chunk_99] and margins improved [chunk_100]."
@@ -141,7 +133,6 @@ def test_stub_judge_no_match(stub_bundle) -> None:
 # ---------------------------------------------------------------------------
 
 
-@_XFAIL
 def test_make_adapters_stub() -> None:
     """make_adapters(Settings(llm_provider='stub')) returns a valid AdapterBundle."""
     from docintel_core.adapters import make_adapters
@@ -155,7 +146,6 @@ def test_make_adapters_stub() -> None:
     assert hasattr(bundle, "judge")
 
 
-@_XFAIL
 def test_stub_no_sdk_import() -> None:
     """Stub-mode build must NOT import torch, anthropic, openai, or sentence_transformers.
 
@@ -203,7 +193,6 @@ def test_make_adapters_real_dispatch() -> None:
 # ---------------------------------------------------------------------------
 
 
-@_XFAIL
 def test_stub_all_deterministic(stub_bundle) -> None:
     """All four stub adapters produce identical outputs across 100 repeated calls."""
 
@@ -242,7 +231,6 @@ def test_stub_all_deterministic(stub_bundle) -> None:
 # ---------------------------------------------------------------------------
 
 
-@_XFAIL
 def test_bundle_protocol_conformance(stub_bundle) -> None:
     """Each bundle field satisfies its Protocol at runtime via @runtime_checkable."""
     from docintel_core.adapters.protocols import Embedder, LLMClient, LLMJudge, Reranker
