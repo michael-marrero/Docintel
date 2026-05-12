@@ -36,6 +36,16 @@ class Settings(BaseSettings):
         description="Flips all LLM/embedding adapters between stub and real providers.",
     )
 
+    # Which real LLM provider drives generation (D-09). Ignored in stub mode.
+    # The judge always uses the complement provider (D-04, cross-family bias avoidance).
+    llm_real_provider: Literal["anthropic", "openai"] = Field(
+        default="anthropic",
+        description=(
+            "When llm_provider='real', selects which provider drives generation. "
+            "The judge uses the complement provider (D-04). Ignored in stub mode."
+        ),
+    )
+
     # Optional secrets — never logged, never serialized into /health.
     anthropic_api_key: SecretStr | None = Field(default=None)
     openai_api_key: SecretStr | None = Field(default=None)

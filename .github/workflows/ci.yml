@@ -53,12 +53,18 @@ jobs:
       - name: black --check
         run: uv run black --check packages/ tests/
 
-      - name: mypy --strict (Phase 1 surface)
-        # CONTEXT.md D-12: ignore_missing_imports until Phase 2 lands typed protocols.
+      - name: mypy --strict (Phase 2 surface)
+        # D-19: ignore_missing_imports removed; per-module overrides cover torch/sentence_transformers/transformers.
         run: uv run mypy --strict packages/*/src
 
       - name: pytest
         run: uv run pytest -ra -q
+
+      - name: Adapter wrap grep gate (ADP-06)
+        # Every real adapter file with an SDK call must import tenacity.
+        # Script exits non-zero if any file under packages/docintel-core/src/docintel_core/adapters/real/
+        # contains an SDK call pattern but no tenacity import (D-18 structural enforcement).
+        run: bash scripts/check_adapter_wraps.sh
 
   gitleaks:
     name: gitleaks (secrets scan)

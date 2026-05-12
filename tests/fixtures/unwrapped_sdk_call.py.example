@@ -1,0 +1,16 @@
+# Fixture for the grep gate negative-case test (test_ci_gates.py).
+#
+# This file intentionally contains an SDK call with NO tenacity import.
+# The check_adapter_wraps.sh script must detect this pattern and exit non-zero.
+#
+# DO NOT import this file or execute it — it is a static fixture only.
+# Listed in .gitleaks.toml allowlist (both path and regex) so the
+# placeholder key string below does not block CI.
+import anthropic
+
+client = anthropic.Anthropic(api_key="sk-ant-api03-EXAMPLE-unwrapped-fixture")  # noqa: S106
+response = client.messages.create(  # noqa: S106
+    model="claude-sonnet-4-6",
+    max_tokens=10,
+    messages=[{"role": "user", "content": "hello"}],
+)

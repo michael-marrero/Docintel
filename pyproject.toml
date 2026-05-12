@@ -50,9 +50,24 @@ target-version = ["py311"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-ignore_missing_imports = true
+# D-19: ignore_missing_imports removed; per-module overrides cover torch/sentence_transformers/transformers.
+# Phase 1 D-12 escape hatch closed — anthropic + openai SDKs ship inline type stubs (0.101.0 / 2.36.0).
 warn_unused_ignores = false
 files = ["packages/*/src"]
+
+[[tool.mypy.overrides]]
+# sentence_transformers, transformers, and torch lack inline type stubs.
+# All three are heavyweight ML libraries with incomplete or absent py.typed markers.
+# Per-module ignore_missing_imports is the canonical mypy knob (D-19).
+module = [
+    "sentence_transformers",
+    "sentence_transformers.*",
+    "transformers",
+    "transformers.*",
+    "torch",
+    "torch.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

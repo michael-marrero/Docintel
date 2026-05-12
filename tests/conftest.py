@@ -55,3 +55,17 @@ def client(clean_docintel_env) -> Iterator[TestClient]:
     with TestClient(app) as c:
         yield c
     reset_settings_cache()
+
+
+@pytest.fixture
+def stub_bundle(clean_docintel_env):
+    """AdapterBundle constructed in stub mode with a sanitised environment.
+
+    Lazy-imports docintel_core.adapters so that pytest collection succeeds
+    even before Wave 1 lands the adapter package. Tests that consume this
+    fixture should themselves be xfail-marked until Wave 1+ ships the code.
+    """
+    from docintel_core.adapters import make_adapters
+    from docintel_core.config import Settings
+
+    return make_adapters(Settings(llm_provider="stub"))

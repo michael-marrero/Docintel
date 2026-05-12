@@ -7,6 +7,17 @@ dependencies = [
     "pydantic==2.13.3",
     "pydantic-settings==2.14.0",
     "structlog==25.5.0",
+    # Phase 2 adapter deps (D-11): ML inference + LLM SDKs live in core so
+    # docintel-api + docintel-eval receive them transitively.
+    "anthropic>=0.101.0,<1",
+    "numpy==2.4.4",
+    "openai>=2.36.0,<3",
+    "sentence-transformers==5.4.1",
+    "tenacity==9.1.4",
+    # torch: CPU-only via workspace [tool.uv.sources] pytorch-cpu index (D-08).
+    # Moved from docintel-api to docintel-core so the index directive applies
+    # to a single canonical pin (CONTEXT.md D-11 / RESEARCH.md Pitfall 4).
+    "torch==2.11.0",
 ]
 
 [build-system]
