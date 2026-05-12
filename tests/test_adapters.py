@@ -28,6 +28,7 @@ def _can_import(*names: str) -> bool:
             return False
     return True
 
+
 # ---------------------------------------------------------------------------
 # xfail marker applied to all tests in this file — waves 1-4 remove them
 # ---------------------------------------------------------------------------
@@ -162,18 +163,28 @@ def test_make_adapters_stub() -> None:
 
 
 def test_stub_no_sdk_import() -> None:
-    """Stub-mode build must NOT import torch, anthropic, openai, or sentence_transformers.
+    """Stub-mode make_adapters must NOT introduce new heavy SDK imports.
 
     Validates D-12: lazy imports inside the real branch keep stub CI fast.
+    The test snapshots sys.modules BEFORE calling the stub factory and verifies
+    that no banned module appears AFTER the call. A prior test in the session
+    may already have imported anthropic/openai (e.g. test_make_adapters_real_dispatch);
+    the contract is that the STUB factory doesn't ADD them, not that they are globally
+    absent from the process.
     """
     from docintel_core.adapters import make_adapters
     from docintel_core.config import Settings
 
+    banned = ("torch", "anthropic", "openai", "sentence_transformers")
+    # Snapshot modules present BEFORE calling the stub factory.
+    before = {name for name in banned if name in sys.modules}
     make_adapters(Settings(llm_provider="stub"))
-    for banned in ("torch", "anthropic", "openai", "sentence_transformers"):
-        assert (
-            banned not in sys.modules
-        ), f"stub mode imported {banned!r} — lazy import gate violated (D-12)"
+    # Verify no NEW banned modules appeared as a result of calling the stub factory.
+    for name in banned:
+        if name not in before:
+            assert (
+                name not in sys.modules
+            ), f"stub factory imported {name!r} — lazy import gate violated (D-12)"
 
 
 @pytest.mark.skipif(

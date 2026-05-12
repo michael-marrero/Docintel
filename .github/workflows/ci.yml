@@ -60,6 +60,12 @@ jobs:
       - name: pytest
         run: uv run pytest -ra -q
 
+      - name: Adapter wrap grep gate (ADP-06)
+        # Every real adapter file with an SDK call must import tenacity.
+        # Script exits non-zero if any file under packages/docintel-core/src/docintel_core/adapters/real/
+        # contains an SDK call pattern but no tenacity import (D-18 structural enforcement).
+        run: bash scripts/check_adapter_wraps.sh
+
   gitleaks:
     name: gitleaks (secrets scan)
     runs-on: ubuntu-latest
