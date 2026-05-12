@@ -4,8 +4,8 @@ The grep gate asserts that every real adapter file containing an SDK call
 also imports tenacity. This test suite exercises the gate with a negative
 fixture (unwrapped call — must fail) and a positive fixture (wrapped — pass).
 
-Both tests are marked xfail until Wave 4 ships scripts/check_adapter_wraps.sh
-and the real adapter source files that the gate guards.
+Wave 4: xfail markers removed; scripts/check_adapter_wraps.sh and the five
+real adapter files exist. Both tests are now expected to pass (green).
 """
 
 from __future__ import annotations
@@ -13,21 +13,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _GATE_SCRIPT = _REPO_ROOT / "scripts" / "check_adapter_wraps.sh"
 _FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 _UNWRAPPED_FIXTURE = _FIXTURE_DIR / "unwrapped_sdk_call.py.example"
 
-_XFAIL = pytest.mark.xfail(
-    raises=(FileNotFoundError, AssertionError),
-    strict=False,
-    reason="awaits Wave 4 — scripts/check_adapter_wraps.sh + real adapters",
-)
 
-
-@_XFAIL
 def test_grep_gate_catches_unwrapped() -> None:
     """Grep gate exits non-zero when scanning a file with an unwrapped SDK call.
 
@@ -47,7 +38,6 @@ def test_grep_gate_catches_unwrapped() -> None:
     )
 
 
-@_XFAIL
 def test_grep_gate_passes_wrapped(tmp_path) -> None:
     """Grep gate exits zero when every SDK-calling file also imports tenacity.
 
