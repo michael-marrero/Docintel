@@ -14,6 +14,16 @@ Phase 4 amendment (D-03): ``make_index_stores(cfg)`` returns an
 ``QdrantDenseStore`` + ``Bm25sStore`` (BM25 is unified across modes per D-07).
 The qdrant_client import lives lazily inside the real branch (D-12) — stub-
 mode CI never pays the import cost.
+
+Phase 5 amendment (D-04): ``make_retriever(cfg)`` is the third sibling factory
+alongside ``make_adapters`` and ``make_index_stores``. It composes both
+bundles and constructs ``docintel_retrieve.retriever.Retriever``. The
+Retriever import lives INSIDE the function body (Pattern S5 lazy-import
+discipline) — module-load of ``docintel_core.adapters.factory`` stays
+cheap and does NOT pull in ``docintel_retrieve`` transitively. The
+return-type annotation uses a string forward reference (``-> "Retriever"``)
+to keep that discipline pure: no top-level (even TYPE_CHECKING) import
+is required.
 """
 
 from __future__ import annotations
@@ -27,11 +37,21 @@ from docintel_core.adapters.types import AdapterBundle, IndexStoreBundle
 # TYPE_CHECKING guard: these imports run only under mypy/pyright, never at runtime.
 # The real adapter modules (Wave 4) do not exist yet; this guard keeps mypy happy
 # for the type annotations in make_adapters() without importing non-existent modules.
+#
+# Phase 5 D-04: ``Retriever`` is added here under TYPE_CHECKING so mypy --strict
+# can resolve the ``-> "Retriever"`` string forward reference annotation on
+# ``make_retriever``. At runtime ``Retriever`` is imported INSIDE the
+# ``make_retriever`` function body (Pattern S5 lazy-import discipline) — the
+# TYPE_CHECKING block is the type-checker's view only and does NOT cause
+# ``docintel_retrieve`` to be loaded at module import time
+# (``tests/test_make_retriever.py::test_factory_lazy_imports_retriever_module``
+# enforces the runtime gate).
 if TYPE_CHECKING:
     from docintel_core.adapters.real.judge import CrossFamilyJudge
     from docintel_core.adapters.real.llm_anthropic import AnthropicAdapter
     from docintel_core.adapters.real.llm_openai import OpenAIAdapter
     from docintel_core.config import Settings
+    from docintel_retrieve.retriever import Retriever
 
 
 def make_adapters(cfg: Settings) -> AdapterBundle:
@@ -127,3 +147,58 @@ def make_index_stores(cfg: Settings) -> IndexStoreBundle:
         dense=QdrantDenseStore(cfg),
         bm25=Bm25sStore(cfg),
     )
+
+
+def make_retriever(cfg: Settings) -> "Retriever":  # noqa: F821 — string forward reference (Pattern S5)
+    """Construct and return a Retriever composed of adapter + store bundles.
+
+    Phase 5 D-04: third sibling factory alongside ``make_adapters(cfg)`` and
+    ``make_index_stores(cfg)``. Calls both internally and constructs
+    ``Retriever(bundle, stores, cfg)``. Lives in ``docintel_core.adapters.factory``
+    (NOT in ``docintel-retrieve``) so the import direction matches every prior
+    phase: ``docintel-retrieve`` imports from ``docintel-core``, never the reverse.
+
+    Lazy-import discipline (D-12 + Pattern S5): ``from
+    docintel_retrieve.retriever import Retriever`` lives INSIDE the function
+    body so ``import docintel_core.adapters.factory`` stays cheap. This is the
+    same lazy-import pattern that ``make_index_stores`` uses for
+    ``Bm25sStore`` / ``NumpyDenseStore`` and that ``make_adapters`` uses for
+    the real-mode SDK imports. ``tests/test_make_retriever.py::
+    test_factory_lazy_imports_retriever_module`` enforces the gate.
+
+    The return-type annotation uses a string forward reference
+    (``-> "Retriever"``) so no top-level (even TYPE_CHECKING) import of
+    ``Retriever`` is required. mypy resolves the string by reading the
+    function body's import.
+
+    CD-01: eager-load. Constructing the Retriever loads the
+    chunk_id → Chunk map (~600 ms one-time on the 6,053-chunk corpus)
+    AND warms the index-store lazy-load paths (~100 ms via the warm-up
+    queries inside ``Retriever.__init__``). The caller pays this cost
+    once per process; Phase 13's FastAPI lru-caches the result so
+    subsequent requests reuse the warm instance.
+
+    CD-08: NO factory-level cache — Phase 13 lru-caches at the FastAPI
+    dependency layer; Phase 10 eval harness constructs once per run;
+    Phase 11 ablations construct directly via ``Retriever(bundle, stores, cfg)``
+    so they can inject null adapters (D-08). Mirrors the
+    ``make_adapters(cfg)`` precedent of no factory cache.
+
+    Args:
+        cfg: Settings instance with ``llm_provider`` set (and ``data_dir``
+            + ``index_dir`` consulted by the Retriever's eager chunk-map
+            load + MANIFEST cardinality check).
+
+    Returns:
+        Retriever ready to call ``.search(query, k)``. The instance holds
+        ``AdapterBundle`` + ``IndexStoreBundle`` references; subsequent
+        ``.search`` calls do not re-trigger factory dispatch.
+    """
+    # Lazy import — keeps `import docintel_core.adapters.factory` cheap
+    # (D-12 + Pattern S5). The test_factory_lazy_imports_retriever_module
+    # gate fails if this import is hoisted to module scope.
+    from docintel_retrieve.retriever import Retriever
+
+    bundle = make_adapters(cfg)
+    stores = make_index_stores(cfg)
+    return Retriever(bundle=bundle, stores=stores, cfg=cfg)

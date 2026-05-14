@@ -17,7 +17,7 @@ Usage:
 
 from __future__ import annotations
 
-from docintel_core.adapters.factory import make_adapters
+from docintel_core.adapters.factory import make_adapters, make_retriever
 from docintel_core.adapters.protocols import (
     BM25Store,
     DenseStore,
@@ -49,4 +49,5 @@ __all__ = [
     "Reranker",
     "TokenUsage",
     "make_adapters",
+    "make_retriever",
 ]
