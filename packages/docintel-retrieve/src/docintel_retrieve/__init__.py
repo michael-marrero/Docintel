@@ -19,5 +19,6 @@ from docintel_core.types import RetrievedChunk
 
 from docintel_retrieve.fuse import RRF_K, _rrf_fuse
 from docintel_retrieve.null_adapters import NullBM25Store, NullReranker
+from docintel_retrieve.retriever import Retriever
 
-__all__ = ["NullBM25Store", "NullReranker", "RRF_K", "RetrievedChunk", "_rrf_fuse"]
+__all__ = ["NullBM25Store", "NullReranker", "RRF_K", "RetrievedChunk", "Retriever", "_rrf_fuse"]
