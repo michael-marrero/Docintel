@@ -59,3 +59,26 @@ class Settings(BaseSettings):
     # URL the UI uses to reach the API. Default targets compose's `api` service.
     # Consumed by docintel-ui (Plan 04). Lives here so config.py remains the only env reader (D-18).
     api_url: str = Field(default="http://api:8000")
+
+    # Phase 3 amendment (D-19). SEC fair-access policy requires a
+    # descriptive User-Agent on every request. Format: "Name email@example.com".
+    # Required in real-fetch mode; stub-mode CI never hits sec.gov so a default
+    # placeholder is safe at the Settings level — validation lives at the
+    # fetch.py call site (raise if blank when network mode is on).
+    edgar_user_agent: str = Field(
+        default="docintel-ci ci@example.com",
+        description=(
+            "Identifying User-Agent for SEC EDGAR requests. Format: "
+            "'YourName your.email@example.com'. SEC blocks requests without "
+            "a valid identifying UA. Default is a CI placeholder; developer "
+            "machines MUST override via DOCINTEL_EDGAR_USER_AGENT."
+        ),
+    )
+    edgar_request_rate_hz: float = Field(
+        default=8.0,
+        description=(
+            "Soft request rate for SEC fetcher (sec-edgar-downloader enforces "
+            "10 req/sec internally via pyrate-limiter; this is a defensive "
+            "headroom value, not a second throttle)."
+        ),
+    )
