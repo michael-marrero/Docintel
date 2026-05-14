@@ -7,8 +7,8 @@ gate with a negative fixture (unwrapped call — must fail) and a
 positive fixture (wrapped — pass), mirroring ``tests/test_ci_gates.py``
 from Phase 2.
 
-Tests xfail until Plan 03-02 ships ``scripts/check_ingest_wraps.sh``.
-The wave-flip commit removes these xfail markers.
+Plan 03-02 shipped ``scripts/check_ingest_wraps.sh``; the wave-flip
+post-merge gate removed the xfail markers below.
 """
 
 from __future__ import annotations
@@ -16,21 +16,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _GATE_SCRIPT = _REPO_ROOT / "scripts" / "check_ingest_wraps.sh"
 _FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 _UNWRAPPED_FIXTURE = _FIXTURE_DIR / "unwrapped_edgar_call.py.example"
 
-_XFAIL = pytest.mark.xfail(
-    raises=(FileNotFoundError, AssertionError, NotImplementedError),
-    strict=False,
-    reason="awaits Plan 03-02 — scripts/check_ingest_wraps.sh (D-18 analog)",
-)
 
-
-@_XFAIL
 def test_grep_gate_catches_unwrapped() -> None:
     """Grep gate exits non-zero when scanning a file with an unwrapped SDK call.
 
@@ -56,7 +47,6 @@ def test_grep_gate_catches_unwrapped() -> None:
     )
 
 
-@_XFAIL
 def test_grep_gate_passes_wrapped(tmp_path) -> None:
     """Grep gate exits zero when every sec-edgar-downloader call sits next to a tenacity import.
 

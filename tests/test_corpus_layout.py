@@ -90,7 +90,6 @@ def test_committed_corpus_files_present() -> None:
     assert (_CORPUS_DIR / "MANIFEST.json").is_file(), "missing MANIFEST.json"
 
 
-@_XFAIL
 def test_corpus_cache_gitignored() -> None:
     """``data/corpus/.cache/`` is gitignored AND the new Pitfall-6 negation is in place."""
     result = subprocess.run(
@@ -120,7 +119,6 @@ def test_corpus_cache_gitignored() -> None:
     )
 
 
-@_XFAIL
 def test_corpus_raw_not_gitignored() -> None:
     """Raw / normalized / chunks / MANIFEST / snapshot are tracked, not ignored."""
     tracked_paths = (

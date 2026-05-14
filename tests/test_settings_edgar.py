@@ -10,9 +10,8 @@ Covers VALIDATION.md task 3-0X-01:
   headroom under SEC's 10 req/s cap, matches RESEARCH.md Pitfall 8).
 * ``DOCINTEL_EDGAR_REQUEST_RATE_HZ`` flips it.
 
-The tests xfail until Plan 03-02 amends ``docintel_core.config.Settings``
-with the two new fields. Once the amendment lands, the xfail markers are
-removed in the same commit per the wave-flip discipline.
+Plan 03-02 amended ``docintel_core.config.Settings`` with the two new
+fields; the wave-flip post-merge gate removed the xfail markers below.
 """
 
 from __future__ import annotations
@@ -20,20 +19,12 @@ from __future__ import annotations
 import pytest
 from docintel_core.config import Settings
 
-_XFAIL = pytest.mark.xfail(
-    raises=(ImportError, AttributeError, AssertionError, NotImplementedError),
-    strict=False,
-    reason="awaits Plan 03-02 — Settings amendment (D-19)",
-)
 
-
-@_XFAIL
 def test_edgar_user_agent_default(clean_docintel_env) -> None:
     """With no env vars set, edgar_user_agent is the CI-safe placeholder."""
     assert Settings().edgar_user_agent == "docintel-ci ci@example.com"
 
 
-@_XFAIL
 def test_edgar_user_agent_overridable_via_env(
     clean_docintel_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -42,7 +33,6 @@ def test_edgar_user_agent_overridable_via_env(
     assert Settings().edgar_user_agent == "Test Person test@example.com"
 
 
-@_XFAIL
 def test_edgar_request_rate_hz_default(clean_docintel_env) -> None:
     """Default request rate is 8.0 Hz (under SEC's 10 req/s cap, D-19)."""
     settings = Settings()
@@ -50,7 +40,6 @@ def test_edgar_request_rate_hz_default(clean_docintel_env) -> None:
     assert isinstance(settings.edgar_request_rate_hz, float)
 
 
-@_XFAIL
 def test_edgar_request_rate_hz_overridable_via_env(
     clean_docintel_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

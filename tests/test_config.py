@@ -11,7 +11,6 @@ Locks the three Phase 1 invariants:
 from __future__ import annotations
 
 import pytest
-
 from docintel_core.config import Settings
 
 
@@ -36,7 +35,9 @@ def test_real_provider_default_is_anthropic(clean_docintel_env) -> None:
     assert Settings().llm_real_provider == "anthropic"
 
 
-def test_real_provider_overridable_via_env(clean_docintel_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_real_provider_overridable_via_env(
+    clean_docintel_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The DOCINTEL_LLM_REAL_PROVIDER env var flips the real provider to OpenAI."""
     monkeypatch.setenv("DOCINTEL_LLM_REAL_PROVIDER", "openai")
     assert Settings().llm_real_provider == "openai"
