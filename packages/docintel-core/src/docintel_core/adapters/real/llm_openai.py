@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 import structlog
 from openai import APIConnectionError, APITimeoutError, RateLimitError
@@ -63,26 +64,37 @@ class OpenAIAdapter:
     """
 
     def __init__(self, cfg: Settings) -> None:
-        """Construct SDK client using the API key from Settings.
+        """Store cfg; defer SDK client construction to first ``.complete()`` call.
 
-        SP-4 / T-02-05: .get_secret_value() is called EXACTLY ONCE here.
-        The raw key string is passed directly to the SDK client constructor
-        and not stored, logged, or referenced anywhere else in this file.
+        Lazy SDK init means that downstream pipelines which build the full
+        AdapterBundle but never call the LLM (``docintel-index build`` and
+        ``Retriever.search`` in real-mode workflow_dispatch) can run WITHOUT
+        ``DOCINTEL_OPENAI_API_KEY`` set. The API key is only required when
+        ``.complete()`` is actually invoked (Phase 6 generation onward).
+
+        SP-4 / T-02-05: ``.get_secret_value()`` is still called EXACTLY ONCE,
+        but at first ``.complete()`` rather than at construction.
 
         Args:
-            cfg: Settings instance with openai_api_key set.
-
-        Raises:
-            ValueError: If cfg.openai_api_key is None (required for real mode).
+            cfg: Settings instance. ``openai_api_key`` is required only when
+                ``.complete()`` is called; ``__init__`` accepts None.
         """
-        import openai  # lazy — only executed when real branch runs
-
-        if cfg.openai_api_key is None:
-            raise ValueError("DOCINTEL_OPENAI_API_KEY is required when llm_provider='real'")
-        # SP-4: the ONLY call to .get_secret_value() in this file.
-        self._client = openai.OpenAI(api_key=cfg.openai_api_key.get_secret_value())
+        self._cfg = cfg
+        self._client: Any | None = None  # lazy — see _get_client()
         self._model = _DEFAULT_MODEL
         log.info("openai_adapter_initialized", model=self._model)
+
+    def _get_client(self) -> Any:
+        """Lazy SDK construction. Raises if API key is missing at first use."""
+        if self._client is not None:
+            return self._client
+        import openai  # lazy module import — only executed when real .complete() runs
+
+        if self._cfg.openai_api_key is None:
+            raise ValueError("DOCINTEL_OPENAI_API_KEY is required when llm_provider='real'")
+        # SP-4: the ONLY call to .get_secret_value() in this file.
+        self._client = openai.OpenAI(api_key=self._cfg.openai_api_key.get_secret_value())
+        return self._client
 
     @property
     def name(self) -> str:
@@ -116,8 +128,9 @@ class OpenAIAdapter:
         Returns:
             CompletionResponse with text, usage, cost_usd, latency_ms, and model.
         """
+        client = self._get_client()
         t0 = time.perf_counter()
-        response = self._client.chat.completions.create(
+        response = client.chat.completions.create(
             model=self._model,
             max_tokens=_MAX_TOKENS,
             messages=[
@@ -132,8 +145,8 @@ class OpenAIAdapter:
         # standard chat completions it is always populated. The type: ignore[union-attr]
         # is narrow — only the .prompt_tokens / .completion_tokens field accesses.
         usage = TokenUsage(
-            prompt_tokens=response.usage.prompt_tokens,  # type: ignore[union-attr]
-            completion_tokens=response.usage.completion_tokens,  # type: ignore[union-attr]
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
         )
         cost = cost_for("openai", self._model, usage.prompt_tokens, usage.completion_tokens)
 

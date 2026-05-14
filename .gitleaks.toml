@@ -17,6 +17,11 @@ paths = [
     '''^tests/fixtures/unwrapped_sdk_call\.py\.example$''',
     '''^tests/fixtures/unwrapped_edgar_call\.py\.example$''',
     '''^\.planning/''',
+    # Phase 3 D-10: BGE_TOKENIZER_REVISION is a HuggingFace model commit SHA
+    # (40 hex chars, entropy ~3.7) that matches the generic-api-key rule.
+    # The constant is documented + cross-referenced from MANIFEST.json + tested
+    # by tests/test_chunk_idempotency.py::test_manifest_hashes_match.
+    '''^packages/docintel-ingest/src/docintel_ingest/tokenizer\.py$''',
 ]
 # Common placeholder regexes used in docs/examples. Tighten if false-positives appear.
 regexes = [
