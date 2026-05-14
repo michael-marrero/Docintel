@@ -80,3 +80,4 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests", "packages/*/tests"]
 addopts = "-ra --strict-markers"
+markers = ["real: tests that require real (non-stub) backends — gated behind workflow_dispatch"]

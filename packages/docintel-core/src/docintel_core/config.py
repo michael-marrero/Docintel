@@ -82,3 +82,28 @@ class Settings(BaseSettings):
             "headroom value, not a second throttle)."
         ),
     )
+
+    # Phase 4 amendment (D-17). Index location + Qdrant connection metadata.
+    # Single env-reader rule (FND-11) means these live here, not in
+    # docintel_index. The two qdrant-* fields default to the docker-compose
+    # service-name target and are consulted ONLY when llm_provider == "real"
+    # (D-03 lazy-import discipline — stub-mode CI never reads them).
+    index_dir: str = Field(
+        default="data/indices",
+        description=(
+            "Where index artifacts land "
+            "(data/indices/dense/, /bm25/, /MANIFEST.json)."
+        ),
+    )
+    qdrant_url: str = Field(
+        default="http://qdrant:6333",
+        description=(
+            "Qdrant HTTP endpoint. Default targets the docker-compose service "
+            "name. Consulted ONLY when llm_provider == 'real' (D-03 factory "
+            "lazy-import discipline). Stub mode never reads this field."
+        ),
+    )
+    qdrant_collection: str = Field(
+        default="docintel-dense-v1",
+        description="Qdrant collection name for the dense index (D-06).",
+    )
