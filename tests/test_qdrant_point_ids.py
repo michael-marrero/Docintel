@@ -74,9 +74,9 @@ def test_namespace_pinned() -> None:
     qdrant_dense = pytest.importorskip("docintel_core.adapters.real.qdrant_dense")
     namespace = qdrant_dense.DOCINTEL_CHUNK_NAMESPACE
 
-    assert isinstance(namespace, uuid.UUID), (
-        f"DOCINTEL_CHUNK_NAMESPACE must be a uuid.UUID; got {type(namespace).__name__}"
-    )
+    assert isinstance(
+        namespace, uuid.UUID
+    ), f"DOCINTEL_CHUNK_NAMESPACE must be a uuid.UUID; got {type(namespace).__name__}"
     # Plan 04-05 pinned literal — must match qdrant_dense.py DOCINTEL_CHUNK_NAMESPACE.
     expected_uuid = "576cc79e-7285-5efc-8e6e-b66d3e6f92ae"
     assert str(namespace) == expected_uuid, (

@@ -44,8 +44,7 @@ from docintel_core.types import Chunk
 if TYPE_CHECKING:
     # Annotation-only — keep ``import docintel_core`` cheap (D-12 lazy-import
     # discipline). The runtime import lives inside ``__init__``.
-    import bm25s as _bm25s_mod
-    import Stemmer as _StemmerMod  # PyStemmer package, snake-case capitalisation
+    pass  # PyStemmer package, snake-case capitalisation
 
 
 log = structlog.stdlib.get_logger(__name__)
@@ -234,9 +233,7 @@ class Bm25sStore:
         # internal corpus has 1 row but _chunk_ids is empty (so k_eff=1).
         corpus_size = max(len(self._chunk_ids), 1)
         k_eff = min(k, corpus_size)
-        results, scores = self._retriever.retrieve(
-            query_tokens, k=k_eff, show_progress=False
-        )
+        results, scores = self._retriever.retrieve(query_tokens, k=k_eff, show_progress=False)
         # results/scores shape: (1, k) — flatten the batch dim.
         row_indices = results[0]
         row_scores = scores[0]
@@ -277,7 +274,5 @@ class Bm25sStore:
         """Read-side reload — ``bm25s.BM25.load(...)`` + ``chunk_ids.json``."""
         bm25_dir = Path(self._cfg.index_dir) / "bm25"
         self._retriever = self._bm25s.BM25.load(str(bm25_dir))
-        self._chunk_ids = json.loads(
-            (bm25_dir / "chunk_ids.json").read_text(encoding="utf-8")
-        )
+        self._chunk_ids = json.loads((bm25_dir / "chunk_ids.json").read_text(encoding="utf-8"))
         self._vocab_size = len(self._retriever.vocab_dict)

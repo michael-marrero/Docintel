@@ -91,8 +91,7 @@ class Settings(BaseSettings):
     index_dir: str = Field(
         default="data/indices",
         description=(
-            "Where index artifacts land "
-            "(data/indices/dense/, /bm25/, /MANIFEST.json)."
+            "Where index artifacts land " "(data/indices/dense/, /bm25/, /MANIFEST.json)."
         ),
     )
     qdrant_url: str = Field(

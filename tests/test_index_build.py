@@ -70,7 +70,9 @@ def test_dense_and_bm25_share_chunk_ids() -> None:
     corpus_chunks_root = _REPO_ROOT / "data" / "corpus" / "chunks"
     expected_count = 0
     for jsonl in sorted(corpus_chunks_root.rglob("*.jsonl")):
-        expected_count += sum(1 for line in jsonl.read_text(encoding="utf-8").splitlines() if line.strip())
+        expected_count += sum(
+            1 for line in jsonl.read_text(encoding="utf-8").splitlines() if line.strip()
+        )
     assert len(dense_ids) == expected_count, (
         f"chunk_ids length ({len(dense_ids)}) does not match corpus chunk count ({expected_count}) — "
         "Pitfall 4 empty-filing handling"

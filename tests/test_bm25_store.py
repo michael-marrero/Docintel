@@ -70,9 +70,9 @@ def test_bm25_artifacts_present() -> None:
         "indptr.csc.index.npy",
     ]
     for name in expected_files:
-        assert (indices_root / name).is_file(), (
-            f"bm25s artifact missing: {indices_root / name} — Pattern 4 file layout"
-        )
+        assert (
+            indices_root / name
+        ).is_file(), f"bm25s artifact missing: {indices_root / name} — Pattern 4 file layout"
 
     forbidden = indices_root / "corpus.jsonl"
     assert not forbidden.exists(), (

@@ -58,7 +58,6 @@ from pathlib import Path
 from typing import Any, Final, NamedTuple
 
 import structlog
-
 from docintel_core.types import IndexManifest
 
 # Two-logger pattern (SP-3) — _retry_log is unused at module level (no SDK
@@ -103,7 +102,7 @@ def sha256_file(path: Path) -> str:
     Args:
         path: Filesystem path to read. ``read_bytes()`` loads the file in one
             shot — fine for index artifacts (largest single file is
-            ``embeddings.npy`` ≈ 9 MB for a 6,053-chunk × 384-dim float32 corpus).
+            ``embeddings.npy`` ~= 9 MB for a 6,053-chunk x 384-dim float32 corpus).
 
     Returns:
         Lowercase hex digest string, 64 characters.
@@ -166,9 +165,7 @@ def bm25_library_version() -> str:
     return importlib.metadata.version("bm25s")
 
 
-def _atomic_write_manifest(
-    path: Path, manifest: IndexManifest | dict[str, Any]
-) -> None:
+def _atomic_write_manifest(path: Path, manifest: IndexManifest | dict[str, Any]) -> None:
     """Atomic MANIFEST write: tempfile + ``.replace()`` (Pitfall 8 / CD-08).
 
     Writes ``path.with_suffix(".json.tmp")`` with the JSON-serialised payload

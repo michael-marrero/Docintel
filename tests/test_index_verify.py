@@ -44,9 +44,9 @@ def test_verify_clean_build() -> None:
         text=True,
         cwd=_REPO_ROOT,
     )
-    assert build.returncode == 0, (
-        f"docintel-index build exited {build.returncode}: stderr={build.stderr!r}"
-    )
+    assert (
+        build.returncode == 0
+    ), f"docintel-index build exited {build.returncode}: stderr={build.stderr!r}"
 
     verify = subprocess.run(
         ["uv", "run", "docintel-index", "verify"],
@@ -74,14 +74,12 @@ def test_verify_detects_tampered_npy() -> None:
         text=True,
         cwd=_REPO_ROOT,
     )
-    assert build.returncode == 0, (
-        f"docintel-index build exited {build.returncode}: stderr={build.stderr!r}"
-    )
+    assert (
+        build.returncode == 0
+    ), f"docintel-index build exited {build.returncode}: stderr={build.stderr!r}"
 
     embeddings_path = _REPO_ROOT / "data" / "indices" / "dense" / "embeddings.npy"
-    assert embeddings_path.is_file(), (
-        f"embeddings.npy missing after build: {embeddings_path}"
-    )
+    assert embeddings_path.is_file(), f"embeddings.npy missing after build: {embeddings_path}"
 
     original_bytes = embeddings_path.read_bytes()
     try:

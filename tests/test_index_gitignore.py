@@ -52,6 +52,6 @@ def test_indices_dir_ignored() -> None:
         "git check-ignore must report data/indices/.qdrant/storage/segment-0 as ignored — "
         f"IDX-04 umbrella rule broken. stdout={result.stdout!r} stderr={result.stderr!r}"
     )
-    assert "data/indices/" in result.stdout, (
-        f"check-ignore matched a different rule than expected: stdout={result.stdout!r}"
-    )
+    assert (
+        "data/indices/" in result.stdout
+    ), f"check-ignore matched a different rule than expected: stdout={result.stdout!r}"

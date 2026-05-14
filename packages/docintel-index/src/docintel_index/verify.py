@@ -41,7 +41,6 @@ import logging
 from pathlib import Path
 
 import structlog
-
 from docintel_core.adapters.factory import make_index_stores
 from docintel_core.config import Settings
 from docintel_core.types import IndexManifest

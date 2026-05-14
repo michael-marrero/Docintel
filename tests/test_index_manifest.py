@@ -115,9 +115,9 @@ def test_atomic_write_partial_failure(tmp_path: Path) -> None:
         with pytest.raises(_Boom):
             _atomic_write_manifest(dest, {"format_version": "1.0", "marker": "new"})
 
-    assert dest.read_bytes() == original_bytes, (
-        "_atomic_write_manifest left destination in inconsistent state after failure — Pitfall 8"
-    )
-    assert not (tmp_path / "MANIFEST.json.tmp").exists(), (
-        "_atomic_write_manifest left orphan .tmp file after failure — SUGGESTION 10 (try/finally cleanup)"
-    )
+    assert (
+        dest.read_bytes() == original_bytes
+    ), "_atomic_write_manifest left destination in inconsistent state after failure — Pitfall 8"
+    assert not (
+        tmp_path / "MANIFEST.json.tmp"
+    ).exists(), "_atomic_write_manifest left orphan .tmp file after failure — SUGGESTION 10 (try/finally cleanup)"

@@ -76,9 +76,9 @@ def test_skip_unchanged_corpus(tmp_path: Path, capfd: pytest.CaptureFixture[str]
         text=True,
         cwd=_REPO_ROOT,
     )
-    assert first.returncode == 0, (
-        f"first docintel-index build exited {first.returncode}: stderr={first.stderr!r}"
-    )
+    assert (
+        first.returncode == 0
+    ), f"first docintel-index build exited {first.returncode}: stderr={first.stderr!r}"
     assert manifest_path.is_file(), f"MANIFEST.json not written: {manifest_path}"
     first_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -90,9 +90,9 @@ def test_skip_unchanged_corpus(tmp_path: Path, capfd: pytest.CaptureFixture[str]
         text=True,
         cwd=_REPO_ROOT,
     )
-    assert second.returncode == 0, (
-        f"second docintel-index build exited {second.returncode}: stderr={second.stderr!r}"
-    )
+    assert (
+        second.returncode == 0
+    ), f"second docintel-index build exited {second.returncode}: stderr={second.stderr!r}"
     second_combined = (second.stdout or "") + (second.stderr or "")
     assert "index_build_skipped_unchanged_corpus" in second_combined, (
         "second invocation did not log the skip event. "
@@ -101,8 +101,7 @@ def test_skip_unchanged_corpus(tmp_path: Path, capfd: pytest.CaptureFixture[str]
 
     second_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert _canonicalize_manifest(first_manifest) == _canonicalize_manifest(second_manifest), (
-        "MANIFEST.json drifted between two unchanged-corpus builds; "
-        "skip-path contract violated."
+        "MANIFEST.json drifted between two unchanged-corpus builds; " "skip-path contract violated."
     )
 
 

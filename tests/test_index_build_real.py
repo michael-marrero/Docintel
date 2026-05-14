@@ -76,9 +76,9 @@ def test_qdrant_collection_created() -> None:
     manifest = json.loads(
         (_REPO_ROOT / "data" / "indices" / "MANIFEST.json").read_text(encoding="utf-8")
     )
-    assert manifest["dense"]["backend"] == "qdrant", (
-        f"real-mode build must set dense.backend='qdrant'; got {manifest['dense']['backend']!r}"
-    )
+    assert (
+        manifest["dense"]["backend"] == "qdrant"
+    ), f"real-mode build must set dense.backend='qdrant'; got {manifest['dense']['backend']!r}"
     assert manifest["dense"]["collection"] == "docintel-dense-v1", (
         f"real-mode build must use canonical collection name 'docintel-dense-v1'; "
         f"got {manifest['dense'].get('collection')!r}"
@@ -130,6 +130,6 @@ def test_real_mode_embedder_is_bge() -> None:
         f"real-mode embedder.model_id must be 'BAAI/bge-small-en-v1.5'; "
         f"got {manifest['embedder']['model_id']!r}"
     )
-    assert manifest["embedder"]["dim"] == 384, (
-        f"BGE-small-en-v1.5 produces 384-dim vectors; got {manifest['embedder']['dim']!r}"
-    )
+    assert (
+        manifest["embedder"]["dim"] == 384
+    ), f"BGE-small-en-v1.5 produces 384-dim vectors; got {manifest['embedder']['dim']!r}"

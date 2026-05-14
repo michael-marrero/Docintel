@@ -84,9 +84,7 @@ log = structlog.stdlib.get_logger(__name__)
 # The literal value lives here (NOT computed at import time) so any drift is
 # visible in code review. tests/test_qdrant_point_ids.py carries the matching
 # literal; both sides drift together or not at all.
-DOCINTEL_CHUNK_NAMESPACE: Final[uuid.UUID] = uuid.UUID(
-    "576cc79e-7285-5efc-8e6e-b66d3e6f92ae"
-)
+DOCINTEL_CHUNK_NAMESPACE: Final[uuid.UUID] = uuid.UUID("576cc79e-7285-5efc-8e6e-b66d3e6f92ae")
 
 
 _VECTOR_SIZE: Final[int] = 384
@@ -374,9 +372,7 @@ class QdrantDenseStore:
         """Wrapped ``client.create_collection`` — D-06 geometry pinned."""
         self._client.create_collection(
             collection_name=self._collection,
-            vectors_config=VectorParams(
-                size=_VECTOR_SIZE, distance=Distance.COSINE
-            ),
+            vectors_config=VectorParams(size=_VECTOR_SIZE, distance=Distance.COSINE),
         )
 
     @retry(
