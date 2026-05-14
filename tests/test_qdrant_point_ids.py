@@ -67,15 +67,22 @@ def test_uuid5_collision_resistant() -> None:
 
 @pytest.mark.xfail(
     strict=False,
-    reason="DOCINTEL_CHUNK_NAMESPACE pinned in Plan 04-04; xfail removed in Plan 04-07",
+    reason="DOCINTEL_CHUNK_NAMESPACE pinned in Plan 04-05; xfail removed in Plan 04-07",
 )
 def test_namespace_pinned() -> None:
     """Pattern 3: ``DOCINTEL_CHUNK_NAMESPACE`` is a stable module-level UUID constant.
 
     The namespace MUST be pinned so the chunk_id → point_id mapping is stable
-    across machines and dep bumps. Plan 04-04 commits the literal value here
+    across machines and dep bumps. Plan 04-05 commits the literal value here
     AND in the adapter module in the same commit, so this assertion either
     matches both or fails fast on drift.
+
+    The literal value is the output of
+    ``uuid.uuid5(uuid.NAMESPACE_DNS, "docintel.dense.v1")`` computed once at
+    Plan 04-05 land time. A grep-style cross-check in the Plan 04-05 acceptance
+    criteria asserts that this ``expected_uuid`` matches the
+    ``DOCINTEL_CHUNK_NAMESPACE = uuid.UUID("...")`` literal in the adapter
+    source — both sides drift together or not at all.
     """
     qdrant_dense = pytest.importorskip("docintel_core.adapters.real.qdrant_dense")
     namespace = qdrant_dense.DOCINTEL_CHUNK_NAMESPACE
@@ -83,7 +90,11 @@ def test_namespace_pinned() -> None:
     assert isinstance(namespace, uuid.UUID), (
         f"DOCINTEL_CHUNK_NAMESPACE must be a uuid.UUID; got {type(namespace).__name__}"
     )
-    # The literal value is set by Plan 04-04; this assertion is intentionally
-    # tight so a drift is caught immediately. Plan 04-04 amends both sides in
-    # the same commit.
-    assert str(namespace), "namespace UUID stringifies to a non-empty value"
+    # Plan 04-05 pinned literal — must match qdrant_dense.py DOCINTEL_CHUNK_NAMESPACE.
+    expected_uuid = "576cc79e-7285-5efc-8e6e-b66d3e6f92ae"
+    assert str(namespace) == expected_uuid, (
+        f"DOCINTEL_CHUNK_NAMESPACE drift detected — expected {expected_uuid!r}, "
+        f"got {str(namespace)!r}. Both qdrant_dense.py and this test must "
+        "update together; a one-sided change breaks the chunk_id → point_id "
+        "mapping across rebuilds and machines."
+    )
