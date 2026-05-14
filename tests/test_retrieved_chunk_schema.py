@@ -49,7 +49,6 @@ def _ok_payload() -> dict:
     }
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 1 — implementation lands in Plan 05-02 (docintel_core.types.RetrievedChunk)")
 def test_retrieved_chunk_required_fields() -> None:
     """RET-04 — all seven D-03 fields are accepted (Plan 05-02)."""
     # In-function import: RetrievedChunk does not yet live in docintel_core.types at Wave 0.
@@ -65,7 +64,6 @@ def test_retrieved_chunk_required_fields() -> None:
     assert rc.char_span_in_section == (100, 250)
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 1 — implementation lands in Plan 05-02 (docintel_core.types.RetrievedChunk)")
 def test_char_span_tuple() -> None:
     """RET-04 — char_span_in_section round-trips as tuple[int, int] (D-16; Plan 05-02)."""
     from docintel_core.types import RetrievedChunk  # noqa: WPS433
@@ -77,7 +75,6 @@ def test_char_span_tuple() -> None:
     assert all(isinstance(v, int) for v in rc.char_span_in_section)
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 1 — implementation lands in Plan 05-02 (docintel_core.types.RetrievedChunk extra='forbid')")
 def test_retrieved_chunk_forbids_extra() -> None:
     """RET-04 — extra='forbid' rejects per-stage debug fields on the public shape (D-03; Plan 05-02)."""
     from pydantic import ValidationError  # noqa: WPS433
@@ -89,7 +86,6 @@ def test_retrieved_chunk_forbids_extra() -> None:
         RetrievedChunk(**payload)
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 1 — implementation lands in Plan 05-02 (docintel_core.types.RetrievedChunk frozen=True)")
 def test_retrieved_chunk_is_frozen() -> None:
     """RET-04 — Pydantic frozen=True; downstream callers must not mutate (Plan 05-02)."""
     from pydantic import ValidationError  # noqa: WPS433
