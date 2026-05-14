@@ -18,10 +18,11 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-docintel-core = { workspace = true }
-docintel-api  = { workspace = true }
-docintel-ui   = { workspace = true }
-docintel-eval = { workspace = true }
+docintel-core   = { workspace = true }
+docintel-api    = { workspace = true }
+docintel-ui     = { workspace = true }
+docintel-eval   = { workspace = true }
+docintel-ingest = { workspace = true }
 torch = [
     { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
 ]
