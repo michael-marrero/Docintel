@@ -180,15 +180,15 @@ def test_reranker_canary_real_mode() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 05-06 implements canary driver; Plan 05-05 ships docintel_retrieve.retriever._CLAUDE_MD_HARD_GATE which this test imports")
 def test_failure_message_quotes_claude_md() -> None:
-    """RET-03 — verbatim CLAUDE.md hard-gate quote appears in BOTH the test-local _CLAUDE_MD_QUOTE constant AND in docintel_retrieve.retriever._CLAUDE_MD_HARD_GATE (Pitfall 6 doubling; final implementation in Plan 05-06)."""
-    # In-function import — DEFERRED on purpose. At Wave 0 docintel_retrieve.retriever
-    # does not yet exist; this ImportError makes the xfail "real" (xfail strict=True
-    # will fail if the test starts passing for any reason while the marker is still
-    # in place). At Wave 2 (after Plan 05-05 ships retriever.py and Plan 05-06
-    # removes the xfail), this import resolves and the assertions below run for
-    # real.
+    """RET-03 — verbatim CLAUDE.md hard-gate quote appears in BOTH the test-local _CLAUDE_MD_QUOTE constant AND in docintel_retrieve.retriever._CLAUDE_MD_HARD_GATE (Pitfall 6 doubling)."""
+    # In-function import — kept in-function because Plan 05-06 will promote
+    # the canary test to a real driver and may move the import discipline;
+    # for now the in-function placement matches the existing scaffold pattern.
+    # Plan 05-05 ships ``_CLAUDE_MD_HARD_GATE`` so this assertion now runs
+    # for real (the xfail marker was removed by Plan 05-05 as a Rule 3
+    # deviation — the strict-xpass it would otherwise produce blocks the
+    # plan-level ``uv run pytest -ra -q full suite green`` verification gate).
     from docintel_retrieve.retriever import _CLAUDE_MD_HARD_GATE  # noqa: WPS433 — intentional in-function import; see Plan 05-06 wave-flip notes
 
     # Pitfall 6 mitigation — three substrings asserted in BOTH constants (defense doubled).
