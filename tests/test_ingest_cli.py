@@ -39,7 +39,6 @@ _XFAIL = pytest.mark.xfail(
 )
 
 
-@_XFAIL
 def test_help_lists_subcommands() -> None:
     """``docintel-ingest --help`` lists every Wave 0 subcommand."""
     result = subprocess.run(
@@ -54,7 +53,6 @@ def test_help_lists_subcommands() -> None:
         assert sub in result.stdout, f"subcommand {sub!r} missing from --help"
 
 
-@_XFAIL
 def test_help_latency_under_5s() -> None:
     """``--help`` cold start < 5 s (Pitfall 9 — no torch import at module top)."""
     t0 = time.perf_counter()
@@ -72,7 +70,6 @@ def test_help_latency_under_5s() -> None:
     ), f"--help took {elapsed:.2f}s — possible torch import at module top (Pitfall 9)"
 
 
-@_XFAIL
 def test_version_flag() -> None:
     """``--version`` exits 0 with a semver-ish string."""
     result = subprocess.run(
@@ -88,7 +85,6 @@ def test_version_flag() -> None:
     ), f"--version output lacks semver: {result.stdout!r}"
 
 
-@_XFAIL
 def test_no_torch_import_on_help() -> None:
     """``PYTHONVERBOSE=1 docintel-ingest --help`` does not pull in torch or transformers (Pitfall 9)."""
     env = {**os.environ, "PYTHONVERBOSE": "1"}

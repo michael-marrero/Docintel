@@ -34,7 +34,6 @@ _XFAIL = pytest.mark.xfail(
 )
 
 
-@_XFAIL
 def test_chunk_schema() -> None:
     """A constructed Chunk has every D-15 + CD-02 field."""
     from docintel_core.types import Chunk
