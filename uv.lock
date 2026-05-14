@@ -19,6 +19,7 @@ members = [
     "docintel-eval",
     "docintel-index",
     "docintel-ingest",
+    "docintel-retrieve",
     "docintel-ui",
     "docintel-workspace",
 ]
@@ -328,6 +329,21 @@ requires-dist = [
     { name = "docintel-core", editable = "packages/docintel-core" },
     { name = "sec-edgar-downloader", specifier = "==5.1.0" },
     { name = "selectolax", specifier = "==0.4.8" },
+]
+
+[[package]]
+name = "docintel-retrieve"
+version = "0.1.0"
+source = { editable = "packages/docintel-retrieve" }
+dependencies = [
+    { name = "docintel-core" },
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "docintel-core", editable = "packages/docintel-core" },
+    { name = "numpy", specifier = "==2.4.4" },
 ]
 
 [[package]]

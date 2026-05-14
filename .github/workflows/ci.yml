@@ -65,6 +65,12 @@ jobs:
       - name: pytest
         run: uv run pytest -ra -q
 
+      - name: Reranker canary (stub-mode acceptance gate) (RET-03)
+        # Phase 5 STRUCTURAL ACCEPTANCE GATE. Per CLAUDE.md: if this fails,
+        # look at BGE 512-token truncation FIRST before suspecting hybrid
+        # retrieval, RRF, or chunk size.
+        run: uv run pytest tests/test_reranker_canary.py -ra -q -m "not real"
+
       - name: Adapter wrap grep gate (ADP-06)
         # Every real adapter file with an SDK call must import tenacity.
         # Script exits non-zero if any file under packages/docintel-core/src/docintel_core/adapters/real/

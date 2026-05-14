@@ -36,7 +36,7 @@ Read these first when picking up work:
 Encoded in ROADMAP.md `Depends on` lines, but worth surfacing here because they're easy to miss:
 
 - **Phase 2 (adapters/protocols/stubs) must land before Phase 4 (embedding/indexing).** If protocols slip, eval-in-CI becomes theater.
-- **Phase 5 carries the reranker silent-truncation canary as a structural acceptance gate.** Cross-encoder must measurably improve top-3 hit rate vs. dense-only on ≥5 hand-written cases. If that gate fails, look at BGE 512-token truncation FIRST — before suspecting hybrid retrieval, RRF, or chunk size.
+- **Phase 5 carries the reranker silent-truncation canary as a structural acceptance gate.** Cross-encoder must measurably improve top-3 hit rate vs. dense-only on ≥5 hand-written cases. If that gate fails, look at BGE 512-token truncation FIRST — before suspecting hybrid retrieval, RRF, or chunk size. This is the most common subtle failure mode and the canary exists specifically to catch it.
 - **Phase 9 (metrics) depends on Phase 7 (Answer schema) AND Phase 8 (ground truth).** Both must exist; ground truth is parallelizable with Phases 4–7.
 - **Phase 13 (API+UI+polish) depends on Phase 11 (ablation) AND Phase 12 (observability).** Phase 13 carries disproportionate recruiter weight — multi-hop hero GIF, hoverable citations, README from measurements, ≥8 ADRs in DECISIONS.md. Protect this phase's time.
 

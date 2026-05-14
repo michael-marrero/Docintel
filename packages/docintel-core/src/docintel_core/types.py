@@ -48,6 +48,7 @@ __all__ = [
     "IndexManifestEmbedder",
     "NormalizedFiling",
     "NormalizedFilingManifest",
+    "RetrievedChunk",
 ]
 
 
@@ -142,6 +143,52 @@ class Chunk(BaseModel):
     next_chunk_id: str | None
     # CD-02: 16-char truncated hex of sha256(text).
     sha256_of_text: str
+
+
+class RetrievedChunk(BaseModel):
+    """A single retrieval result returned by ``Retriever.search`` (Phase 5).
+
+    D-03: the public retrieval shape is exactly seven fields — ``chunk_id``,
+          ``text``, ``score``, ``ticker``, ``fiscal_year``, ``item_code``,
+          ``char_span_in_section``. Per-stage debug fields (``bm25_rank``,
+          ``dense_rank``, ``rrf_score``, ``rerank_score``) are deliberately
+          OMITTED from the public model — they are internal accounting that
+          downstream callers (Phase 6 reader, Phase 7 generation, Phase 13
+          UI) MUST NOT depend on. RESEARCH.md anti-pattern line 622 forbids
+          leaking them onto the public shape; ``ConfigDict(extra="forbid")``
+          is the bite point.
+    D-16: ``char_span_in_section`` is the citation anchor — Phase 7's
+          ``Citation`` will render the chunk text inline AND offer an
+          "expand" affordance that highlights the span in the surrounding
+          section text. Same semantics as ``Chunk.char_span_in_section``.
+    CD-02: this model lives in ``docintel_core.types`` (not in
+          ``docintel_retrieve.types``) so Phase 6 / 7 / 13 can import it
+          without depending on the retrieve package. The schema is a
+          contract; the retrieve package re-exports it as a convenience.
+    Frozen=True: downstream callers MUST NOT mutate the result list —
+          ``rc.score = X`` raises ``pydantic.ValidationError`` after
+          construction. This is defense-in-depth against a Phase 7
+          reranker-output-shape mistake that would otherwise silently
+          corrupt RRF scores in shared result lists.
+
+    The ``score`` field is the final score a caller should compare against —
+    after the reranker stage in the default pipeline, or the RRF score in
+    the no-rerank ablation (Phase 11). Callers should not need to know
+    which stage produced it; the orchestrator owns the policy.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chunk_id: str
+    text: str
+    # final reranker score (or RRF score in no-rerank ablation)
+    score: float
+    ticker: str
+    fiscal_year: int
+    # e.g., "Item 1A" — matches Phase 3 Chunk.item_code
+    item_code: str
+    # citation anchor — Phase 3 D-16
+    char_span_in_section: tuple[int, int]
 
 
 class IndexManifestEmbedder(BaseModel):
