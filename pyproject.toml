@@ -59,7 +59,9 @@ files = ["packages/*/src"]
 [[tool.mypy.overrides]]
 # sentence_transformers, transformers, and torch lack inline type stubs.
 # All three are heavyweight ML libraries with incomplete or absent py.typed markers.
-# Per-module ignore_missing_imports is the canonical mypy knob (D-19).
+# selectolax (Lexbor backend, Cython extension) ships no stubs. sec_edgar_downloader
+# 5.1.0 has no py.typed marker. Per-module ignore_missing_imports is the canonical
+# mypy knob (D-19; extended in Plan 03-04 for the Phase 3 ingest stack).
 module = [
     "sentence_transformers",
     "sentence_transformers.*",
@@ -67,6 +69,10 @@ module = [
     "transformers.*",
     "torch",
     "torch.*",
+    "selectolax",
+    "selectolax.*",
+    "sec_edgar_downloader",
+    "sec_edgar_downloader.*",
 ]
 ignore_missing_imports = true
 

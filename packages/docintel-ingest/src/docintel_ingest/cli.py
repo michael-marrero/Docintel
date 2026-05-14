@@ -86,8 +86,12 @@ def main(argv: list[str] | None = None) -> int:
     # wave ships its module, mypy will resolve naturally and the ignores can be
     # removed in the same wave-flip commit that ships the implementation.
     if args.cmd == "fetch":
+        # Plan 03-04 wave-flip: docintel_ingest.fetch ships in this commit, so
+        # the prior `type: ignore[import-not-found]` is now unused — removed
+        # per the docstring rule ("removed in the same wave-flip commit that
+        # ships the implementation").
         try:
-            from docintel_ingest.fetch import fetch_all  # type: ignore[import-not-found]
+            from docintel_ingest.fetch import fetch_all
         except ImportError:
             return _not_yet_implemented(args.cmd)
         return int(fetch_all(cfg))
