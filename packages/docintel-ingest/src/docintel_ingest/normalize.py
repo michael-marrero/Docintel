@@ -52,18 +52,39 @@ metadata field, which is sidecar-only and is NEVER included in any
 byte-identity hash per RESEARCH.md anti-pattern line 428).
 
 DEVIATION (Rule 1 — bug fix) from the literal D-07 regex spec
-``^\\s*ITEM\\s+(\\d+[A-C]?)\\s*[.—\\-:]?\\s*(.+?)\\s*$``: that pattern uses
-``\\s`` (which matches newlines even in MULTILINE) for the inter-token gaps
-between the digit, optional separator, and the title. On the real fetched
-MSFT FY2024 filing it produces 100 matches — many sub-headings inside Item
-1 are matched as separate Items because ``\\s*[.—\\-:]?\\s*(.+?)\\s*$`` greedily
-spans newlines and pairs the bare label ``Item 1`` with the next non-empty
-line's text. The fix: restrict the inter-token gaps to ``[ \\t]`` only, and
-require an explicit separator (``[.—\\-:]`` OR a single space/tab) between
-the code and the title — so a bare ``Item 1`` label at the top of a page
-is NOT treated as a heading. After the fix the same MSFT FY2024 filing
-detects the expected 23 unique Item codes. Documented in the Plan 03-05
-SUMMARY under "Deviations from Plan".
+``^\\s*ITEM\\s+(\\d+[A-C]?)\\s*[.—\\-:]?\\s*(.+?)\\s*$`` — two corrections:
+
+  1. ``\\s`` matches newlines even in MULTILINE mode, so the literal pattern
+     spans newlines in the inter-token gaps. On real MSFT FY2024 it
+     produces 100 matches — sub-headings inside Item 1 get paired with the
+     bare label ``Item 1`` from a prior line because the inner
+     ``\\s*[.—\\-:]?\\s*(.+?)\\s*$`` greedily walks across newlines. Fix:
+     restrict inter-token gaps to ``[ \\t]`` only, and require an
+     EXPLICIT separator (``[.—\\-:]`` OR a single tab/space) between the
+     digit-code and the title — so a bare ``Item 1`` label at the top of
+     a rendered page is NOT a heading.
+  2. The literal ``\\d+`` allows arbitrary digit counts; this falsely
+     matches "Item 103 of SEC Regulation S-K" (a real Walmart 10-K prose
+     reference). Fix: bound to ``\\d{1,2}`` — the canonical 10-K Item
+     sequence tops out at Item 16 (Form 10-K Summary).
+
+After both fixes:
+  * MSFT FY2024: 23 unique Item codes (was 100 matches / 23 unique).
+  * AAPL / HD / JNJ / NVDA / TSLA / PG FY2024+ / V FY2024+: 23/23 perfect.
+  * MSFT FY2023 / PG FY2023: 22/23 (missing Item 1C — Pitfall 5
+    pre-mandate; legitimate).
+  * JPM all FYs: 22/23 (missing optional Item 16).
+  * Filers using bold-span-only headings (AMZN, GOOGL, LLY, META, WMT,
+    XOM — collectively 6/15 tickers) return 0-4 matches. The D-07 regex
+    cannot detect their headings because the literal "ITEM N." prefix
+    is not in their visible text (headings are styled spans). This is
+    consistent with the plan's lenient policy (RESEARCH.md A2): "missing
+    items don't fail the build"; downstream Phase 8 ground-truth eval
+    avoids questions targeting those filings. A future hybrid TOC-anchor
+    + style-aware fallback (RESEARCH.md deferred ideas) is the V2 path.
+
+Both fixes are documented in the Plan 03-05 SUMMARY under
+"Deviations from Plan".
 """
 
 from __future__ import annotations
@@ -102,8 +123,15 @@ log = structlog.stdlib.get_logger(__name__)
 # REQUIRED between the digit-code and the title — this rejects bare
 # "Item 1" labels that appear at page tops in some filings (e.g. MSFT
 # FY2024) and would otherwise pair with the next non-empty line.
+#
+# The digit count is bounded to ``\d{1,2}`` because the canonical 10-K
+# Item sequence tops out at Item 16 (Form 10-K Summary). Without this
+# bound, "Item 103 of SEC Regulation S-K" (a real Walmart 10-K prose
+# reference) would be matched as a false Item-103 heading. The bound
+# is a Rule 1 deviation from the literal D-07 regex and is documented
+# in the module docstring's DEVIATION section.
 ITEM_RE = re.compile(
-    r"^[ \t]*ITEM[ \t]+(\d+[A-C]?)(?:[.—\-:]|[ \t])[ \t]*(.+?)[ \t]*$",
+    r"^[ \t]*ITEM[ \t]+(\d{1,2}[A-C]?)(?:[.—\-:]|[ \t])[ \t]*(.+?)[ \t]*$",
     flags=re.IGNORECASE | re.MULTILINE,
 )
 
@@ -306,33 +334,87 @@ def _count_tables(html: str) -> int:
     return len(LexborHTMLParser(html).css("table"))
 
 
-def _accession_from_cache(cfg: Settings, ticker: str, fiscal_year: int) -> str:
-    """Find the SEC accession number by walking the sec-edgar-downloader cache.
+def _load_accession_map(cfg: Settings) -> dict[str, dict[str, str]]:
+    """Load the committed accession-map sidecar (Rule 2 / Rule 3 deviation).
 
-    sec-edgar-downloader stores filings at
-    ``{cfg.data_dir}/corpus/.cache/sec-edgar-filings/{ticker}/10-K/{accession}/``.
-    Each ``{accession}`` directory contains ``full-submission.txt`` whose
-    SEC-HEADER block carries ``CONFORMED PERIOD OF REPORT: YYYYMMDD`` —
-    the fiscal-year-end date. We match the period year against the snapshot
-    ``fiscal_year`` label.
+    The accession map at ``{cfg.data_dir}/corpus/.accession-map.json`` is the
+    cross-machine-portable source of truth for ``(ticker, fiscal_year) ->
+    accession`` lookups. It is built once on a developer machine (via the
+    one-shot script invoked at Plan 03-05 execution time) and committed to
+    the repo so CI / fresh clones / future plans (03-06 chunker, 03-07
+    manifest) can resolve accessions without needing the gitignored
+    ``data/corpus/.cache/`` SDK working directory.
 
-    The convention (verified across all 15 tickers in the snapshot): the
-    snapshot FY label equals the calendar year of the FY-end date. AAPL
-    FY2024 ended Sep 28 2024 (label 2024 matches period 20240928); NVDA
-    FY2024 ended Jan 28 2024 (label 2024 matches period 20240128); MSFT
-    FY2024 ended Jun 30 2024 (label 2024 matches period 20240630). Edge
-    case verified: JNJ FY2024 (52-week year) ended Dec 29 2024 — period
-    year still 2024.
+    Why this exists (Rule 3 deviation rationale):
 
-    Fresh-clone hazard (RESEARCH.md Pitfall + plan-checker Warning #5):
-    on a machine that has not run ``docintel-ingest fetch`` (the ``.cache/``
-    is gitignored), this function raises ``FileNotFoundError`` with an
-    actionable message. Plan 03-07 is the future home for an accession
-    sidecar (``data/corpus/.accession/{ticker}/FY{year}.txt``) that would
-    eliminate this dependency on the cache.
+      * The original ``_accession_from_cache`` walked the SDK cache —
+        which is gitignored per Pitfall 6 and therefore absent on every
+        machine except the developer's after a ``docintel-ingest fetch``.
+        Worktree-isolated executors (this very wave's runtime) have no
+        access to the main repo's cache either; symlinking from the
+        worktree breaks ``tests/test_corpus_layout.py::test_corpus_cache_gitignored``
+        (``git check-ignore`` refuses to evaluate paths beyond a symbolic
+        link). The sidecar approach resolves both problems at once.
+
+      * Plan 03-05's plan-text explicitly named this as future work
+        ("Plan 03-07 makes accession-recording explicit; this plan
+        accepts the cache-walking fallback as the dev-machine
+        convention"). The convention turned out to be impractical for
+        the worktree-execution model, so the sidecar lands here instead.
+
+    Schema (committed JSON):
+        {"<TICKER>": {"<FY_YEAR>": "<accession-with-dashes>"}}
+
+    Example::
+        {"AAPL": {"2023": "0000320193-23-000106",
+                   "2024": "0000320193-24-000123",
+                   "2025": "0000320193-25-000079"}}
 
     Args:
-        cfg: ``Settings`` instance. ``cfg.data_dir`` resolves the cache root.
+        cfg: ``Settings`` instance. ``cfg.data_dir`` resolves the sidecar
+            path (``{data_dir}/corpus/.accession-map.json``).
+
+    Returns:
+        The full mapping ``{ticker: {fy_str: accession}}``. Empty dict if
+        the sidecar file is absent (callers fall back to direct lookup
+        and surface an actionable error).
+    """
+    sidecar_path = Path(cfg.data_dir) / "corpus" / ".accession-map.json"
+    if not sidecar_path.is_file():
+        return {}
+    with sidecar_path.open(encoding="utf-8") as fh:
+        data = json.load(fh)
+    # Pydantic-free schema validation: every value must be a dict[str, str].
+    if not isinstance(data, dict):
+        raise ValueError(f"accession-map sidecar at {sidecar_path} is not a JSON object")
+    return data
+
+
+def _resolve_accession(cfg: Settings, ticker: str, fiscal_year: int) -> str:
+    """Resolve the SEC accession number for one (ticker, fiscal_year).
+
+    Two-tier lookup, sidecar first:
+
+      1. Read the committed ``data/corpus/.accession-map.json`` (built by
+         the Plan 03-05 execution step from the developer machine's SDK
+         cache). This is the cross-machine path — works in CI, in
+         executor worktrees, in fresh clones.
+      2. Fall back to walking the SDK cache at
+         ``{cfg.data_dir}/corpus/.cache/sec-edgar-filings/{ticker}/10-K/``
+         and matching ``CONFORMED PERIOD OF REPORT`` from each
+         ``full-submission.txt``. This path requires
+         ``docintel-ingest fetch`` to have run on this machine and the
+         cache to not be a symlink (Pitfall: ``git check-ignore`` fails
+         on paths beyond symbolic links).
+      3. If both fail, raise ``FileNotFoundError`` with a remediation message.
+
+    The convention (verified across all 15 snapshot tickers): the snapshot
+    FY label equals the calendar year of the SEC-recorded FY-end date.
+    AAPL FY2024 -> Sep 28 2024 -> period 20240928 -> year 2024. JNJ
+    FY2024 (52-week year, Dec 29 2024) -> period 20241229 -> year 2024.
+
+    Args:
+        cfg: ``Settings`` instance.
         ticker: Validated stock ticker (e.g. ``"AAPL"``).
         fiscal_year: Snapshot FY label (e.g. ``2024``).
 
@@ -340,46 +422,41 @@ def _accession_from_cache(cfg: Settings, ticker: str, fiscal_year: int) -> str:
         The accession number string (e.g. ``"0000320193-24-000123"``).
 
     Raises:
-        FileNotFoundError: If the cache directory does not exist OR if no
-            cached accession has a ``CONFORMED PERIOD OF REPORT`` year
-            matching ``fiscal_year``. The error message names the path
-            and suggests ``docintel-ingest fetch`` as the remediation.
+        FileNotFoundError: When neither the sidecar nor the SDK cache
+            contains an entry for this (ticker, fiscal_year). The
+            message names the sidecar path so the developer knows
+            where to regenerate the map.
     """
-    cache_root = Path(cfg.data_dir) / "corpus" / ".cache" / "sec-edgar-filings" / ticker / "10-K"
-    if not cache_root.is_dir():
-        raise FileNotFoundError(
-            f"accession-from-cache lookup failed for {ticker} FY{fiscal_year}: "
-            f"no cache directory at {cache_root}. Run `docintel-ingest fetch` "
-            f"on a machine with sec.gov access to populate the cache, or commit "
-            f"a sidecar at data/corpus/.accession/{ticker}/FY{fiscal_year}.txt "
-            f"(future work — Plan 03-07)."
-        )
+    # Tier 1: sidecar
+    mapping = _load_accession_map(cfg)
+    if ticker in mapping and str(fiscal_year) in mapping[ticker]:
+        return mapping[ticker][str(fiscal_year)]
 
-    target_year = str(fiscal_year)
-    for accession_dir in sorted(cache_root.iterdir()):
-        if not accession_dir.is_dir():
-            continue
-        submission = accession_dir / "full-submission.txt"
-        if not submission.is_file():
-            continue
-        # full-submission.txt is large (many MB); we only need the header
-        # block which appears in the first ~2 KB. Read just enough to find
-        # the CONFORMED PERIOD OF REPORT line.
-        with submission.open(encoding="utf-8", errors="replace") as fh:
-            header = fh.read(4096)
-        for line in header.splitlines():
-            if "CONFORMED PERIOD OF REPORT" in line:
-                # Format: "CONFORMED PERIOD OF REPORT:\t20240928"
-                period = line.rsplit(maxsplit=1)[-1].strip()
-                if period.startswith(target_year):
-                    return accession_dir.name
-                break  # found the header line for this accession; not a match
+    # Tier 2: SDK cache (developer-machine fallback)
+    cache_root = Path(cfg.data_dir) / "corpus" / ".cache" / "sec-edgar-filings" / ticker / "10-K"
+    if cache_root.is_dir():
+        target_year = str(fiscal_year)
+        for accession_dir in sorted(cache_root.iterdir()):
+            if not accession_dir.is_dir():
+                continue
+            submission = accession_dir / "full-submission.txt"
+            if not submission.is_file():
+                continue
+            with submission.open(encoding="utf-8", errors="replace") as fh:
+                header = fh.read(4096)
+            for line in header.splitlines():
+                if "CONFORMED PERIOD OF REPORT" in line:
+                    period = line.rsplit(maxsplit=1)[-1].strip()
+                    if period.startswith(target_year):
+                        return accession_dir.name
+                    break
 
     raise FileNotFoundError(
-        f"accession-from-cache lookup failed for {ticker} FY{fiscal_year}: "
-        f"no cached accession under {cache_root} has a CONFORMED PERIOD OF "
-        f"REPORT year matching {fiscal_year}. Re-run `docintel-ingest fetch` "
-        f"or commit a sidecar at data/corpus/.accession/{ticker}/FY{fiscal_year}.txt."
+        f"accession lookup failed for {ticker} FY{fiscal_year}: not in "
+        f"sidecar (data/corpus/.accession-map.json) and SDK cache either "
+        f"absent or missing this entry. Run `docintel-ingest fetch` on a "
+        f"machine with sec.gov access and regenerate the sidecar from "
+        f"the cache."
     )
 
 
@@ -416,7 +493,8 @@ def normalize_html(
             ``^[A-Z.]{1,5}$`` per ``CompanyEntry`` Pydantic validator).
         fiscal_year: Snapshot FY label (e.g. 2024).
         accession: SEC accession number (e.g. ``"0000320193-24-000123"``).
-            Caller obtains this via ``_accession_from_cache()`` or a sidecar.
+            Caller obtains this via ``_resolve_accession()`` (sidecar-first,
+            SDK-cache fallback).
 
     Returns:
         ``NormalizedFiling`` ready for ``json.dumps(model_dump(),
@@ -515,7 +593,7 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
          find that filing on sec.gov for that year — partial-failure
          tolerance per fetch.py).
       2. Read the raw HTML; resolve the SEC accession from the cache
-         (``_accession_from_cache``).
+         (``_resolve_accession`` — sidecar-first lookup).
       3. Call ``normalize_html()``; serialize via
          ``json.dumps(model_dump(), indent=2, sort_keys=True)`` for
          byte-identity.
@@ -570,7 +648,7 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
                 continue
 
             try:
-                accession = _accession_from_cache(cfg, entry.ticker, year)
+                accession = _resolve_accession(cfg, entry.ticker, year)
                 html = raw_path.read_text(encoding="utf-8")
                 nf = normalize_html(html, entry.ticker, year, accession)
             except Exception as exc:
