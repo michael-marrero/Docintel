@@ -279,3 +279,15 @@ class BM25Store(Protocol):
     def verify(self) -> bool:
         """Re-hash ``index.npz`` and assert match with ``MANIFEST.bm25.sha256`` (D-14)."""
         ...
+
+    def last_vocab_size(self) -> int:
+        """Vocabulary size from the most recent ``commit()`` (sourced into MANIFEST).
+
+        Plan 04-05's MANIFEST writer reads this via the store instance to fill
+        ``IndexManifestBM25.vocab_size`` (D-13). Returns 0 if ``commit()`` has
+        not been called yet. Part of the BM25Store Protocol because D-13's
+        ``IndexManifestBM25.vocab_size`` is a load-bearing schema field — every
+        BM25 implementation must expose its vocab size for the manifest
+        contract.
+        """
+        ...
