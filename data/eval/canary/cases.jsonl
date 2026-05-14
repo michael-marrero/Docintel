@@ -1,0 +1,1 @@
+{"case_id": "C-00-placeholder", "question": "PLACEHOLDER — replaced by curated cases in Plan 05-06", "gold_chunk_ids": ["AAPL-FY2024-Item-1-000"], "ticker": "AAPL", "fiscal_year": 2024, "rationale": "Wave 0 placeholder so the JSONL loader test has a target file; real curated cases land in Plan 05-06 Wave 2 per RESEARCH §7 playbook + §8 stub-vs-real verification protocol."}
