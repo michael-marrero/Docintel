@@ -62,8 +62,23 @@ jobs:
         # D-19: ignore_missing_imports removed; per-module overrides cover torch/sentence_transformers/transformers.
         run: uv run mypy --strict packages/*/src
 
+      - name: Build indices (stub)
+        # Phase 4 IDX-01..04. Builds NumpyDenseStore + Bm25sStore on every PR.
+        # Expected wall-clock < 10s for 6,053 chunks. Stub-mode default.
+        # MUST run BEFORE pytest — tests/test_bm25_store.py + tests/test_index_*.py
+        # assert against artifacts under data/indices/{bm25,dense}/*.
+        run: uv run docintel-index all
+
+      - name: Verify indices (D-14)
+        # Re-hash dense + bm25 artifacts; assert MANIFEST sha256s match.
+        # Catches non-deterministic build paths AND silent dep drift.
+        run: uv run docintel-index verify
+
       - name: pytest
-        run: uv run pytest -ra -q
+        # Deselect real-mode tests (-m "not real") — they require
+        # API keys + qdrant service + HF model download. Real-mode runs
+        # in the workflow_dispatch-only real-index-build job below.
+        run: uv run pytest -ra -q -m "not real"
 
       - name: Reranker canary (stub-mode acceptance gate) (RET-03)
         # Phase 5 STRUCTURAL ACCEPTANCE GATE. Per CLAUDE.md: if this fails,
@@ -89,16 +104,6 @@ jobs:
         # import tenacity. Structurally enforces no-silent-retries on the
         # Qdrant HTTP path (Phase 4 IDX-* / Pitfall 6 dep drift defense).
         run: bash scripts/check_index_wraps.sh
-
-      - name: Build indices (stub)
-        # Phase 4 IDX-01..04. Builds NumpyDenseStore + Bm25sStore on every PR.
-        # Expected wall-clock < 10s for 6,053 chunks. Stub-mode default.
-        run: uv run docintel-index all
-
-      - name: Verify indices (D-14)
-        # Re-hash dense + bm25 artifacts; assert MANIFEST sha256s match.
-        # Catches non-deterministic build paths AND silent dep drift.
-        run: uv run docintel-index verify
 
       - name: Chunk-idempotency gate (ING-04)
         # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
