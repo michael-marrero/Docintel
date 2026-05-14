@@ -31,9 +31,7 @@ def test_normalize_golden_matches() -> None:
     from docintel_ingest.normalize import normalize_html
 
     html = (_SAMPLE_DIR / "aapl_FY2024_trimmed.html").read_text(encoding="utf-8")
-    expected = json.loads(
-        (_SAMPLE_DIR / "aapl_FY2024_normalized.json").read_text(encoding="utf-8")
-    )
+    expected = json.loads((_SAMPLE_DIR / "aapl_FY2024_normalized.json").read_text(encoding="utf-8"))
     # The placeholder marker key is stripped by Plan 03-05 when regenerating;
     # tolerate its absence here (it should not be present after regeneration).
     expected.pop("_comment", None)
