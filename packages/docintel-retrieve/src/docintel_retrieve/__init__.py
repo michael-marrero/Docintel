@@ -15,4 +15,6 @@ Public surface is built up incrementally across Plans 05-02..05-05:
 - Plan 05-05 adds Retriever re-export.
 """
 
-__all__: list[str] = []
+from docintel_core.types import RetrievedChunk
+
+__all__ = ["RetrievedChunk"]
