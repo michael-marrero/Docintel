@@ -1,0 +1,41 @@
+{
+  "_comment": "PLACEHOLDER — Wave 3 regenerates from real normalizer output",
+  "accession": "0000320193-24-000123",
+  "fiscal_year": 2024,
+  "manifest": {
+    "items_found": [
+      "Item 1",
+      "Item 1A",
+      "Item 7"
+    ],
+    "items_missing": [
+      "Item 1B",
+      "Item 1C",
+      "Item 2",
+      "Item 3",
+      "Item 4",
+      "Item 5",
+      "Item 6",
+      "Item 7A",
+      "Item 8",
+      "Item 9",
+      "Item 9A",
+      "Item 9B",
+      "Item 10",
+      "Item 11",
+      "Item 12",
+      "Item 13",
+      "Item 14",
+      "Item 15"
+    ],
+    "ordering_valid": true,
+    "tables_dropped": 1
+  },
+  "raw_path": "tests/fixtures/sample_10k/aapl_FY2024_trimmed.html",
+  "sections": {
+    "Item 1": "PLACEHOLDER — Wave 3 regenerates this with the real normalizer output.",
+    "Item 1A": "PLACEHOLDER — must include the unwrapped ix:nonNumeric prose.",
+    "Item 7": "PLACEHOLDER — must include the ~600-token outlier paragraph."
+  },
+  "ticker": "AAPL"
+}
