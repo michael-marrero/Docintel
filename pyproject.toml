@@ -22,6 +22,7 @@ docintel-core   = { workspace = true }
 docintel-api    = { workspace = true }
 docintel-ui     = { workspace = true }
 docintel-eval   = { workspace = true }
+docintel-index  = { workspace = true }
 docintel-ingest = { workspace = true }
 torch = [
     { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
