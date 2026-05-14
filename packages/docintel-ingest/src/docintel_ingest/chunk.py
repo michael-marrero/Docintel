@@ -313,27 +313,103 @@ def _emit_chunk(
     )
 
 
-def _take_overlap(paragraphs: list[str]) -> list[str]:
-    """Return the trailing paragraphs of the just-closed chunk whose token sum is >= OVERLAP_TOKENS.
+# Upper bound on overlap token-count. The plan calls for ~50 tokens of
+# overlap; we cap at 2x that (100) to keep the overlap meaningfully small
+# even when the trailing paragraph is large. Without this cap a single
+# 480-token trailing paragraph would be carried over wholesale and,
+# combined with the next ~200-token paragraph, push the next chunk past
+# HARD_CAP_TOKENS (the empirical failure mode observed on JNJ/JPM/MSFT/
+# NVDA/PG/V FY 2023-2025 with the literal paragraph-aligned overlap).
+# This is a Rule 1 (auto-fix bug) deviation from the plan's strict
+# paragraph-aligned overlap rule — see the Plan 03-06 SUMMARY for the
+# rationale. The plan text explicitly anticipates "sentence-aligned if
+# possible, hard-token-aligned otherwise" overlap; this cap is what
+# triggers the sentence-aligned fallback.
+_OVERLAP_HARD_CAP = 2 * OVERLAP_TOKENS  # 100 tokens
 
-    The overlap is paragraph-aligned, NOT token-aligned — keeping
-    overlap on paragraph boundaries preserves sentence integrity (no
-    mid-sentence overlap that would confuse the embedder). Walks
-    backwards from the end of ``paragraphs`` accumulating tokens until
-    the threshold is met (or all paragraphs are consumed for a short
+
+def _truncate_overlap_text(text: str, max_tokens: int) -> str:
+    """Trim ``text`` from the LEFT so the trailing ``max_tokens`` survive.
+
+    The function picks the longest tail that fits under ``max_tokens``.
+    Prefers a sentence-boundary cut (CD-06 regex) over a hard-token-slice
+    cut so the overlap reads as a coherent sentence-prefix rather than a
+    mid-sentence stub. Falls back to hard-token-slice if no sentence
+    boundary is found within the budget.
+
+    Used by ``_take_overlap`` when a single trailing paragraph exceeds
+    ``_OVERLAP_HARD_CAP`` — taking the whole paragraph would carry too
+    many tokens into the next chunk and risk HARD_CAP at the next emit.
+    """
+    if count_tokens(text) <= max_tokens:
+        return text
+
+    # Try sentence-aligned: take the trailing sentences whose cumulative
+    # token count fits under max_tokens.
+    sentences = SENTENCE_SPLIT_RE.split(text)
+    accumulated: list[str] = []
+    tok_total = 0
+    for s in reversed(sentences):
+        s_tok = count_tokens(s)
+        if tok_total + s_tok > max_tokens:
+            break
+        accumulated.insert(0, s)
+        tok_total += s_tok
+    if accumulated:
+        return " ".join(accumulated)
+
+    # Hard-token-slice fallback: take the last max_tokens worth of tokens.
+    tok = get_bge_tokenizer()
+    encoded = tok.encode(text, add_special_tokens=False)
+    tail = encoded[-max_tokens:]
+    decoded = tok.decode(tail, skip_special_tokens=True)
+    if isinstance(decoded, list):  # pragma: no cover — defensive
+        decoded = " ".join(decoded)
+    return decoded
+
+
+def _take_overlap(paragraphs: list[str]) -> list[str]:
+    """Return the trailing paragraphs of the just-closed chunk as seed for the next chunk.
+
+    Paragraph-aligned overlap when the trailing paragraph fits under
+    ``_OVERLAP_HARD_CAP``; otherwise sentence-aligned (or hard-token-
+    sliced as last resort) — see ``_truncate_overlap_text``. This is
+    the plan's "sentence-aligned if possible, hard-token-aligned
+    otherwise" rule made concrete.
+
+    Walks backwards accumulating paragraphs until token sum reaches
+    ``OVERLAP_TOKENS`` (or all paragraphs are consumed for a short
     chunk).
 
     Returns:
-        A NEW list (does not mutate ``paragraphs``) containing the tail
-        paragraphs to seed the next chunk with.
+        A NEW list (does not mutate ``paragraphs``) containing the
+        overlap-seed paragraphs for the next chunk. If the LAST
+        paragraph exceeds ``_OVERLAP_HARD_CAP``, the returned list has
+        exactly one entry — the right-trimmed tail of that paragraph
+        (text bytes only; the next chunk's char_span_in_section anchor
+        falls back to 0 in that case).
     """
     if not paragraphs:
         return []
+
+    # Special case: if the LAST paragraph alone exceeds _OVERLAP_HARD_CAP,
+    # don't carry the whole thing — take a sentence/token-aligned tail
+    # so the next chunk has a coherent overlap of ~OVERLAP_TOKENS
+    # tokens rather than the entire trailing paragraph.
+    last = paragraphs[-1]
+    if count_tokens(last) > _OVERLAP_HARD_CAP:
+        return [_truncate_overlap_text(last, OVERLAP_TOKENS)]
+
     accumulated: list[str] = []
     tok_total = 0
     for para in reversed(paragraphs):
+        # If this paragraph would push the overlap past the hard cap,
+        # stop accumulating — keep the overlap meaningful but bounded.
+        para_tok = count_tokens(para)
+        if accumulated and tok_total + para_tok > _OVERLAP_HARD_CAP:
+            break
         accumulated.insert(0, para)
-        tok_total += count_tokens(para)
+        tok_total += para_tok
         if tok_total >= OVERLAP_TOKENS:
             break
     return accumulated
@@ -415,7 +491,22 @@ def _chunk_section(
         # one true gate, and we want it firing at emit time so the
         # diagnostic message includes the chunk_id.
 
-        if cur and cur_tokens + para_tok > TARGET_TOKENS:
+        # Rule 1 (auto-fix bug) flush condition: TARGET_TOKENS gates the
+        # USUAL split, but HARD_CAP_TOKENS gates EVERY split. Even when
+        # we're under TARGET, if adding the next paragraph would push us
+        # over HARD_CAP, we MUST flush first. Empirically this matters
+        # because overlap can leave cur_tokens at ~OVERLAP_TOKENS (50)
+        # but the next paragraph might be ~480 tokens — under TARGET we'd
+        # combine to 530+ and violate HARD_CAP at emit time. The fix is
+        # this explicit HARD_CAP guard.
+        if cur and cur_tokens + para_tok > HARD_CAP_TOKENS:
+            flush_now = True
+        elif cur and cur_tokens + para_tok > TARGET_TOKENS:
+            flush_now = True
+        else:
+            flush_now = False
+
+        if flush_now:
             # Close current chunk.
             text = "\n\n".join(cur)
             chunk = _emit_chunk(
@@ -434,6 +525,22 @@ def _chunk_section(
             # Seed next chunk with paragraph-aligned overlap. Find the
             # char_start of the FIRST overlap paragraph in section_text.
             overlap = _take_overlap(cur)
+            overlap_tokens = sum(count_tokens(p) for p in overlap)
+            # Rule 1 (auto-fix bug): overlap + the about-to-be-added
+            # paragraph must STILL fit under HARD_CAP. If they don't
+            # (e.g. overlap=60 tokens + para_tok=450 = 510 > 500),
+            # DROP the overlap entirely — the next chunk starts fresh
+            # with the incoming paragraph. Acceptable per the plan's
+            # ``hard-token-aligned otherwise`` permission: when adding
+            # overlap would break the hard cap, the overlap-mechanism
+            # yields gracefully so the cap survives. The cost is one
+            # adjacent-chunk pair without textual overlap; the demo's
+            # retrieval still works because the paragraph WAS the
+            # tail of the prior chunk, and Phase 5's reranker can
+            # bridge the gap.
+            if overlap and overlap_tokens + para_tok > HARD_CAP_TOKENS:
+                overlap = []
+                overlap_tokens = 0
             if overlap:
                 # ``section_text.index`` from the beginning — paragraph
                 # uniqueness within a section is the working assumption.
@@ -447,7 +554,7 @@ def _chunk_section(
                     # paragraph contents.
                     cur_start = 0
                 cur = list(overlap)
-                cur_tokens = sum(count_tokens(p) for p in cur)
+                cur_tokens = overlap_tokens
             else:
                 cur = []
                 cur_tokens = 0
