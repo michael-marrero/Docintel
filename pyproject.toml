@@ -63,6 +63,8 @@ files = ["packages/*/src"]
 # selectolax (Lexbor backend, Cython extension) ships no stubs. sec_edgar_downloader
 # 5.1.0 has no py.typed marker. Per-module ignore_missing_imports is the canonical
 # mypy knob (D-19; extended in Plan 03-04 for the Phase 3 ingest stack).
+# bm25s (Plan 04-04 D-07) + PyStemmer (Plan 04-04 D-08 — imports as ``Stemmer``)
+# also lack py.typed markers; same override pattern.
 module = [
     "sentence_transformers",
     "sentence_transformers.*",
@@ -74,6 +76,9 @@ module = [
     "selectolax.*",
     "sec_edgar_downloader",
     "sec_edgar_downloader.*",
+    "bm25s",
+    "bm25s.*",
+    "Stemmer",
 ]
 ignore_missing_imports = true
 
