@@ -10,6 +10,11 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main]
+  # Phase 4 D-20: manual trigger for the real-mode index build job below.
+  # Default push/PR runs continue to use stub mode only (no API keys, no docker
+  # services with `profiles: ['real']`). The real-index-build job is gated on
+  # `if: github.event_name == 'workflow_dispatch'` so it never runs on PR.
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -72,6 +77,22 @@ jobs:
         # contains a sec-edgar-downloader SDK call pattern but no tenacity import
         # (D-18 structural enforcement; ADP-06 analog for Phase 3 / ING-*).
         run: bash scripts/check_ingest_wraps.sh
+
+      - name: Index wrap grep gate (D-21)
+        # Every adapters/real/*.py file with a qdrant_client.* call must
+        # import tenacity. Structurally enforces no-silent-retries on the
+        # Qdrant HTTP path (Phase 4 IDX-* / Pitfall 6 dep drift defense).
+        run: bash scripts/check_index_wraps.sh
+
+      - name: Build indices (stub)
+        # Phase 4 IDX-01..04. Builds NumpyDenseStore + Bm25sStore on every PR.
+        # Expected wall-clock < 10s for 6,053 chunks. Stub-mode default.
+        run: uv run docintel-index all
+
+      - name: Verify indices (D-14)
+        # Re-hash dense + bm25 artifacts; assert MANIFEST sha256s match.
+        # Catches non-deterministic build paths AND silent dep drift.
+        run: uv run docintel-index verify
 
       - name: Chunk-idempotency gate (ING-04)
         # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
@@ -208,3 +229,62 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  # Phase 4 D-20: real-mode index build, manual trigger only.
+  # Gated on `workflow_dispatch` — never runs on push/PR. Spins up the qdrant
+  # service via the compose `real` profile, waits for /readyz, runs the
+  # docintel-index build + verify pair against real Qdrant, then runs the
+  # `pytest -m real` slice (deselected by default). Tear-down runs in
+  # `if: always()` so a failed run leaves no zombie containers. The 15-minute
+  # timeout caps the entire job (T-4-V5-02 DoS mitigation).
+  real-index-build:
+    name: real-mode index build (manual trigger only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOCINTEL_LLM_PROVIDER: real
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace (frozen)
+        run: uv sync --all-packages --frozen
+
+      - name: Start qdrant via compose profile 'real'
+        run: docker compose --profile real up -d qdrant
+
+      - name: Wait for qdrant /readyz
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            if curl -fsS http://localhost:6333/readyz; then
+              echo "qdrant ready on attempt $i"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FAIL: qdrant /readyz never returned 200"
+          docker compose --profile real logs qdrant
+          exit 1
+
+      - name: Real-mode build
+        run: uv run docintel-index all
+
+      - name: Real-mode verify
+        run: uv run docintel-index verify
+
+      - name: Real-only pytest
+        run: uv run pytest -m real -ra -q
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile real down -v
