@@ -11,9 +11,10 @@ Covers VALIDATION.md tasks 3-0X-06 and 3-0X-07 (ING-04, D-21, D-22):
   (Pitfall 3 — ``982532469af0dff5df8e70b38075b0940e863662``) is also
   asserted to prevent silent BGE drift.
 
-Tests xfail until Wave 5 commits the corpus AND lands the chunker that
-produces the committed JSONL. Wave 5's atomic commit removes these
-xfail markers.
+Both tests went GREEN with Plan 03-07 — ``docintel_ingest.manifest``
+landed ``data/corpus/MANIFEST.json`` + ``docintel_ingest.verify`` wired
+the idempotency contract through the CLI. Re-running these in CI on
+every push is the cheap-and-loud defense against silent corpus drift.
 """
 
 from __future__ import annotations
@@ -23,26 +24,10 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
-_XFAIL = pytest.mark.xfail(
-    raises=(
-        ImportError,
-        AttributeError,
-        AssertionError,
-        NotImplementedError,
-        FileNotFoundError,
-        json.JSONDecodeError,
-    ),
-    strict=False,
-    reason="awaits Wave 5 — corpus committed + chunker landed (ING-04)",
-)
 
-
-@_XFAIL
-def test_chunks_byte_identical(tmp_path) -> None:
+def test_chunks_byte_identical(tmp_path: Path) -> None:
     """Re-running the chunker on committed normalized JSON yields byte-identical JSONL files."""
     result = subprocess.run(
         [
@@ -78,7 +63,6 @@ def test_chunks_byte_identical(tmp_path) -> None:
         ), f"byte-identity violation at {rel} — chunker output is not deterministic"
 
 
-@_XFAIL
 def test_manifest_hashes_match() -> None:
     """Every per-filing sha256 in MANIFEST.json matches the file bytes; tokenizer revision pinned."""
     manifest_path = _REPO_ROOT / "data" / "corpus" / "MANIFEST.json"
