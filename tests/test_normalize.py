@@ -3,17 +3,18 @@
 Covers VALIDATION.md task 3-0X-03 (ING-02): the sample fixture HTML in
 ``tests/fixtures/sample_10k/aapl_FY2024_trimmed.html`` normalizes to the
 committed golden JSON at ``aapl_FY2024_normalized.json`` (sans
-``fetched_at``, per RESEARCH.md anti-pattern line 428). Also asserts:
+``fetched_at`` and ``raw_path``, per RESEARCH.md anti-pattern line 428
+and the path-stamping convention documented in Plan 03-05). Also asserts:
 
 * The ``<table>`` element is dropped (D-08, ``manifest.tables_dropped >= 1``).
 * The ``<ix:nonNumeric>`` wrapper prose survives normalization
-  (Pitfall §424 — unwrap, do not decompose).
+  (Pitfall §424 — unwrap, do not decompose; here selectolax preserves
+  inner text of unknown tags naturally).
 * Every section key matches the ``Item N[X]`` D-14 canonical format.
 
-The tests xfail until Wave 3 ships ``normalize_html``. The golden JSON
-itself is a placeholder in Plan 03-01 (Wave 3 regenerates it from real
-output and commits the bytes in the same wave-flip commit that removes
-these xfail markers).
+Wave 3 (Plan 03-05) ships ``normalize_html`` and regenerates the golden
+JSON from real normalizer output; the xfail markers are flipped in the
+same commit that lands ``normalize.py``.
 """
 
 from __future__ import annotations
@@ -22,26 +23,27 @@ import json
 import re
 from pathlib import Path
 
-import pytest
-
 _SAMPLE_DIR = Path(__file__).resolve().parent / "fixtures" / "sample_10k"
 
-_XFAIL = pytest.mark.xfail(
-    raises=(ImportError, AttributeError, AssertionError, NotImplementedError, FileNotFoundError),
-    strict=False,
-    reason="awaits Wave 3 — normalize_html + regenerated golden JSON (ING-02)",
-)
 
-
-@_XFAIL
 def test_normalize_golden_matches() -> None:
-    """Sample HTML → NormalizedFiling matches committed golden JSON (sans fetched_at)."""
+    """Sample HTML → NormalizedFiling matches committed golden JSON (sans fetched_at, raw_path)."""
     from docintel_ingest.normalize import normalize_html
 
     html = (_SAMPLE_DIR / "aapl_FY2024_trimmed.html").read_text(encoding="utf-8")
-    expected = json.loads((_SAMPLE_DIR / "aapl_FY2024_normalized.json").read_text(encoding="utf-8"))
-    # The placeholder marker key is stripped by Wave 3 when regenerating; ignore here.
+    expected = json.loads(
+        (_SAMPLE_DIR / "aapl_FY2024_normalized.json").read_text(encoding="utf-8")
+    )
+    # The placeholder marker key is stripped by Plan 03-05 when regenerating;
+    # tolerate its absence here (it should not be present after regeneration).
     expected.pop("_comment", None)
+    # The golden fixture stamps ``raw_path`` to the fixture path for clarity;
+    # ``normalize_html`` writes the production path. The golden also stamps
+    # ``fetched_at`` to a fixed sentinel because timestamps vary per run.
+    # Exclude both fields from the golden comparison — they are sidecar
+    # metadata, not section content.
+    expected.pop("raw_path", None)
+    expected.pop("fetched_at", None)
 
     actual = normalize_html(
         html,
@@ -51,10 +53,10 @@ def test_normalize_golden_matches() -> None:
     )
 
     # ``fetched_at`` varies per run; exclude per RESEARCH.md anti-pattern line 428.
-    assert actual.model_dump(exclude={"fetched_at"}) == expected
+    # ``raw_path`` is also excluded (see comment above on the golden side).
+    assert actual.model_dump(exclude={"fetched_at", "raw_path"}) == expected
 
 
-@_XFAIL
 def test_tables_dropped() -> None:
     """The fixture's one ``<table>`` is dropped; ``manifest.tables_dropped >= 1`` (D-08)."""
     from docintel_ingest.normalize import normalize_html
@@ -69,7 +71,6 @@ def test_tables_dropped() -> None:
     assert result.manifest.tables_dropped >= 1
 
 
-@_XFAIL
 def test_ix_nonNumeric_prose_preserved() -> None:
     """``<ix:nonNumeric>`` inner text survives normalization (Pitfall §424 — unwrap not decompose)."""
     from docintel_ingest.normalize import normalize_html
@@ -86,7 +87,6 @@ def test_ix_nonNumeric_prose_preserved() -> None:
     assert canary.lower() in result.sections["Item 1A"].lower()
 
 
-@_XFAIL
 def test_normalized_sections_keys_format() -> None:
     """Every section key matches the D-14 ``Item N[X]`` canonical form."""
     from docintel_ingest.normalize import normalize_html

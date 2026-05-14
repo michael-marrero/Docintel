@@ -1,6 +1,6 @@
 {
-  "_comment": "PLACEHOLDER — Wave 3 regenerates from real normalizer output",
   "accession": "0000320193-24-000123",
+  "fetched_at": "1970-01-01T00:00:00+00:00",
   "fiscal_year": 2024,
   "manifest": {
     "items_found": [
@@ -21,21 +21,23 @@
       "Item 9",
       "Item 9A",
       "Item 9B",
+      "Item 9C",
       "Item 10",
       "Item 11",
       "Item 12",
       "Item 13",
       "Item 14",
-      "Item 15"
+      "Item 15",
+      "Item 16"
     ],
     "ordering_valid": true,
     "tables_dropped": 1
   },
   "raw_path": "tests/fixtures/sample_10k/aapl_FY2024_trimmed.html",
   "sections": {
-    "Item 1": "PLACEHOLDER — Wave 3 regenerates this with the real normalizer output.",
-    "Item 1A": "PLACEHOLDER — must include the unwrapped ix:nonNumeric prose.",
-    "Item 7": "PLACEHOLDER — must include the ~600-token outlier paragraph."
+    "Item 1": "ITEM 1. Business\n\n\nThe Company designs, manufactures, and markets consumer electronics, software,\nand services. Its product lines include smartphones, tablets, personal computers,\nand wearable devices. The Company sells through retail stores, online channels,\nthird-party cellular network carriers, wholesalers, and resellers. The Company\noperates in segments organized by geographic region. The Company's fiscal year\nends in late September. Research and development investment is a core component\nof the Company's strategy, supporting both hardware engineering and platform\nsoftware. The Company competes with global technology firms across each product\nline.",
+    "Item 1A": "ITEM 1A. Risk Factors\n\n\nMacroeconomic conditions including inflation and currency volatility may\nadversely affect demand for the Company's products and services in certain\nmarkets.\n\n\n\n\n\nRisk Factor prose that MUST be preserved when the ix:nonNumeric wrapper is\nunwrapped \u2014 this is the prose the canary is testing. The chunker downstream\ndepends on this text surviving normalization.\n\n\n\n\n\nComponent availability risk: a small number of suppliers provide critical\ncomponents whose interruption could materially affect production volume.\n\n\n\n\nLitigation risk: the Company is subject to ongoing legal proceedings whose\noutcomes cannot be predicted with certainty.",
+    "Item 7": "ITEM 7. Management's Discussion and Analysis\n\n\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period.\nRevenue grew significantly in the period. Revenue grew significantly in the period."
   },
   "ticker": "AAPL"
 }

@@ -7,23 +7,14 @@ headers (RESEARCH.md line 311-312, CD-08). Also exercises
 ``find_item_boundaries`` against the canonical ordering and a pre-2024
 filing that lacks Item 1C (Pitfall 5 — D-07 lenient policy).
 
-The tests xfail until Wave 3 ships ``docintel_ingest.normalize`` with
-``ITEM_RE`` and ``find_item_boundaries``. Wave 3 removes the xfail
-markers in the same commit that lands ``normalize.py``.
+Wave 3 (Plan 03-05) ships ``docintel_ingest.normalize`` with ``ITEM_RE``
+and ``find_item_boundaries``; the xfail markers are flipped in the same
+commit that lands ``normalize.py``.
 """
 
 from __future__ import annotations
 
-import pytest
 
-_XFAIL = pytest.mark.xfail(
-    raises=(ImportError, AttributeError, AssertionError, NotImplementedError),
-    strict=False,
-    reason="awaits Wave 3 — docintel_ingest.normalize (D-07)",
-)
-
-
-@_XFAIL
 def test_all_caps_item_matches() -> None:
     """All-caps ``ITEM 1A. Risk Factors`` matches and captures ``1A``."""
     from docintel_ingest.normalize import ITEM_RE
@@ -33,7 +24,6 @@ def test_all_caps_item_matches() -> None:
     assert m.group(1) == "1A"
 
 
-@_XFAIL
 def test_mixed_case_item_matches() -> None:
     """Mixed-case ``Item 7 Management's Discussion`` matches with group(1)='7'."""
     from docintel_ingest.normalize import ITEM_RE
@@ -43,7 +33,6 @@ def test_mixed_case_item_matches() -> None:
     assert m.group(1) == "7"
 
 
-@_XFAIL
 def test_em_dash_separator() -> None:
     """Em-dash separator ``ITEM 1A —Risk Factors`` matches (CD-08 heading variant)."""
     from docintel_ingest.normalize import ITEM_RE
@@ -51,7 +40,6 @@ def test_em_dash_separator() -> None:
     assert ITEM_RE.search("ITEM 1A —Risk Factors") is not None
 
 
-@_XFAIL
 def test_colon_separator() -> None:
     """Colon separator ``ITEM 1A: Risk Factors`` matches."""
     from docintel_ingest.normalize import ITEM_RE
@@ -59,7 +47,6 @@ def test_colon_separator() -> None:
     assert ITEM_RE.search("ITEM 1A: Risk Factors") is not None
 
 
-@_XFAIL
 def test_period_separator() -> None:
     """Period separator ``ITEM 1A. Risk Factors`` matches."""
     from docintel_ingest.normalize import ITEM_RE
@@ -67,7 +54,6 @@ def test_period_separator() -> None:
     assert ITEM_RE.search("ITEM 1A. Risk Factors") is not None
 
 
-@_XFAIL
 def test_nbsp_separator() -> None:
     """NBSP-separated ``ITEM\xa01A. Risk Factors`` matches (Pitfall 4 — NFC upstream)."""
     from docintel_ingest.normalize import ITEM_RE
@@ -78,7 +64,6 @@ def test_nbsp_separator() -> None:
     assert ITEM_RE.search("ITEM 1A. Risk Factors") is not None
 
 
-@_XFAIL
 def test_in_prose_does_not_match() -> None:
     """In-prose mention ``as discussed in Item 1A above`` does NOT match (anchor discipline)."""
     from docintel_ingest.normalize import ITEM_RE
@@ -86,7 +71,6 @@ def test_in_prose_does_not_match() -> None:
     assert ITEM_RE.search("as discussed in Item 1A above") is None
 
 
-@_XFAIL
 def test_part_header_does_not_match() -> None:
     """``PART I`` / ``PART II`` headers do NOT match (CD-08, RESEARCH.md line 312)."""
     from docintel_ingest.normalize import ITEM_RE
@@ -94,7 +78,6 @@ def test_part_header_does_not_match() -> None:
     assert ITEM_RE.search("PART I") is None
 
 
-@_XFAIL
 def test_find_item_boundaries_canonical_sequence() -> None:
     """``find_item_boundaries`` returns Items in document order across a 3-Item fixture."""
     from docintel_ingest.normalize import find_item_boundaries
@@ -109,7 +92,6 @@ def test_find_item_boundaries_canonical_sequence() -> None:
     assert codes == ["Item 1", "Item 1A", "Item 7"]
 
 
-@_XFAIL
 def test_find_item_boundaries_skips_missing_1c_pre_2024() -> None:
     """Pre-2024 filings lacking Item 1C are tolerated (Pitfall 5 — D-07 lenient policy)."""
     from docintel_ingest.normalize import find_item_boundaries
