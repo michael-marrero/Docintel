@@ -15,6 +15,7 @@ paths = [
     '''^\.gitleaks\.toml$''',
     '''^tests/fixtures/leaked_key\.example$''',
     '''^tests/fixtures/unwrapped_sdk_call\.py\.example$''',
+    '''^tests/fixtures/unwrapped_edgar_call\.py\.example$''',
     '''^\.planning/''',
 ]
 # Common placeholder regexes used in docs/examples. Tighten if false-positives appear.

@@ -1,0 +1,13 @@
+# Fixture for the ingest grep gate negative-case test (test_ingest_wraps_gate.py).
+#
+# This file intentionally contains a sec-edgar-downloader call with NO tenacity import.
+# scripts/check_ingest_wraps.sh must detect this pattern and exit non-zero.
+#
+# DO NOT import this file or execute it — it is a static fixture only.
+# Listed in .gitleaks.toml allowlist as defense-in-depth (CD-09). No key
+# shapes are present; the email is RFC 2606's reserved example domain.
+
+from sec_edgar_downloader import Downloader
+
+dl = Downloader("name", "email@example.com")
+dl.get("10-K", "AAPL")

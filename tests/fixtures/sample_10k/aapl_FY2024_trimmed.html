@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<!-- Fixture for Phase 3 normalize + chunk tests.
+     Edge cases exercised:
+       - 3 Item boundaries (Item 1, Item 1A, Item 7)
+       - ix:nonNumeric wrapper containing prose (must be unwrapped, not decomposed)
+       - One <table> element (must be dropped by D-08)
+       - One &#160; NBSP entity (must be NFC-normalized to a regular space, Pitfall 4)
+       - One outlier paragraph (>500 BGE tokens) in Item 7 to trip the sentence-fallback path
+     File size target: < 30 KB. Synthetic prose only; no SEC content reproduced.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>AAPL FY2024 10-K (fixture)</title>
+</head>
+<body>
+
+<h1>ITEM 1. Business</h1>
+<p>The Company designs, manufactures, and markets consumer electronics, software,
+and services. Its product lines include smartphones, tablets, personal computers,
+and wearable devices. The Company sells through retail stores, online channels,
+third-party cellular network carriers, wholesalers, and resellers. The Company
+operates in segments organized by geographic region. The Company's fiscal year
+ends in late September. Research and development investment is a core component
+of the Company's strategy, supporting both hardware engineering and platform
+software. The Company competes with global technology firms across each product
+line.</p>
+
+<h1>ITEM 1A. Risk Factors</h1>
+<p>Macroeconomic conditions including&#160;inflation and currency volatility may
+adversely affect demand for the Company's products and services in certain
+markets.</p>
+<p>
+<ix:nonNumeric name="dei:Test" contextRef="c1">
+Risk Factor prose that MUST be preserved when the ix:nonNumeric wrapper is
+unwrapped — this is the prose the canary is testing. The chunker downstream
+depends on this text surviving normalization.
+</ix:nonNumeric>
+</p>
+<p>Component availability risk: a small number of suppliers provide critical
+components whose interruption could materially affect production volume.</p>
+<table>
+<tr><th>Year</th><th>Revenue (notional)</th></tr>
+<tr><td>This table is dropped by D-08</td><td>and never reaches the chunker.</td></tr>
+</table>
+<p>Litigation risk: the Company is subject to ongoing legal proceedings whose
+outcomes cannot be predicted with certainty.</p>
+
+<h1>ITEM 7. Management's Discussion and Analysis</h1>
+<p>Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.
+Revenue grew significantly in the period. Revenue grew significantly in the period.</p>
+
+</body>
+</html>
