@@ -17,4 +17,6 @@ Public surface is built up incrementally across Plans 05-02..05-05:
 
 from docintel_core.types import RetrievedChunk
 
-__all__ = ["RetrievedChunk"]
+from docintel_retrieve.fuse import RRF_K, _rrf_fuse
+
+__all__ = ["RRF_K", "RetrievedChunk", "_rrf_fuse"]
