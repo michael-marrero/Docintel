@@ -51,7 +51,6 @@ _EXPECTED_SNAPSHOT_HEADER = [
 ]
 
 
-@_XFAIL
 def test_snapshot_csv_present() -> None:
     """``companies.snapshot.csv`` exists and carries the D-01 header (Pitfall 1 per-row years)."""
     assert _SNAPSHOT_CSV.is_file(), f"missing snapshot file: {_SNAPSHOT_CSV}"

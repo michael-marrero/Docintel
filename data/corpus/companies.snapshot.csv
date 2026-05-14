@@ -1,0 +1,16 @@
+ticker,name,sector,market_cap_usd,fiscal_years,snapshot_date
+AAPL,Apple Inc.,Information Technology,3400000000000,"[2023,2024,2025]",2026-05-13
+MSFT,Microsoft Corporation,Information Technology,3100000000000,"[2023,2024,2025]",2026-05-13
+NVDA,NVIDIA Corporation,Information Technology,2900000000000,"[2023,2024,2025]",2026-05-13
+GOOGL,Alphabet Inc.,Communication Services,2100000000000,"[2023,2024,2025]",2026-05-13
+AMZN,Amazon.com Inc.,Consumer Discretionary,1900000000000,"[2023,2024,2025]",2026-05-13
+META,Meta Platforms Inc.,Communication Services,1300000000000,"[2023,2024,2025]",2026-05-13
+TSLA,Tesla Inc.,Consumer Discretionary,800000000000,"[2023,2024,2025]",2026-05-13
+LLY,Eli Lilly and Company,Health Care,750000000000,"[2023,2024,2025]",2026-05-13
+JPM,JPMorgan Chase & Co.,Financials,650000000000,"[2023,2024,2025]",2026-05-13
+V,Visa Inc.,Financials,580000000000,"[2023,2024,2025]",2026-05-13
+WMT,Walmart Inc.,Consumer Staples,540000000000,"[2023,2024,2025]",2026-05-13
+XOM,Exxon Mobil Corporation,Energy,470000000000,"[2023,2024,2025]",2026-05-13
+PG,Procter & Gamble Company,Consumer Staples,400000000000,"[2023,2024,2025]",2026-05-13
+JNJ,Johnson & Johnson,Health Care,400000000000,"[2023,2024,2025]",2026-05-13
+HD,The Home Depot Inc.,Consumer Discretionary,360000000000,"[2023,2024,2025]",2026-05-13
