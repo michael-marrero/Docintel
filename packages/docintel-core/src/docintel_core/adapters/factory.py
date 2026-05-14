@@ -1,4 +1,4 @@
-"""Factory that constructs an AdapterBundle from Settings.
+"""Factory that constructs an AdapterBundle + IndexStoreBundle from Settings.
 
 The ONLY place in the codebase that instantiates concrete adapters.
 Lazy imports inside the ``real`` branch keep stub-mode CI free of
@@ -7,6 +7,13 @@ torch / sentence-transformers / SDK import cost (D-12).
 stub mode: deterministic stubs, no external deps.
 real mode: lazy-imports torch + SDK deps; constructs real adapters per
            cfg.llm_real_provider; judge always uses the complement provider (D-04).
+
+Phase 4 amendment (D-03): ``make_index_stores(cfg)`` returns an
+``IndexStoreBundle`` of dense + sparse stores. Stub mode pairs
+``NumpyDenseStore`` + ``Bm25sStore`` (in-process, no network). Real mode pairs
+``QdrantDenseStore`` + ``Bm25sStore`` (BM25 is unified across modes per D-07).
+The qdrant_client import lives lazily inside the real branch (D-12) — stub-
+mode CI never pays the import cost.
 """
 
 from __future__ import annotations
@@ -15,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from docintel_core.adapters.stub.embedder import StubEmbedder
 from docintel_core.adapters.stub.reranker import StubReranker
-from docintel_core.adapters.types import AdapterBundle
+from docintel_core.adapters.types import AdapterBundle, IndexStoreBundle
 
 # TYPE_CHECKING guard: these imports run only under mypy/pyright, never at runtime.
 # The real adapter modules (Wave 4) do not exist yet; this guard keeps mypy happy
@@ -78,4 +85,45 @@ def make_adapters(cfg: Settings) -> AdapterBundle:
         reranker=BGEReranker(cfg),
         llm=llm,
         judge=judge,
+    )
+
+
+def make_index_stores(cfg: Settings) -> IndexStoreBundle:
+    """Construct and return an IndexStoreBundle keyed on cfg.llm_provider.
+
+    Phase 4 D-03 dispatch:
+        * stub mode → ``NumpyDenseStore`` + ``Bm25sStore`` (in-process, no network).
+        * real mode → ``QdrantDenseStore`` + ``Bm25sStore`` (BM25 is unified
+          across modes per D-07 — there is no "tiered" BM25).
+
+    Lazy-import discipline (D-12): the qdrant_client SDK is imported only
+    inside the real branch. Stub-mode CI never pays the qdrant_client import
+    cost. The Bm25sStore import is also lazy (mirrors the stub-branch
+    NumpyDenseStore import) — same Phase 2 ``make_adapters`` pattern.
+
+    Args:
+        cfg: Settings instance with llm_provider set.
+
+    Returns:
+        IndexStoreBundle with ``dense`` (NumpyDenseStore | QdrantDenseStore)
+        and ``bm25`` (Bm25sStore) adapters. Phase 10's eval manifest header
+        reads ``bundle.dense.name`` and ``bundle.bm25.name`` from this bundle.
+    """
+    if cfg.llm_provider == "stub":
+        from docintel_core.adapters.real.bm25s_store import Bm25sStore
+        from docintel_core.adapters.real.numpy_dense import NumpyDenseStore
+
+        return IndexStoreBundle(
+            dense=NumpyDenseStore(cfg),
+            bm25=Bm25sStore(cfg),
+        )
+
+    # Real branch — lazy-import the qdrant_client-backed dense store (D-12).
+    # BM25 is unified across modes per D-07 (single bm25s implementation).
+    from docintel_core.adapters.real.bm25s_store import Bm25sStore
+    from docintel_core.adapters.real.qdrant_dense import QdrantDenseStore
+
+    return IndexStoreBundle(
+        dense=QdrantDenseStore(cfg),
+        bm25=Bm25sStore(cfg),
     )

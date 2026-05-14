@@ -81,7 +81,12 @@ class RerankedDoc(BaseModel):
 # to minimise the visible cycle: protocols.py imports types.py under
 # TYPE_CHECKING only; types.py imports protocols.py at runtime only for this
 # one class. Wave 3's factory.py constructs AdapterBundle; callers never do.
+#
+# Phase 4 D-03 amendment: BM25Store + DenseStore added in alphabetical order
+# for the new IndexStoreBundle below — same arbitrary_types_allowed posture.
 from docintel_core.adapters.protocols import (  # noqa: E402
+    BM25Store,
+    DenseStore,
     Embedder,
     LLMClient,
     LLMJudge,
@@ -107,3 +112,25 @@ class AdapterBundle(BaseModel):
     reranker: Reranker
     llm: LLMClient
     judge: LLMJudge
+
+
+class IndexStoreBundle(BaseModel):
+    """Container for dense + BM25 store instances returned by ``make_index_stores(cfg)``.
+
+    Mirrors ``AdapterBundle`` (Phase 2 D-13) shape. Phase 4 D-03 defines the
+    factory; this plan ships the Pydantic container only. ``arbitrary_types_allowed``
+    is REQUIRED because Pydantic v2 cannot build a schema for Protocol types
+    (github.com/pydantic/pydantic/issues/10161).
+
+    Plan 04-04's ``make_index_stores(cfg)`` is the only construction site:
+        * stub mode → ``NumpyDenseStore`` + ``Bm25sStore``
+        * real mode → ``QdrantDenseStore`` + ``Bm25sStore``
+
+    Attribute introspection ``bundle.dense.name`` / ``bundle.bm25.name`` is
+    sourced into ``IndexManifest`` (D-13) and Phase 10's eval manifest header.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    dense: DenseStore
+    bm25: BM25Store

@@ -22,6 +22,7 @@ data/corpus/.cache/
 !data/corpus/MANIFEST.json
 !data/corpus/companies.snapshot.csv
 data/indices/
+# data/indices/.qdrant/ is the docker-compose volume target for the Qdrant service (D-05); covered by the umbrella rule above.
 data/traces/
 data/eval/cache/
 
