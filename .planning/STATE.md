@@ -27,11 +27,13 @@ See: `.planning/PROJECT.md` (updated 2026-05-11)
 - **Phase 2 (adapters-protocols)** — ✓ Complete, merged to `main` (`2da4a21`, PR #2) on 2026-05-13. All ADP-01..ADP-07 closed.
 - **Phase 3 (corpus-ingestion)** — ✓ Complete, merged to `main` (PR #3). 6,053 chunks committed. ING-01..ING-04 closed.
 - **Phase 4 (embedding-indexing)** — ✓ Complete, merged to `main` (PR #4) on 2026-05-14. IDX-01..04 closed; verifier 15/15.
-- **Phase 5 (retrieval-hybrid-rerank)** — ✓ Complete, merged to `main` (`2768961`, PR #5) on 2026-05-14. 7 plans × 4 waves shipped. RET-01..04 closed (RET-03 EMPIRICAL-PENDING — real-mode canary under workflow_dispatch run 25889375809 fires after merge). CI fixes (`b07d305` ruff/black + `c020075` ci.yml reorder) applied post-merge.
+- **Phase 5 (retrieval-hybrid-rerank)** — ✓ Complete, merged to `main` (`2768961`, PR #5) on 2026-05-14. 7 plans × 4 waves shipped. RET-01..04 closed (RET-03 EMPIRICAL-PENDING — see "Hard Gates To Remember" below). CI fixes (`b07d305` ruff/black + `c020075` ci.yml reorder + `9ec4d36` lazy LLM SDK init + gitleaks allowlist) applied post-merge.
 - **Phases 6–13** — Pending. See `.planning/ROADMAP.md`.
 - **Phase 14 (v2)** — Deferred.
 
 ## Recent Activity
+
+- 2026-05-14 — Workflow_dispatch run **25890137612** (second attempt after lazy-LLM-init fix `9ec4d36`): all 4 stub-side jobs green (gitleaks ✓, lint+types+tests ✓, docker build ✓, compose smoke ✓), but `real-mode index build` was **cancelled at the 15-minute job timeout**. Diagnosis: the job's `timeout-minutes: 15` was originally provisioned for Phase 4's index-build-only flow; Phase 5 added the canary test which downloads bge-reranker-base (~250 MB) + runs the reranker on 8 cases — pushing total wall-clock past 15 min. **Fix outstanding:** bump `.github/workflows/ci.yml::real-index-build::timeout-minutes` from 15 → 30, re-trigger `gh workflow run ci.yml --ref main`. The previous run **25889375809** failed earlier at `make_adapters` requiring `DOCINTEL_ANTHROPIC_API_KEY` (now fixed by lazy SDK init in `9ec4d36`). RET-03 EMPIRICAL-PENDING **remains open** pending a successful real-mode canary run.
 
 - 2026-05-14 — Phase 5 merged to `main` as PR #5 (merge commit `2768961`). Workflow_dispatch real-mode canary triggered (run 25889375809) to close RET-03 EMPIRICAL-PENDING. Two empirical findings flagged for Phase 13 ADRs: (1) **stub reranker structurally incapable of beating stub dense-only** — both `StubReranker.rerank` and `NumpyDenseStore.query` reduce to cosine over the same `_text_to_vector` hash (0/307 brute-force wins). Resolution: Option D — all 8 canary cases tagged `mode="real"`; stub-mode test weakened to schema-only; strict D-14 bites under workflow_dispatch only. CONTEXT.md D-14/D-15 amendment committed. Deferred ticket: "Stub-reranker discriminative-power redesign" (Phase 11 / v2). (2) **A1 tokenizer-drift assumption REFUTED** — measured mean ratio 1.1404 (+14% disagreement vs assumed ~5%); 1794/6053 chunks (29.6%) exceed XLM-RoBERTa 500-token threshold. The `chunk_reranker_token_overflow` soft warning from Plan 05-05 is LOAD-BEARING. Post-merge CI fixes: cherry-picked `b07d305` (ruff RUF100/RUF002/RUF003/B007/I001/format) + `c020075` (move Build indices before pytest; add `-m "not real"` to main pytest step) onto main. Final test gate: 121 passed / 0 failed / 0 xfailed (stub mode); mypy --strict clean (47 files); 3 wrap gates green.
 
@@ -70,14 +72,15 @@ See: `.planning/PROJECT.md` (updated 2026-05-11)
 
 ## How To Resume
 
-Phase 5 merged to `main` (PR #5, `2768961`). Workflow_dispatch real-mode canary running (run 25889375809) for the EMPIRICAL-PENDING RET-03 close-out.
+Phase 5 merged to `main` (PR #5, `2768961`). Real-mode canary EMPIRICAL-PENDING gate **still open** — workflow_dispatch run **25890137612** was cancelled at the 15-minute job timeout (Phase 5 canary download + reranker pass exceeds Phase 4's original budget).
 
 Next steps:
 
-1. **Wait for run 25889375809 to complete** — `gh run view 25889375809` or watch the Actions UI. Expected: `test_reranker_canary_real_mode PASSED` (real BGE-reranker out-hits dense-only on ≥5 of the 8 curated cases).
-2. **If PASS** — close Phase 5 EMPIRICAL-PENDING; proceed to step 3.
-3. **If FAIL** — apply D-16 debug protocol from the canary's `_DEBUG_BLOCK`: check chunk `n_tokens < 500` FIRST (Phase 3 invariant; note A1 shows 1794/6053 chunks exceed XLM-RoBERTa 500-token threshold so `chunk_reranker_token_overflow` warnings are expected — not a regression), THEN bge-reranker-base SDK pin, THEN RRF/chunk-size. Iterate on `data/eval/canary/cases.jsonl` curation if the strict criterion holds for individual cases but not aggregate.
-4. **Start Phase 6** — `/gsd-discuss-phase 6 --chain` (generation: `src/docintel/generation/prompts.py` versioned prompts; LLMClient adapter; refusal path).
+1. **Bump `real-index-build` job timeout** in `.github/workflows/ci.yml` from `timeout-minutes: 15` to `timeout-minutes: 30`. Commit + push.
+2. **Re-trigger the workflow:** `gh workflow run ci.yml --ref main`. Wait for completion. Expected: `test_reranker_canary_real_mode PASSED` (real BGE-reranker out-hits dense-only on ≥5 of the 8 curated cases).
+3. **If PASS** — append `## Closed Decisions` row in STATE.md citing the workflow run URL; mark Phase 5 fully complete.
+4. **If FAIL** — apply D-16 debug protocol from the canary's `_DEBUG_BLOCK`: check chunk `n_tokens < 500` FIRST (Phase 3 invariant; note A1 shows 1794/6053 chunks exceed XLM-RoBERTa 500-token threshold so `chunk_reranker_token_overflow` warnings are expected — not a regression), THEN bge-reranker-base SDK pin, THEN RRF/chunk-size. Iterate on `data/eval/canary/cases.jsonl` curation if the strict criterion holds for individual cases but not aggregate.
+5. **Start Phase 6** — `/clear` then `/gsd-discuss-phase 6 --chain` (generation: `src/docintel/generation/prompts.py` versioned prompts; LLMClient adapter; refusal path; GEN-01..04). This phase opens the LLM call path so `DOCINTEL_ANTHROPIC_API_KEY` / `DOCINTEL_OPENAI_API_KEY` will be needed for real-mode eval — the lazy SDK init from `9ec4d36` defers the requirement to `.complete()` first-call.
 
 ---
-*Last updated: 2026-05-14 after Phase 5 merged + workflow_dispatch canary dispatched.*
+*Last updated: 2026-05-14 after workflow_dispatch run 25890137612 cancelled at job timeout (RET-03 EMPIRICAL-PENDING remains open; timeout-bump is the next concrete action).*
