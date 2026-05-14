@@ -8,24 +8,22 @@ per chunk, and writes a MANIFEST.json whose ``dense.backend == "qdrant"``,
 ``dense.distance == "Cosine"``. The embedder block carries
 ``embedder.name == "bge-small-en-v1.5"`` (Plan 04-04 BGE adapter).
 
-This file is a Wave 0 scaffold. It carries BOTH:
+This file is now a hard-asserting real-mode integration test. It carries:
 
-  * ``@pytest.mark.real`` — gated behind ``-m real``; default ``pytest`` deselects
-    these tests so they never run in stub-mode CI. The marker is registered
-    in pyproject.toml by Plan 04-02 (parallel wave 1).
-  * ``@pytest.mark.xfail(strict=False, reason=...)`` — applied module-wide so
-    the file collects without errors before Plan 04-04 (QdrantDenseStore +
-    factory wiring) and Plan 04-05 (build pipeline) ship.
+  * ``pytestmark = pytest.mark.real`` — gated behind ``-m real``; default
+    ``pytest`` deselects these tests so they never run in stub-mode CI. The
+    marker is registered in pyproject.toml by Plan 04-02.
 
-Plan 04-07 Task 2 removes ONLY the ``pytest.mark.xfail`` element from the
-``pytestmark`` list — the ``pytest.mark.real`` element stays so the file
-remains gated by ``pytest -m real`` (no accidental real-mode invocation
-against an absent Qdrant service). Real-mode execution path is
-Plan 04-06's ``real-index-build`` GitHub workflow_dispatch job, per D-20.
+Plans 04-04 (QdrantDenseStore + factory wiring) and 04-05 (build pipeline)
+landed the implementation; Plan 04-06 wired the ``real-index-build``
+workflow_dispatch CI job per D-20. Plan 04-07 Task 2 removed the prior
+xfail-strict-false element from ``pytestmark`` — the ``pytest.mark.real``
+element stays so the file remains deselected on default ``pytest`` runs (no
+accidental invocation against an absent Qdrant service).
 
 Refs: IDX-01 real-mode; D-20 workflow_dispatch only; Plan 04-04 (QdrantDenseStore
 + factory + embedder factory); Plan 04-05 (build pipeline); Plan 04-06 (CI job);
-Plan 04-07 (xfail removal — real marker stays).
+Plan 04-07 Task 2 (xfail removal — real marker stays).
 
 Analog: ``tests/test_chunk_idempotency.py`` — same ``_REPO_ROOT`` constant +
 ``subprocess.run(check=False, capture_output=True)`` pattern.
@@ -40,19 +38,14 @@ from pathlib import Path
 
 import pytest
 
-# Module-level marker list — applies BOTH markers to every test below.
-# Plan 04-07 Task 2 removes ONLY the xfail element from this list;
-# pytest.mark.real stays so the file remains gated by ``pytest -m real``.
-pytestmark = [
-    pytest.mark.real,
-    pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "implementations land in Plans 04-04/04-05; gated CI lands in Plan 04-06; "
-            "xfail removed in Plan 04-07 Task 2 (real marker stays)"
-        ),
-    ),
-]
+# Module-level marker — gates every test in this file behind ``pytest -m real``.
+# Plan 04-07 Task 2 removed the prior xfail element from this list (Plans 04-04 +
+# 04-05 landed the implementation; Plan 04-06 wired the real-index-build
+# workflow_dispatch CI job). The ``real`` marker stays so the file remains
+# deselected on default ``pytest`` runs and only the workflow_dispatch CI job
+# (or a developer manually running ``pytest -m real`` with
+# ``DOCINTEL_LLM_PROVIDER=real`` and a live qdrant service) collects these tests.
+pytestmark = pytest.mark.real
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
