@@ -35,12 +35,17 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 __all__ = [
     "Chunk",
     "CompanyEntry",
+    "IndexManifest",
+    "IndexManifestBM25",
+    "IndexManifestDense",
+    "IndexManifestEmbedder",
     "NormalizedFiling",
     "NormalizedFilingManifest",
 ]
@@ -137,6 +142,160 @@ class Chunk(BaseModel):
     next_chunk_id: str | None
     # CD-02: 16-char truncated hex of sha256(text).
     sha256_of_text: str
+
+
+class IndexManifestEmbedder(BaseModel):
+    """Embedder block of the Phase 4 index MANIFEST (D-13).
+
+    Sourced from ``bundle.embedder.name`` + ``Settings.embedder_model_id``
+    + the BGE-small-en-v1.5 dim (Phase 2 D-01 = 384). Phase 10's eval manifest
+    header consumes these three fields verbatim (EVAL-02).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    model_id: str
+    dim: int
+
+
+class IndexManifestDense(BaseModel):
+    """Dense block of the Phase 4 index MANIFEST (D-13).
+
+    Polymorphic by ``backend``: ``"numpy"`` carries ``sha256`` of
+    ``embeddings.npy`` (D-04); ``"qdrant"`` carries the collection identity +
+    geometry (D-06). A cross-field validator enforces that the OTHER backend's
+    fields are ``None`` — this catches MANIFEST writers that conflate the two
+    polymorphs at write time (the contract is structural, not free-form).
+
+    CD-06: When ``backend == "qdrant"``, ``collection`` is the human-readable
+    name (default ``"docintel-dense-v1"``); ``vector_size`` MUST be 384
+    (BGE-small-en-v1.5 dim) and ``distance`` MUST be ``"Cosine"`` per D-06.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["numpy", "qdrant"]
+    sha256: str | None = None  # numpy only
+    collection: str | None = None  # qdrant only
+    collection_uuid: str | None = None  # qdrant only (stable identifier per CD-06)
+    points_count: int | None = None  # qdrant only
+    vector_size: int | None = None  # qdrant only
+    distance: str | None = None  # qdrant only ("Cosine" per D-06)
+
+    @model_validator(mode="after")
+    def _backend_field_consistency(self) -> IndexManifestDense:
+        """Enforce polymorphic shape per D-13 schema.
+
+        numpy → sha256 required + all qdrant fields None.
+        qdrant → collection + points_count + vector_size + distance required
+                 + sha256 None. ``collection_uuid`` is OPTIONAL on the qdrant
+                 side because not every qdrant-client version exposes a stable
+                 UUID; the human-readable ``collection`` name is the floor.
+        """
+        if self.backend == "numpy":
+            if self.sha256 is None:
+                raise ValueError(
+                    "IndexManifestDense backend='numpy' requires sha256 "
+                    "(hex digest of embeddings.npy per D-04). Got sha256=None."
+                )
+            qdrant_only = {
+                "collection": self.collection,
+                "collection_uuid": self.collection_uuid,
+                "points_count": self.points_count,
+                "vector_size": self.vector_size,
+                "distance": self.distance,
+            }
+            populated = {k: v for k, v in qdrant_only.items() if v is not None}
+            if populated:
+                raise ValueError(
+                    "IndexManifestDense backend='numpy' must have all qdrant-only "
+                    f"fields unset, got populated: {sorted(populated.keys())!r}. "
+                    "Use backend='qdrant' if you intended the production-shaped store (D-06)."
+                )
+        elif self.backend == "qdrant":
+            missing = [
+                name
+                for name, value in (
+                    ("collection", self.collection),
+                    ("points_count", self.points_count),
+                    ("vector_size", self.vector_size),
+                    ("distance", self.distance),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError(
+                    f"IndexManifestDense backend='qdrant' missing required fields: {missing!r}. "
+                    "All four (collection, points_count, vector_size, distance) are required for "
+                    "D-13 schema + D-14 verify."
+                )
+            if self.sha256 is not None:
+                raise ValueError(
+                    "IndexManifestDense backend='qdrant' must NOT carry sha256 — "
+                    "the qdrant backend records collection identity instead "
+                    "(D-06: collection drop-and-recreate, no on-disk npy)."
+                )
+        return self
+
+
+class IndexManifestBM25(BaseModel):
+    """BM25 block of the Phase 4 index MANIFEST (D-13).
+
+    Same shape across stub and real modes (D-07: one BM25 implementation —
+    ``bm25s``). ``library_version`` is sourced from
+    ``importlib.metadata.version("bm25s")`` (Pitfall 6 — guard against
+    file-layout drift on dep bump).
+
+    Tokenizer pipeline (D-08): lowercase → English stopwords → Porter stem.
+    The ``tokenizer`` dict surfaces the pipeline so reviewers can confirm
+    what was applied without reading the build code.
+
+    Hyperparameters (D-09): ``k1=1.5``, ``b=0.75`` (Lucene defaults).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    library: str
+    library_version: str
+    k1: float
+    b: float
+    tokenizer: dict[str, Any]
+    vocab_size: int
+    sha256: str
+
+
+class IndexManifest(BaseModel):
+    """Phase 4 index MANIFEST schema (D-13). Home: ``docintel_core.types`` per CD-02.
+
+    Single file at ``data/indices/MANIFEST.json``; same top-level shape across
+    both dense backends (numpy / qdrant); the ``dense`` block is polymorphic per
+    ``IndexManifestDense``. Phase 4's ``docintel-index verify`` (D-14) loads
+    this model via ``IndexManifest.model_validate(json.loads(MANIFEST.json))``.
+
+    ``extra="forbid"`` is structural defence-in-depth (T-4-V5-01 — tampered
+    JSON with an unexpected key fails validation immediately rather than
+    silently flowing into downstream logic).
+
+    Phase 10's eval-report manifest header (EVAL-02) imports this model so
+    ``embedder.name``, ``dense.backend``, and ``bm25.tokenizer`` are sourced
+    via a single typed contract.
+
+    ``corpus_manifest_sha256`` is the hash of ``data/corpus/MANIFEST.json``
+    (Phase 3's per-filing manifest bytes) — keys the D-12 skip path
+    (``index_build_skipped_unchanged_corpus``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    embedder: IndexManifestEmbedder
+    dense: IndexManifestDense
+    bm25: IndexManifestBM25
+    corpus_manifest_sha256: str
+    chunk_count: int
+    built_at: str  # ISO-8601 UTC
+    git_sha: str
+    format_version: int
 
 
 # Compile once at module load — Pydantic re-runs field_validator per construction.
