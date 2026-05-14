@@ -2,8 +2,8 @@
 #
 # Targets are split into two groups:
 #   * Working: test, build, serve, demo, help, lint, format, lock-check,
-#     fetch-corpus (Phase 3)
-#   * Stubbed (exit 1) until the named phase: ingest (Phase 4), eval (Phases 9–10)
+#     fetch-corpus (Phase 3), build-indices (Phase 4)
+#   * Stubbed (exit 1) until the named phase: eval (Phases 9–10)
 #
 # CONTEXT.md D-22 / D-23: stubs print what they will do, name the future phase,
 # and exit 1. They are NOT no-ops.
@@ -16,7 +16,7 @@ SHELL := /usr/bin/env bash
 GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 .PHONY: help test lint format lock-check build build-api build-ui \
-        serve demo down fetch-corpus ingest eval
+        serve demo down fetch-corpus build-indices eval
 
 help: ## Show all targets with their current status
 	@echo "docintel — Makefile targets"
@@ -27,6 +27,7 @@ help: ## Show all targets with their current status
 	@echo "    format         run ruff format and black"
 	@echo "    lock-check     uv lock --check (lockfile in sync with pyprojects)"
 	@echo "    fetch-corpus   fetch + normalize + chunk SEC 10-K corpus (Phase 3)"
+	@echo "    build-indices  build dense + BM25 indices from the corpus (Phase 4)"
 	@echo "    build          docker build both api and ui targets"
 	@echo "    build-api      docker build --target api"
 	@echo "    build-ui       docker build --target ui"
@@ -36,7 +37,6 @@ help: ## Show all targets with their current status
 	@echo "    help           this message"
 	@echo ""
 	@echo "  Pending (exit 1 until the named phase ships):"
-	@echo "    ingest         lands in Phase 4 (IDX-05 — full ingest pipeline)"
 	@echo "    eval           lands in Phases 9–10 (EV2-* / EV3-* — eval CLI)"
 
 test: ## Run the test suite
@@ -82,14 +82,19 @@ fetch-corpus: ## Phase 3: fetch + normalize + chunk + manifest SEC 10-K corpus.
 	uv run docintel-ingest all
 
 # ---------------------------------------------------------------------------
+# Phase 4 (IDX-01..04): build dense + BM25 indices from the committed corpus.
+# Body invokes the docintel-index CLI's `all` subcommand (build → verify).
+# Re-runs are idempotent — skip-if-corpus-MANIFEST-unchanged (D-12). Stub-mode
+# runtime < 10s for 6,053 chunks; real-mode (Qdrant) < 3 min on CPU.
+# ---------------------------------------------------------------------------
+
+build-indices: ## Phase 4: build dense + BM25 indices from the committed corpus.
+	uv run docintel-index all
+
+# ---------------------------------------------------------------------------
 # Pending targets — print the future-phase pointer and exit 1.
 # CONTEXT.md D-22 explicitly says these are NOT no-ops.
 # ---------------------------------------------------------------------------
-
-ingest: ## Lands in Phase 4 — ingest → chunk → embed → index pipeline (IDX-05).
-	@echo "make ingest: not yet implemented in Phase 1." >&2
-	@echo "Lands in Phase 4 — see .planning/REQUIREMENTS.md (IDX-05)." >&2
-	@exit 1
 
 eval: ## Lands in Phases 9–10 — eval CLI (EV2-* / EV3-*).
 	@echo "make eval: not yet implemented in Phase 1." >&2
