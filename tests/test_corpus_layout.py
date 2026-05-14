@@ -13,33 +13,22 @@ Covers VALIDATION.md task 3-0X-08:
   ``MANIFEST.json``, and ``companies.snapshot.csv`` are NOT gitignored
   (the negation pattern from RESEARCH.md Pitfall 6 line 528-542).
 
-Tests xfail until Plan 03-02 amends ``.gitignore`` and Wave 5 commits
-the corpus artifacts.
+All four tests went GREEN by Plan 03-07: Plan 03-02 amended the
+``.gitignore`` negation block, Plans 03-04..03-06 committed the raw,
+normalized, and chunks artifacts respectively, and Plan 03-07's
+``write_manifest`` produced ``data/corpus/MANIFEST.json``.
 """
 
 from __future__ import annotations
 
 import csv
+import json
 import subprocess
 from pathlib import Path
-
-import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CORPUS_DIR = _REPO_ROOT / "data" / "corpus"
 _SNAPSHOT_CSV = _CORPUS_DIR / "companies.snapshot.csv"
-
-_XFAIL = pytest.mark.xfail(
-    raises=(
-        ImportError,
-        AttributeError,
-        AssertionError,
-        NotImplementedError,
-        FileNotFoundError,
-    ),
-    strict=False,
-    reason="awaits Plan 03-02 — .gitignore amend; awaits Wave 5 — corpus committed (ING-01)",
-)
 
 _EXPECTED_SNAPSHOT_HEADER = [
     "ticker",
@@ -62,7 +51,6 @@ def test_snapshot_csv_present() -> None:
     ), f"snapshot header drift — got {header!r}, expected {_EXPECTED_SNAPSHOT_HEADER!r}"
 
 
-@_XFAIL
 def test_committed_corpus_files_present() -> None:
     """For each (ticker, year) row, the raw / normalized / chunks files exist; MANIFEST too."""
     assert _SNAPSHOT_CSV.is_file(), f"missing snapshot file: {_SNAPSHOT_CSV}"
@@ -73,11 +61,10 @@ def test_committed_corpus_files_present() -> None:
 
     for row in rows:
         ticker = row["ticker"]
-        # Per-row fiscal years — Pitfall 1 — split on a separator that the
-        # snapshot generator commits. We tolerate `;` (most common in CSVs
-        # to avoid clashing with the column separator) and `,`.
-        sep = ";" if ";" in row["fiscal_years"] else ","
-        years = [y.strip() for y in row["fiscal_years"].split(sep) if y.strip()]
+        # Per-row fiscal years — Pitfall 1. The snapshot encodes the list
+        # as JSON (e.g. ``"[2023,2024,2025]"``); ``snapshot.py`` decodes
+        # via ``json.loads`` and we mirror that here for parity.
+        years = [int(y) for y in json.loads(row["fiscal_years"])]
         for year in years:
             raw = _CORPUS_DIR / "raw" / ticker / f"FY{year}.html"
             normalized = _CORPUS_DIR / "normalized" / ticker / f"FY{year}.json"

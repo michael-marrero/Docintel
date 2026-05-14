@@ -3,8 +3,8 @@
 D-17 + D-18: this is the fifth workspace package's CLI entry point. The
 ``[project.scripts] docintel-ingest = "docintel_ingest.cli:main"`` line in
 ``pyproject.toml`` makes ``uv run docintel-ingest <subcommand>`` invoke this
-``main()``. Wave 5's ``make fetch-corpus`` ultimately wraps ``uv run
-docintel-ingest all``.
+``main()``. ``make fetch-corpus`` (wired in Wave 5) ultimately wraps
+``uv run docintel-ingest all``.
 
 FND-11 single-env-reader rule: ``Settings()`` is constructed exactly ONCE in
 ``main()`` and passed (not re-read) to each subcommand. ``cfg = Settings()  #
@@ -26,38 +26,32 @@ ingest-wraps grep gate looks for an exact SDK-call pattern; this docstring
 avoids the literal token so the gate's surface stays a true positive
 indicator.)
 
-Until each subsequent wave (2 fetch / 3 normalize / 4 chunk / 5 verify) lands
-its implementation module, the lazy ``from docintel_ingest.<mod> import
-<fn>`` call raises ``ImportError``. The dispatch catches that and prints a
-``lands in Wave N`` message, returning exit 1. This keeps ``--help`` working
-TODAY while signaling "not yet implemented" cleanly to anyone who tries to
-run e.g. ``docintel-ingest fetch`` before Wave 2 ships.
+Wave 5 final state: every subcommand has a real implementation behind it.
+The ``chunk`` subcommand accepts ``--normalized-root`` and ``--out-root``
+overrides so ``tests/test_chunk_idempotency.py::test_chunks_byte_identical``
+can re-chunk into a tmpdir for byte-identity diffing. The ``all`` subcommand
+chains fetch + normalize + chunk + manifest sequentially. The ``verify``
+subcommand re-runs ``verify_idempotency`` over the committed corpus.
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 
+import structlog
 from docintel_core import __version__
 from docintel_core.config import Settings
 from docintel_core.log import configure_logging
 
-_DEFERRED_WAVES = {
-    "fetch": "Wave 2 (docintel_ingest.fetch)",
-    "normalize": "Wave 3 (docintel_ingest.normalize)",
-    "chunk": "Wave 4 (docintel_ingest.chunk)",
-    "all": "Wave 5 (docintel_ingest composition + make fetch-corpus)",
-    "verify": "Wave 5 (docintel_ingest.verify — chunk-idempotency canary)",
-}
+log = structlog.stdlib.get_logger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point referenced by packages/docintel-ingest/pyproject.toml.
 
     Returns a shell exit code:
-      * 0 — subcommand handler returned successfully (Wave 5+).
-      * 1 — subcommand not yet implemented OR handler error.
+      * 0 — subcommand handler returned successfully.
+      * 1 — subcommand handler error.
     """
     configure_logging()
 
@@ -66,66 +60,57 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("fetch", help="download 10-Ks from SEC EDGAR")
     sub.add_parser("normalize", help="parse raw HTML to per-Item JSON")
-    sub.add_parser("chunk", help="chunk normalized filings into JSONL")
-    sub.add_parser("all", help="fetch + normalize + chunk")
+    # chunk: optional overrides for the normalized-root and chunks-out-root
+    # so tests/test_chunk_idempotency.py::test_chunks_byte_identical can
+    # re-chunk into a tmpdir for byte-identity diffing against committed
+    # output (D-22 / ING-04). Production callers leave both unset and the
+    # canonical data/corpus/normalized/ + data/corpus/chunks/ paths are used.
+    chunk_parser = sub.add_parser(
+        "chunk",
+        help="chunk normalized filings into JSONL",
+    )
+    chunk_parser.add_argument(
+        "--normalized-root",
+        type=str,
+        default=None,
+        help="Override path to normalized JSON root (default: data/corpus/normalized)",
+    )
+    chunk_parser.add_argument(
+        "--out-root",
+        type=str,
+        default=None,
+        help="Override path to chunks JSONL output root (default: data/corpus/chunks)",
+    )
+    sub.add_parser("all", help="fetch + normalize + chunk + manifest")
     sub.add_parser("verify", help="re-chunk normalized; assert byte-identity")
 
     args = parser.parse_args(argv)
     cfg = Settings()  # the ONLY allowed env read site (FND-11)
 
     # Lazy-import dispatch (Pitfall 9 + D-12 discipline). Each branch imports
-    # the wave-specific implementation INSIDE the branch so --help / --version
-    # never pays the torch / selectolax / SEC-downloader-SDK cold-start cost.
-    # Until the implementing wave ships, the import raises ImportError and the
-    # try/except surfaces a clean "lands in Wave N" message.
-    #
-    # The ``type: ignore`` comments below are necessary because the Wave 2-5
-    # modules (fetch / normalize / chunk / composer / verify) do not exist yet
-    # at the time this file lands. mypy strict (workspace-wide setting in the
-    # repo-root pyproject.toml) cannot resolve the import targets. Once each
-    # wave ships its module, mypy will resolve naturally and the ignores can be
-    # removed in the same wave-flip commit that ships the implementation.
+    # the implementation INSIDE the branch so --help / --version never pays
+    # the torch / selectolax / SEC-downloader-SDK cold-start cost.
     if args.cmd == "fetch":
-        # Plan 03-04 wave-flip: docintel_ingest.fetch ships in this commit, so
-        # the prior `type: ignore[import-not-found]` is now unused — removed
-        # per the docstring rule ("removed in the same wave-flip commit that
-        # ships the implementation").
-        try:
-            from docintel_ingest.fetch import fetch_all
-        except ImportError:
-            return _not_yet_implemented(args.cmd)
+        from docintel_ingest.fetch import fetch_all
+
         return int(fetch_all(cfg))
     if args.cmd == "normalize":
-        # Plan 03-05 wave-flip: docintel_ingest.normalize ships in this
-        # commit, so the prior `type: ignore[import-not-found]` is now
-        # unused — removed per the docstring rule ("removed in the same
-        # wave-flip commit that ships the implementation").
-        try:
-            from docintel_ingest.normalize import normalize_all
-        except ImportError:
-            return _not_yet_implemented(args.cmd)
+        from docintel_ingest.normalize import normalize_all
+
         return int(normalize_all(cfg))
     if args.cmd == "chunk":
-        # Plan 03-06 wave-flip: docintel_ingest.chunk ships in this commit, so
-        # the prior `type: ignore[import-not-found]` is now unused — removed
-        # per the docstring rule ("removed in the same wave-flip commit that
-        # ships the implementation").
-        try:
-            from docintel_ingest.chunk import chunk_all
-        except ImportError:
-            return _not_yet_implemented(args.cmd)
-        return int(chunk_all(cfg))
+        from pathlib import Path
+
+        from docintel_ingest.chunk import chunk_all
+
+        normalized_root = Path(args.normalized_root) if args.normalized_root is not None else None
+        out_root = Path(args.out_root) if args.out_root is not None else None
+        return int(chunk_all(cfg, normalized_root=normalized_root, out_root=out_root))
     if args.cmd == "all":
-        try:
-            from docintel_ingest.composer import run_all  # type: ignore[import-not-found]
-        except ImportError:
-            return _not_yet_implemented(args.cmd)
-        return int(run_all(cfg))
+        return _cmd_all(cfg)
     if args.cmd == "verify":
-        try:
-            from docintel_ingest.verify import verify_idempotency  # type: ignore[import-not-found]
-        except ImportError:
-            return _not_yet_implemented(args.cmd)
+        from docintel_ingest.verify import verify_idempotency
+
         return int(verify_idempotency(cfg))
 
     # argparse with required=True guarantees args.cmd is one of the registered
@@ -133,14 +118,37 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
-def _not_yet_implemented(cmd: str) -> int:
-    """Print ``lands in Wave N`` and return 1. Used by subcommand stubs."""
-    where = _DEFERRED_WAVES.get(cmd, "a future wave")
-    print(
-        f"docintel-ingest {cmd}: not yet implemented (lands in {where})",
-        file=sys.stderr,
-    )
-    return 1
+def _cmd_all(cfg: Settings) -> int:
+    """Orchestrate the full ingest pipeline: fetch + normalize + chunk + manifest.
+
+    Each step is sequential — a failure in any earlier step short-circuits
+    the run with that step's return code. After chunk completes the
+    manifest writer runs unconditionally (it is read-only over the freshly-
+    produced corpus).
+
+    Returns:
+        0 if every step exits 0; otherwise the first non-zero exit code.
+    """
+    from docintel_ingest.chunk import chunk_all
+    from docintel_ingest.fetch import fetch_all
+    from docintel_ingest.manifest import write_manifest
+    from docintel_ingest.normalize import normalize_all
+
+    rc = fetch_all(cfg)
+    if rc != 0:
+        log.error("all_step_failed", step="fetch", rc=rc)
+        return rc
+    rc = normalize_all(cfg)
+    if rc != 0:
+        log.error("all_step_failed", step="normalize", rc=rc)
+        return rc
+    rc = chunk_all(cfg)
+    if rc != 0:
+        log.error("all_step_failed", step="chunk", rc=rc)
+        return rc
+    write_manifest(cfg)
+    log.info("all_complete")
+    return 0
 
 
 if __name__ == "__main__":
