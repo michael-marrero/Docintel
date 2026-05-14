@@ -7,8 +7,20 @@
 *.key
 *.pem
 
-# Project data (corpus, indices, traces — never committed)
-data/corpus/
+# Project data (indices, traces — never committed; corpus partially committed per Phase 3 D-04 below)
+# Phase 3 (D-04 + Pitfall 6): commit raw + normalized + chunks + MANIFEST + snapshot;
+# ignore working cache.
+data/corpus/.cache/
+# Negation: previously data/corpus/ was wholesale ignored; now only .cache is.
+!data/corpus/
+!data/corpus/raw/
+!data/corpus/raw/**
+!data/corpus/normalized/
+!data/corpus/normalized/**
+!data/corpus/chunks/
+!data/corpus/chunks/**
+!data/corpus/MANIFEST.json
+!data/corpus/companies.snapshot.csv
 data/indices/
 data/traces/
 data/eval/cache/

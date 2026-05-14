@@ -66,6 +66,20 @@ jobs:
         # contains an SDK call pattern but no tenacity import (D-18 structural enforcement).
         run: bash scripts/check_adapter_wraps.sh
 
+      - name: Ingest wrap grep gate (D-18)
+        # Every docintel_ingest file with a sec-edgar-downloader call must import tenacity.
+        # Script exits non-zero if any file under packages/docintel-ingest/src/docintel_ingest/
+        # contains a sec-edgar-downloader SDK call pattern but no tenacity import
+        # (D-18 structural enforcement; ADP-06 analog for Phase 3 / ING-*).
+        run: bash scripts/check_ingest_wraps.sh
+
+      - name: Chunk-idempotency gate (ING-04)
+        # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
+        # committed normalized JSON and asserts byte-identity vs. committed
+        # JSONL; re-computes every sha256 in MANIFEST.json. Headline Phase 3
+        # acceptance gate — must stay green on every PR.
+        run: uv run pytest tests/test_chunk_idempotency.py -ra -q
+
   gitleaks:
     name: gitleaks (secrets scan)
     runs-on: ubuntu-latest
