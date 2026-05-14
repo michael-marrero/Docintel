@@ -13,8 +13,9 @@ Covers VALIDATION.md tasks 3-0X-04 and 3-0X-05 (ING-03, D-11, D-12, D-13):
   an oversize payload — the build-fail-if-exceeded canary
   (RESEARCH.md line 378-383).
 
-The tests xfail until Wave 4 ships ``docintel_ingest.chunk`` plus the
-``Chunk`` Pydantic model in ``docintel_core.types`` (CD-01).
+Plan 03-06 wave-flip: ``docintel_ingest.chunk`` ships in this commit;
+the xfail markers were removed in the same wave-flip commit per the
+project convention.
 """
 
 from __future__ import annotations
@@ -26,12 +27,6 @@ from pathlib import Path
 import pytest
 
 _SAMPLE_DIR = Path(__file__).resolve().parent / "fixtures" / "sample_10k"
-
-_XFAIL = pytest.mark.xfail(
-    raises=(ImportError, AttributeError, AssertionError, NotImplementedError, FileNotFoundError),
-    strict=False,
-    reason="awaits Wave 4 — chunk_filing + Chunk Pydantic model (ING-03)",
-)
 
 
 def test_chunk_schema() -> None:
@@ -69,7 +64,6 @@ def test_chunk_schema() -> None:
         assert hasattr(chunk, field), f"Chunk missing required field {field!r}"
 
 
-@_XFAIL
 def test_chunk_id_format() -> None:
     """``chunk_id`` matches the D-14 structured string format."""
     from docintel_ingest.chunk import chunk_filing
@@ -80,7 +74,6 @@ def test_chunk_id_format() -> None:
         assert pattern.match(c.chunk_id), f"chunk_id violates D-14 format: {c.chunk_id!r}"
 
 
-@_XFAIL
 def test_chunk_invariants() -> None:
     """Hard-cap, item-bounded, zero-padded ordinals across the AAPL fixture."""
     from docintel_ingest.chunk import chunk_filing
@@ -112,7 +105,6 @@ def test_chunk_invariants() -> None:
         assert ords[0] == 0, f"item {item} ordinals start at {ords[0]}, expected 000"
 
 
-@_XFAIL
 def test_chunk_overlap_within_item() -> None:
     """Adjacent chunks in the same Item share ~50 tokens of overlap (D-13, tolerance ±5)."""
     from docintel_ingest.chunk import chunk_filing
@@ -143,7 +135,6 @@ def test_chunk_overlap_within_item() -> None:
     assert found_adjacent, "fixture must produce at least one item with >=2 chunks"
 
 
-@_XFAIL
 def test_chunk_outlier_fallback() -> None:
     """A 600-token single-paragraph item emits >1 chunk, each ≤ HARD_CAP (D-13 + CD-06)."""
     from docintel_ingest.chunk import chunk_filing
@@ -155,7 +146,6 @@ def test_chunk_outlier_fallback() -> None:
         assert c.n_tokens <= 500, f"outlier-fallback chunk exceeds cap: {c.chunk_id}: {c.n_tokens}"
 
 
-@_XFAIL
 def test_no_chunk_crosses_item() -> None:
     """No chunk's text contains content from two different ``sections[item_code]`` values."""
     from docintel_ingest.chunk import chunk_filing
@@ -174,7 +164,6 @@ def test_no_chunk_crosses_item() -> None:
         assert len(set(hits)) <= 1, f"chunk {c.chunk_id} crosses items: {hits!r}"
 
 
-@_XFAIL
 def test_hard_cap_assertion_raises_on_oversize() -> None:
     """``_emit_chunk`` (or equivalent) raises ValueError on an oversize payload."""
     from docintel_ingest import chunk as chunk_module

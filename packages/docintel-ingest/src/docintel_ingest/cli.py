@@ -106,8 +106,12 @@ def main(argv: list[str] | None = None) -> int:
             return _not_yet_implemented(args.cmd)
         return int(normalize_all(cfg))
     if args.cmd == "chunk":
+        # Plan 03-06 wave-flip: docintel_ingest.chunk ships in this commit, so
+        # the prior `type: ignore[import-not-found]` is now unused — removed
+        # per the docstring rule ("removed in the same wave-flip commit that
+        # ships the implementation").
         try:
-            from docintel_ingest.chunk import chunk_all  # type: ignore[import-not-found]
+            from docintel_ingest.chunk import chunk_all
         except ImportError:
             return _not_yet_implemented(args.cmd)
         return int(chunk_all(cfg))
