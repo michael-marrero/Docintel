@@ -1,8 +1,9 @@
 # docintel — Makefile
 #
 # Targets are split into two groups:
-#   * Working in Phase 1: test, build, serve, demo, help, lint, format, lock-check
-#   * Stubbed (exit 1) until the named phase: fetch-corpus, ingest, eval
+#   * Working: test, build, serve, demo, help, lint, format, lock-check,
+#     fetch-corpus (Phase 3)
+#   * Stubbed (exit 1) until the named phase: ingest (Phase 4), eval (Phases 9–10)
 #
 # CONTEXT.md D-22 / D-23: stubs print what they will do, name the future phase,
 # and exit 1. They are NOT no-ops.
@@ -20,11 +21,12 @@ GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 help: ## Show all targets with their current status
 	@echo "docintel — Makefile targets"
 	@echo ""
-	@echo "  Working in Phase 1:"
+	@echo "  Working:"
 	@echo "    test           run uv run pytest"
 	@echo "    lint           run ruff + black --check + mypy --strict"
 	@echo "    format         run ruff format and black"
 	@echo "    lock-check     uv lock --check (lockfile in sync with pyprojects)"
+	@echo "    fetch-corpus   fetch + normalize + chunk SEC 10-K corpus (Phase 3)"
 	@echo "    build          docker build both api and ui targets"
 	@echo "    build-api      docker build --target api"
 	@echo "    build-ui       docker build --target ui"
@@ -34,7 +36,6 @@ help: ## Show all targets with their current status
 	@echo "    help           this message"
 	@echo ""
 	@echo "  Pending (exit 1 until the named phase ships):"
-	@echo "    fetch-corpus   lands in Phase 3 (ING-* — corpus fetcher)"
 	@echo "    ingest         lands in Phase 4 (IDX-05 — full ingest pipeline)"
 	@echo "    eval           lands in Phases 9–10 (EV2-* / EV3-* — eval CLI)"
 
@@ -71,14 +72,19 @@ down: ## docker compose down (and remove the docintel network)
 	docker compose down
 
 # ---------------------------------------------------------------------------
+# Phase 3 (ING-01..04): fetch + normalize + chunk + manifest the SEC 10-K corpus.
+# Body invokes the docintel-ingest CLI's `all` subcommand which orchestrates
+# the full pipeline. Re-runs are byte-identical (ING-04 idempotency contract
+# enforced by tests/test_chunk_idempotency.py on every CI push).
+# ---------------------------------------------------------------------------
+
+fetch-corpus: ## Phase 3: fetch + normalize + chunk + manifest SEC 10-K corpus.
+	uv run docintel-ingest all
+
+# ---------------------------------------------------------------------------
 # Pending targets — print the future-phase pointer and exit 1.
 # CONTEXT.md D-22 explicitly says these are NOT no-ops.
 # ---------------------------------------------------------------------------
-
-fetch-corpus: ## Lands in Phase 3 — corpus fetcher (ING-*).
-	@echo "make fetch-corpus: not yet implemented in Phase 1." >&2
-	@echo "Lands in Phase 3 — see .planning/REQUIREMENTS.md (ING-* requirements)." >&2
-	@exit 1
 
 ingest: ## Lands in Phase 4 — ingest → chunk → embed → index pipeline (IDX-05).
 	@echo "make ingest: not yet implemented in Phase 1." >&2
