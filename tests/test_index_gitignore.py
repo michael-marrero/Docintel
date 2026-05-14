@@ -5,10 +5,8 @@ artifacts ever land in git; ``data/indices/`` and any nested cache directory
 like ``data/indices/.qdrant/`` are covered by the existing ``.gitignore`` rule
 shipped in Plan 03-04).
 
-This test is intentionally ``@pytest.mark.xfail(strict=False)`` even though the
-gitignore rule already exists today — the xfail flips to xpassed once Plan 04-05
-actually builds an index (so the running directory ``data/indices/`` exists to
-``git check-ignore`` against). Plan 04-07 Task 1 removes the xfail marker.
+Plan 04-05 builds the running ``data/indices/`` directory; Plan 04-07 Task 1
+removed the former xfail marker so the IDX-04 gate now runs as a hard test.
 
 Analog: documented gate per IDX-04 — no direct test analog in Phase 3.
 """
@@ -23,10 +21,6 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="IDX-04 gate becomes assertable once Plan 04-05 builds data/indices/; xfail removed in Plan 04-07",
-)
 def test_indices_dir_ignored() -> None:
     """IDX-04: ``data/indices/`` (and any nested cache dir) is gitignored.
 

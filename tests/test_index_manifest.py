@@ -8,10 +8,10 @@ Covers VALIDATION.md Per-Task Verification Map rows for IDX-03 (manifest carries
 write — mid-write failure leaves the prior file intact and no orphan ``.tmp``
 sibling).
 
-These tests are intentionally ``@pytest.mark.xfail(strict=False)`` until Plan
-04-02 lands the ``IndexManifest`` Pydantic model in ``docintel_core.types`` and
-Plan 04-05 lands the build pipeline + ``_atomic_write_manifest`` helper. Plan
-04-07 Task 1 removes the xfail markers.
+Plan 04-02 landed the ``IndexManifest`` Pydantic model in ``docintel_core.types``
+and Plan 04-05 landed the build pipeline + ``_atomic_write_manifest`` helper;
+Plan 04-07 Task 1 removed the former xfail markers so these assertions now run
+as hard tests.
 
 Analog: ``tests/test_chunk_idempotency.py::test_manifest_hashes_match`` shape
 (load MANIFEST, assert per-field invariants).
@@ -25,13 +25,11 @@ from pathlib import Path
 
 import pytest
 
+from docintel_index.manifest import _atomic_write_manifest
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="IndexManifest schema lands in Plan 04-02; build pipeline lands in Plan 04-05; xfail removed in Plan 04-07",
-)
 def test_manifest_required_fields() -> None:
     """IDX-03: MANIFEST.json carries the canonical top-level + nested fields.
 
@@ -69,10 +67,6 @@ def test_manifest_required_fields() -> None:
         assert sub in manifest["bm25"], f"MANIFEST.bm25 missing {sub!r}"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="library_version recording lands in Plan 04-05; xfail removed in Plan 04-07",
-)
 def test_manifest_records_library_versions() -> None:
     """Pitfall 6: ``manifest.bm25.library_version`` matches the installed bm25s version.
 
@@ -95,10 +89,6 @@ def test_manifest_records_library_versions() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="_atomic_write_manifest lands in Plan 04-05; xfail removed in Plan 04-07",
-)
 def test_atomic_write_partial_failure(tmp_path: Path) -> None:
     """Pitfall 8 / CD-08: a mid-write failure leaves the prior MANIFEST intact + no orphan .tmp.
 
@@ -107,11 +97,6 @@ def test_atomic_write_partial_failure(tmp_path: Path) -> None:
     if anything raises before ``.replace()``, the destination must be unchanged
     AND the ``.tmp`` sibling must be unlinked (SUGGESTION 10 — try/finally cleanup).
     """
-    try:
-        from docintel_index.manifest import _atomic_write_manifest  # type: ignore[import-not-found]
-    except ImportError:
-        pytest.xfail("docintel_index.manifest._atomic_write_manifest not yet implemented (Plan 04-05)")
-
     dest = tmp_path / "MANIFEST.json"
     original_payload = {"format_version": "1.0", "marker": "original"}
     dest.write_text(json.dumps(original_payload, sort_keys=True), encoding="utf-8")

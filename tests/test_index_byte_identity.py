@@ -7,10 +7,9 @@ non-determinism BEFORE the integration-level idempotency gate reveals it
 indirectly (the integration gate would still flag the drift, but at higher cost
 and with less actionable failure messaging).
 
-This test is intentionally ``@pytest.mark.xfail(strict=False)`` even though the
-underlying numpy behaviour already exists today — the xfail flips to xpassed
-once Plan 04-05 commits a numpy-backed dense store that depends on this
-invariant. Plan 04-07 Task 1 removes the xfail marker.
+Plan 04-05 committed a numpy-backed dense store that depends on this invariant;
+Plan 04-07 Task 1 removed the former xfail marker so the canary now runs as a
+hard test.
 
 Analog: closest is ``tests/test_chunk_idempotency.py::test_chunks_byte_identical``
 (shape only — run-twice-and-compare-bytes structure).
@@ -27,10 +26,6 @@ import numpy as np
 import pytest
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="numpy-backed dense store consuming this invariant lands in Plan 04-05; xfail removed in Plan 04-07",
-)
 def test_np_save_deterministic(tmp_path: Path) -> None:
     """Pitfall 3: ``np.save`` on a fixed float32 ndarray is byte-deterministic.
 

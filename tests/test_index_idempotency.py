@@ -14,10 +14,10 @@ Covers Phase 4's headline acceptance gate:
   equality. Defensive against any future "re-stamp built_at on skip"
   regression that would silently break byte-identity.
 
-Both tests are ``@pytest.mark.xfail(strict=False)`` until Plan 04-05 lands
-``docintel-index build`` and Plan 04-07 flips them green. Module is
-``importorskip``-guarded so collection succeeds before ``docintel_index``
-ships.
+Plan 04-05 landed ``docintel-index build`` and Plan 04-07 Task 1 removed the
+former xfail markers so these assertions now run as hard tests. Module is
+``importorskip``-guarded so collection succeeds even if ``docintel_index``
+is uninstalled.
 
 Refs:
 - .planning/phases/04-embedding-indexing/04-CONTEXT.md  D-12, D-22
@@ -56,10 +56,6 @@ def _canonicalize_manifest(manifest: dict) -> dict:
     return canonical
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 04-05 lands docintel-index build (skip-if-unchanged-corpus path); Plan 04-07 flips this green.",
-)
 def test_skip_unchanged_corpus(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
     """Two back-to-back ``docintel-index build`` invocations: second one skips.
 
@@ -110,10 +106,6 @@ def test_skip_unchanged_corpus(tmp_path: Path, capfd: pytest.CaptureFixture[str]
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 04-05 lands the skip-path manifest preservation; Plan 04-07 flips this green.",
-)
 def test_manifest_byte_identical_after_skip() -> None:
     """MANIFEST.json bytes are sha256-identical across a skip-path re-run.
 

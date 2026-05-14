@@ -10,10 +10,10 @@ Covers Phase 4's verify contract:
   original bytes BEFORE tampering and restores them in a ``try/finally``
   so a failed assertion does not leave the repo in a corrupted state.
 
-Both tests are ``@pytest.mark.xfail(strict=False)`` until Plan 04-05 lands
-``docintel-index verify`` (D-14) and Plan 04-07 flips them green. Module is
-``importorskip``-guarded so collection succeeds before ``docintel_index``
-ships.
+Plan 04-05 landed ``docintel-index verify`` (D-14) and Plan 04-07 Task 1
+removed the former xfail markers so these assertions now run as hard tests.
+Module is ``importorskip``-guarded so collection succeeds even if
+``docintel_index`` is uninstalled.
 
 Refs:
 - .planning/phases/04-embedding-indexing/04-CONTEXT.md  D-14
@@ -35,10 +35,6 @@ pytest.importorskip("docintel_index")
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 04-05 lands docintel-index build + verify (D-14); Plan 04-07 flips this green.",
-)
 def test_verify_clean_build() -> None:
     """``docintel-index verify`` exits 0 immediately after a clean build."""
     build = subprocess.run(
@@ -65,10 +61,6 @@ def test_verify_clean_build() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 04-05 lands the tampered-artifact detection path (D-14); Plan 04-07 flips this green.",
-)
 def test_verify_detects_tampered_npy() -> None:
     """``docintel-index verify`` exits 1 when ``embeddings.npy`` is byte-corrupted.
 
