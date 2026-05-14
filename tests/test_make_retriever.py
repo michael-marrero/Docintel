@@ -61,7 +61,7 @@ def test_chunk_map_eager_load() -> None:
     r = make_retriever(Settings(llm_provider="stub"))
     # The chunk_map is a private attribute on Retriever — test_make_retriever
     # is the one place we read it directly (gives Phase 11 a known seam too).
-    assert len(r._chunk_map) == expected_count  # noqa: SLF001 — intentional private-attr read
+    assert len(r._chunk_map) == expected_count
 
 
 def test_factory_lazy_imports_retriever_module() -> None:

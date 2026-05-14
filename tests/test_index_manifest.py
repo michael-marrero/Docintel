@@ -24,7 +24,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from docintel_index.manifest import _atomic_write_manifest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent

@@ -24,12 +24,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from pathlib import Path
 
 import numpy as np
 import pytest
-
 from docintel_core.adapters.protocols import BM25Store, DenseStore
 from docintel_core.config import Settings
 from docintel_core.types import Chunk
@@ -116,7 +114,7 @@ def test_bm25s_store_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
         "X-3",
     }, f"BM25 'apple' query should rank apple-bearing chunks first; got {results!r}"
     # rank is the 2nd tuple element, score is the 3rd (D-11 ranks-only).
-    for chunk_id, rank, score in results:
+    for _chunk_id, rank, score in results:
         assert isinstance(rank, int)
         assert isinstance(score, float)
 
@@ -212,7 +210,7 @@ def test_numpy_dense_store_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path:
     top_ids = [r[0] for r in results]
     assert top_ids[0] in {"X-0", "X-2"}, f"top hit must be e0-aligned; got {top_ids!r}"
     assert top_ids[1] in {"X-0", "X-2"}, f"second hit must also be e0-aligned; got {top_ids!r}"
-    for chunk_id, rank, score in results:
+    for _chunk_id, rank, score in results:
         assert isinstance(rank, int)
         assert isinstance(score, float)
 

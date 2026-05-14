@@ -150,8 +150,8 @@ def main() -> int:
     disagreement_pct = (mean_ratio - 1.0) * 100.0
 
     # Determine A1 status — RESEARCH §3 assumed ~5% disagreement on English prose.
-    # CONFIRMED: 4–6% (close to the assumption). REFUTED: > 10% or < 1%.
-    # EXTENDED: 6–10% (somewhat higher than the assumption but the soft warning
+    # CONFIRMED: 4-6% (close to the assumption). REFUTED: > 10% or < 1%.
+    # EXTENDED: 6-10% (somewhat higher than the assumption but the soft warning
     # still acts as belt-and-suspenders).
     abs_disagreement = abs(disagreement_pct)
     if abs_disagreement <= 6.0:
@@ -174,8 +174,10 @@ def main() -> int:
     print(f"  p99:    {p99_ratio:.4f}")
     print(f"  max:    {max_ratio:.4f}")
     print()
-    print(f"Chunks where XLM-RoBERTa-token-count > {_RERANKER_RISK_THRESHOLD} "
-          f"(reranker truncation risk):")
+    print(
+        f"Chunks where XLM-RoBERTa-token-count > {_RERANKER_RISK_THRESHOLD} "
+        f"(reranker truncation risk):"
+    )
     print(f"  count: {len(overflow_records)}")
     if overflow_records:
         print("  list (first 20):")
@@ -183,8 +185,10 @@ def main() -> int:
             print(f"    - {chunk_id} (n_bert={n_bert} -> n_xlmr={n_xlmr})")
     print()
     print("A1 assumption (research §3): ~5% disagreement on English prose.")
-    print(f"A1 measurement: mean ratio = {mean_ratio:.4f} "
-          f"(disagreement = {disagreement_pct:+.2f}%).")
+    print(
+        f"A1 measurement: mean ratio = {mean_ratio:.4f} "
+        f"(disagreement = {disagreement_pct:+.2f}%)."
+    )
     print(f"A1 status: {a1_status}")
     print()
     if overflow_records:

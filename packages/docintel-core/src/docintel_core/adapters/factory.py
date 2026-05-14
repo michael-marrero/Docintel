@@ -47,11 +47,12 @@ from docintel_core.adapters.types import AdapterBundle, IndexStoreBundle
 # (``tests/test_make_retriever.py::test_factory_lazy_imports_retriever_module``
 # enforces the runtime gate).
 if TYPE_CHECKING:
+    from docintel_retrieve.retriever import Retriever
+
     from docintel_core.adapters.real.judge import CrossFamilyJudge
     from docintel_core.adapters.real.llm_anthropic import AnthropicAdapter
     from docintel_core.adapters.real.llm_openai import OpenAIAdapter
     from docintel_core.config import Settings
-    from docintel_retrieve.retriever import Retriever
 
 
 def make_adapters(cfg: Settings) -> AdapterBundle:
@@ -149,7 +150,7 @@ def make_index_stores(cfg: Settings) -> IndexStoreBundle:
     )
 
 
-def make_retriever(cfg: Settings) -> "Retriever":  # noqa: F821 — string forward reference (Pattern S5)
+def make_retriever(cfg: Settings) -> Retriever:
     """Construct and return a Retriever composed of adapter + store bundles.
 
     Phase 5 D-04: third sibling factory alongside ``make_adapters(cfg)`` and

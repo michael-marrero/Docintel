@@ -21,8 +21,6 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from docintel_index.build import corpus_identity_hash
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -110,7 +108,7 @@ def test_corpus_hash_ignores_generated_at(tmp_path: Path) -> None:
 def test_build_skips_empty_filings() -> None:
     """Pitfall 4: ``chunk_count`` in MANIFEST matches the actual non-zero chunk count from JSONL files.
 
-    AMZN/META/XOM × 3 FYs ship 0-chunk JSONLs (empty 10-K artifacts); the build
+    AMZN/META/XOM x 3 FYs ship 0-chunk JSONLs (empty 10-K artifacts); the build
     must not double-count those into the index.
     """
     indices_root = _REPO_ROOT / "data" / "indices"

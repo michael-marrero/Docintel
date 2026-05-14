@@ -56,7 +56,6 @@ from typing import Final
 
 import numpy as np
 import structlog
-
 from docintel_core.adapters.types import AdapterBundle, IndexStoreBundle, RerankedDoc
 from docintel_core.config import Settings
 from docintel_core.types import Chunk, RetrievedChunk
@@ -99,10 +98,10 @@ sensitive to Phase 3 regressions specifically, not to query-length abuse.
 
 
 _CLAUDE_MD_HARD_GATE: Final[str] = (
-    "Per CLAUDE.md: \"If that gate fails, look at BGE 512-token truncation "
+    'Per CLAUDE.md: "If that gate fails, look at BGE 512-token truncation '
     "FIRST before suspecting hybrid retrieval, RRF, or chunk size. This is "
     "the most common subtle failure mode and the canary exists specifically "
-    "to catch it.\""
+    'to catch it."'
 )
 """Pitfall 6 — verbatim CLAUDE.md text reused in BOTH the D-10 chunk-loop
 AssertionError message AND (later) Plan 05-06's canary failure message.
@@ -173,11 +172,11 @@ class Retriever:
         # Bm25sStore returns []).
         try:
             self._stores.dense.query(np.zeros(384, dtype=np.float32), k=1)
-        except Exception:  # noqa: BLE001 — warm-up MUST NOT prevent construction
+        except Exception:
             pass
         try:
             self._stores.bm25.query("warmup", k=1)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     def search(self, query: str, k: int = TOP_K_FINAL) -> list[RetrievedChunk]:
@@ -229,7 +228,7 @@ class Retriever:
         bm25_t0 = time.perf_counter()
         try:
             bm25_results = self._stores.bm25.query(truncated_query, TOP_N_PER_RETRIEVER)
-        except Exception as exc:  # noqa: BLE001 — surface as warning, treat as zero-candidate
+        except Exception as exc:
             log.warning(
                 "retriever_bm25_query_failed",
                 error=str(exc),
@@ -241,7 +240,7 @@ class Retriever:
         dense_t0 = time.perf_counter()
         try:
             dense_results = self._stores.dense.query(q_vec, TOP_N_PER_RETRIEVER)
-        except Exception as exc:  # noqa: BLE001 — surface as warning, treat as zero-candidate
+        except Exception as exc:
             log.warning(
                 "retriever_dense_query_failed",
                 error=str(exc),

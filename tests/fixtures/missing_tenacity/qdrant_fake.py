@@ -1,4 +1,3 @@
-# noqa: F401, F841, E501
 #
 # Fixture for the index-wrap grep gate negative-case test (lives next to
 # tests/test_index_wraps_gate.py — created in Plan 04-06).

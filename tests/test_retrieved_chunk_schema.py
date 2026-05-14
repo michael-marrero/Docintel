@@ -52,7 +52,7 @@ def _ok_payload() -> dict:
 def test_retrieved_chunk_required_fields() -> None:
     """RET-04 — all seven D-03 fields are accepted (Plan 05-02)."""
     # In-function import: RetrievedChunk does not yet live in docintel_core.types at Wave 0.
-    from docintel_core.types import RetrievedChunk  # noqa: WPS433 — intentional in-function import
+    from docintel_core.types import RetrievedChunk
 
     rc = RetrievedChunk(**_ok_payload())
     assert rc.chunk_id == "AAPL-FY2024-Item-1A-007"
@@ -66,7 +66,7 @@ def test_retrieved_chunk_required_fields() -> None:
 
 def test_char_span_tuple() -> None:
     """RET-04 — char_span_in_section round-trips as tuple[int, int] (D-16; Plan 05-02)."""
-    from docintel_core.types import RetrievedChunk  # noqa: WPS433
+    from docintel_core.types import RetrievedChunk
 
     rc = RetrievedChunk(**_ok_payload())
     assert rc.char_span_in_section == (100, 250)
@@ -77,19 +77,21 @@ def test_char_span_tuple() -> None:
 
 def test_retrieved_chunk_forbids_extra() -> None:
     """RET-04 — extra='forbid' rejects per-stage debug fields on the public shape (D-03; Plan 05-02)."""
-    from pydantic import ValidationError  # noqa: WPS433
-    from docintel_core.types import RetrievedChunk  # noqa: WPS433
+    from docintel_core.types import RetrievedChunk
+    from pydantic import ValidationError
 
     payload = _ok_payload()
-    payload["bm25_rank"] = 3  # forbidden per-stage debug field (D-03 keeps the public shape minimal)
+    payload["bm25_rank"] = (
+        3  # forbidden per-stage debug field (D-03 keeps the public shape minimal)
+    )
     with pytest.raises(ValidationError):
         RetrievedChunk(**payload)
 
 
 def test_retrieved_chunk_is_frozen() -> None:
     """RET-04 — Pydantic frozen=True; downstream callers must not mutate (Plan 05-02)."""
-    from pydantic import ValidationError  # noqa: WPS433
-    from docintel_core.types import RetrievedChunk  # noqa: WPS433
+    from docintel_core.types import RetrievedChunk
+    from pydantic import ValidationError
 
     rc = RetrievedChunk(**_ok_payload())
     with pytest.raises(ValidationError):

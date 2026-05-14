@@ -40,7 +40,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import structlog
 from structlog.testing import capture_logs
 
 
@@ -77,8 +76,8 @@ def test_assertion_quotes_claude_md() -> None:
 
     r = make_retriever(Settings(llm_provider="stub"))
     # Pick a chunk; sorted-JSONL traversal makes this deterministic.
-    target_id = next(iter(r._chunk_map))  # noqa: SLF001 — intentional test-only access
-    target_chunk = r._chunk_map[target_id]  # noqa: SLF001
+    target_id = next(iter(r._chunk_map))
+    target_chunk = r._chunk_map[target_id]
     # Build a query from the chunk's own text — guarantees lexical overlap.
     chunk_tokens = target_chunk.text.lower().split()[:20]
     query = " ".join(chunk_tokens)
@@ -108,9 +107,9 @@ def test_query_truncation_logs() -> None:
     with capture_logs() as records:
         r.search(long_query, k=5)
     events = [rec.get("event") for rec in records]
-    assert "retriever_query_truncated" in events, (
-        f"D-11 truncation must emit retriever_query_truncated; got events={events!r}"
-    )
+    assert (
+        "retriever_query_truncated" in events
+    ), f"D-11 truncation must emit retriever_query_truncated; got events={events!r}"
     truncation_records = [rec for rec in records if rec.get("event") == "retriever_query_truncated"]
     assert len(truncation_records) == 1
     rec = truncation_records[0]
@@ -128,9 +127,9 @@ def test_telemetry_fields() -> None:
     with capture_logs() as records:
         r.search("test query", k=5)
     completed = [rec for rec in records if rec.get("event") == "retriever_search_completed"]
-    assert len(completed) == 1, (
-        f"D-12 telemetry must emit exactly one retriever_search_completed line; got {len(completed)}"
-    )
+    assert (
+        len(completed) == 1
+    ), f"D-12 telemetry must emit exactly one retriever_search_completed line; got {len(completed)}"
     rec = completed[0]
     # D-12 schema — every field that Phase 9 MET-05 + Phase 11 ablation reports source from.
     required_fields = {
@@ -153,7 +152,13 @@ def test_telemetry_fields() -> None:
     for ms_field in ("bm25_ms", "dense_ms", "fuse_ms", "rerank_ms", "total_ms"):
         assert isinstance(rec[ms_field], (int, float))
         assert rec[ms_field] >= 0.0
-    for count_field in ("bm25_candidates", "dense_candidates", "rrf_unique", "rerank_input", "results_returned"):
+    for count_field in (
+        "bm25_candidates",
+        "dense_candidates",
+        "rrf_unique",
+        "rerank_input",
+        "results_returned",
+    ):
         assert isinstance(rec[count_field], int)
         assert rec[count_field] >= 0
 

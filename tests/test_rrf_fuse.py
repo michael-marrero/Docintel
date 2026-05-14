@@ -27,7 +27,6 @@ section.
 from __future__ import annotations
 
 import pytest
-
 from docintel_retrieve.fuse import RRF_K, _rrf_fuse
 
 
