@@ -348,18 +348,24 @@ def test_failure_message_quotes_claude_md() -> None:
 
 
 @pytest.mark.real
-@pytest.mark.xfail(
-    strict=True, reason="Plan 05-07 — real-mode verification under workflow_dispatch"
-)
 def test_reranker_canary_real_mode() -> None:
     """RET-03 — STRICT D-14 differential under real mode (workflow_dispatch).
 
-    Marker order (RESEARCH §9 Pattern A + additional_planning_notes
-    constraint 7): ``@pytest.mark.real`` (outer) + ``@pytest.mark.xfail``
-    (inner). pytest's marker-collection layer evaluates ``not real``
-    deselection BEFORE applying the xfail, so the test is deselected on
-    default pytest runs and only collected via ``-m real`` (the
-    ``real-index-build`` job in ``.github/workflows/ci.yml``).
+    Marker discipline (RESEARCH §9 Pattern A + additional_planning_notes
+    constraint 7): ``@pytest.mark.real`` (function-level, not module-level).
+    pytest's marker-collection layer evaluates ``not real`` deselection so
+    the test is deselected on default pytest runs and only collected via
+    ``-m real`` (the ``real-index-build`` job in ``.github/workflows/ci.yml``).
+
+    Plan 05-07 Task 3 — preemptive xfail removal. The
+    ``@pytest.mark.xfail(strict=True, reason="Plan 05-07 — real-mode
+    verification under workflow_dispatch")`` marker placed by Plan 05-06
+    Task 2 was removed in this plan so the FIRST workflow_dispatch run
+    against the phase/5 branch shows ``PASSED`` directly (rather than
+    ``XPASS`` → developer-removes-marker → ``PASSED`` on a second run).
+    The empirical verification under workflow_dispatch is documented in
+    05-07-SUMMARY.md `## Workflow_dispatch verification` section
+    (Task 2 checkpoint resolution).
 
     Test body — RESEARCH §9 + the strict D-14 aggregate criterion:
         rerank_top3_hits      = top-3 hits via make_retriever(cfg=real)
@@ -369,8 +375,7 @@ def test_reranker_canary_real_mode() -> None:
         assert rerank_top3_hits >= 5
 
     Failure messages embed ``_CLAUDE_MD_QUOTE`` + the three-step D-16
-    debug order. The xfail marker is REMOVED by Plan 05-07 after the
-    real-mode canary is empirically verified under workflow_dispatch.
+    debug order — Pitfall 6 doubled-defense.
     """
     # Lazy imports — only collected under `-m real`.
     from docintel_core.adapters.factory import make_retriever
