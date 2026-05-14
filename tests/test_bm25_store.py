@@ -7,10 +7,9 @@ save dir produces exactly five canonical files: ``params.index.json``,
 ``vocab.index.json``, ``data.csc.index.npy``, ``indices.csc.index.npy``,
 ``indptr.csc.index.npy`` — NO ``corpus.jsonl`` because we pass ``corpus=None``).
 
-These tests are intentionally ``@pytest.mark.xfail(strict=False)`` until Plan
-04-04 lands ``packages/docintel-core/src/docintel_core/adapters/real/bm25_store.py``
-and Plan 04-05 wires the build pipeline. Plan 04-07 Task 1 removes the xfail
-markers in the final wave gate.
+Plan 04-04 landed ``packages/docintel-core/src/docintel_core/adapters/real/bm25s_store.py``
+and Plan 04-05 wired the build pipeline; Plan 04-07 Task 1 removed the former
+xfail markers so these assertions now run as hard tests.
 
 Analog: ``tests/test_chunk_idempotency.py`` — same ``_REPO_ROOT`` constant +
 read-MANIFEST-then-assert shape.
@@ -26,12 +25,8 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="bm25s build + sidecar chunk_ids.json land in Plan 04-04/04-05; xfail removed in Plan 04-07",
-)
 def test_chunk_ids_aligned_with_rows() -> None:
-    """IDX-02: ``bm25/chunk_ids.json`` list length matches the bm25s row count.
+    """IDX-02: ``bm25/chunk_ids.json`` list length matches the bm25s document count.
 
     bm25s' ``retrieve()`` returns indices into the original corpus_tokens list
     (NOT chunk_ids). Pitfall 2 — without the sidecar, Phase 5 retrieval has no
@@ -43,21 +38,21 @@ def test_chunk_ids_aligned_with_rows() -> None:
     chunk_ids = json.loads((indices_root / "chunk_ids.json").read_text(encoding="utf-8"))
 
     retriever = bm25s.BM25.load(str(indices_root))
-    # bm25s 0.3.9 stores the CSC matrix under retriever.scores; the row count
-    # is the length of the indptr - 1 (canonical scipy CSC shape).
-    indptr = retriever.scores["indptr"]
-    row_count = len(indptr) - 1
+    # bm25s 0.3.9 stores the inverted index as a CSC matrix indexed by token
+    # (rows=docs, cols=vocab) on retriever.scores; the canonical document
+    # count is retriever.scores["num_docs"]. The length of ``indptr - 1`` is
+    # the vocab size, NOT the doc count — using it here was the original
+    # Plan 04-02 scaffold bug. Plan 04-07 Task 1 corrects the extraction
+    # without changing the test contract (still IDX-02 row-to-chunk_id
+    # alignment) — see deviation log in 04-07-SUMMARY.md.
+    num_docs = int(retriever.scores["num_docs"])
 
-    assert len(chunk_ids) == row_count, (
-        f"bm25 chunk_ids length ({len(chunk_ids)}) != bm25s row count ({row_count}) — "
+    assert len(chunk_ids) == num_docs, (
+        f"bm25 chunk_ids length ({len(chunk_ids)}) != bm25s num_docs ({num_docs}) — "
         "IDX-02 row-to-chunk_id alignment broken (Pitfall 2)"
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="bm25s save dir layout assertion depends on Plan 04-04/04-05 build; xfail removed in Plan 04-07",
-)
 def test_bm25_artifacts_present() -> None:
     """Pattern 4: bm25s save dir contains the five canonical files and NO corpus.jsonl.
 
@@ -75,9 +70,9 @@ def test_bm25_artifacts_present() -> None:
         "indptr.csc.index.npy",
     ]
     for name in expected_files:
-        assert (indices_root / name).is_file(), (
-            f"bm25s artifact missing: {indices_root / name} — Pattern 4 file layout"
-        )
+        assert (
+            indices_root / name
+        ).is_file(), f"bm25s artifact missing: {indices_root / name} — Pattern 4 file layout"
 
     forbidden = indices_root / "corpus.jsonl"
     assert not forbidden.exists(), (

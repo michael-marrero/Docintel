@@ -138,9 +138,7 @@ class NumpyDenseStore:
             encoding="utf-8",
         )
 
-        digest = hashlib.sha256(
-            (dense_dir / "embeddings.npy").read_bytes()
-        ).hexdigest()
+        digest = hashlib.sha256((dense_dir / "embeddings.npy").read_bytes()).hexdigest()
 
         self._embeddings = arr
 
@@ -219,6 +217,4 @@ class NumpyDenseStore:
         """Read-side reload — ``np.load`` + ``chunk_ids.json``."""
         dense_dir = Path(self._cfg.index_dir) / "dense"
         self._embeddings = np.load(dense_dir / "embeddings.npy")
-        self._chunk_ids = json.loads(
-            (dense_dir / "chunk_ids.json").read_text(encoding="utf-8")
-        )
+        self._chunk_ids = json.loads((dense_dir / "chunk_ids.json").read_text(encoding="utf-8"))

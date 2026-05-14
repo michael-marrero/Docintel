@@ -99,9 +99,9 @@ def test_bm25s_store_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert (bm25_dir / "indices.csc.index.npy").is_file()
     assert (bm25_dir / "indptr.csc.index.npy").is_file()
     assert (bm25_dir / "chunk_ids.json").is_file()
-    assert not (bm25_dir / "corpus.jsonl").exists(), (
-        "Pattern 4 line 392 — corpus=None on save() must suppress corpus.jsonl"
-    )
+    assert not (
+        bm25_dir / "corpus.jsonl"
+    ).exists(), "Pattern 4 line 392 — corpus=None on save() must suppress corpus.jsonl"
 
     # chunk_ids.json aligned to insertion order (Pitfall 2).
     ids = json.loads((bm25_dir / "chunk_ids.json").read_text(encoding="utf-8"))
@@ -111,9 +111,10 @@ def test_bm25s_store_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     results = s.query("apple", k=2)
     assert len(results) == 2
     returned_ids = {r[0] for r in results}
-    assert returned_ids == {"X-1", "X-3"}, (
-        f"BM25 'apple' query should rank apple-bearing chunks first; got {results!r}"
-    )
+    assert returned_ids == {
+        "X-1",
+        "X-3",
+    }, f"BM25 'apple' query should rank apple-bearing chunks first; got {results!r}"
     # rank is the 2nd tuple element, score is the 3rd (D-11 ranks-only).
     for chunk_id, rank, score in results:
         assert isinstance(rank, int)
@@ -154,9 +155,9 @@ def test_bm25s_store_hash_is_sorted_filename_concat(
     # Sorted by filename: the 5 .index.* files; chunk_ids.json EXCLUDED.
     for p in sorted(bm25_dir.glob("*.index.*")):
         expected.update(p.read_bytes())
-    assert sha == expected.hexdigest(), (
-        "commit() must return sha256 of the sorted-filename concat of bm25s output files"
-    )
+    assert (
+        sha == expected.hexdigest()
+    ), "commit() must return sha256 of the sorted-filename concat of bm25s output files"
 
 
 # ---------------------------------------------------------------------------
@@ -176,9 +177,7 @@ def test_numpy_dense_store_satisfies_protocol(
     assert s.name == "numpy-dense-v1"
 
 
-def test_numpy_dense_store_round_trip(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_numpy_dense_store_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """NumpyDenseStore.commit() then .query() returns nearest-neighbour chunk_ids first."""
     monkeypatch.setenv("DOCINTEL_INDEX_DIR", str(tmp_path))
     from docintel_core.adapters.real.numpy_dense import NumpyDenseStore
@@ -271,9 +270,9 @@ def test_numpy_dense_store_uses_argpartition(
         "packages/docintel-core/src/docintel_core/adapters/real/numpy_dense.py"
     )
     text = source.read_text(encoding="utf-8")
-    assert "argpartition" in text, (
-        "CD-05 — NumpyDenseStore.query must use np.argpartition for top-K (not full argsort)"
-    )
+    assert (
+        "argpartition" in text
+    ), "CD-05 — NumpyDenseStore.query must use np.argpartition for top-K (not full argsort)"
 
 
 def test_numpy_dense_store_empty_corpus_edge_case(

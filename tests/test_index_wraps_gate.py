@@ -9,11 +9,11 @@ the gate with a negative fixture (un-wrapped call — must fail) and a positive
 fixture (wrapped — pass), mirroring ``tests/test_ingest_wraps_gate.py`` from
 Phase 3.
 
-Plan 04-02 shipped ``scripts/check_index_wraps.sh`` (vacuous pass today —
-no qdrant_client.* files exist yet under adapters/real/); Plan 04-01 shipped
-``tests/fixtures/missing_tenacity/qdrant_fake.py`` (the negative-case
-fixture). Both are wave-1 parallel, so the assertions below are
-``@pytest.mark.xfail(strict=False)`` until Plan 04-07 flips them green.
+Plan 04-02 shipped ``scripts/check_index_wraps.sh``; Plan 04-04 landed the
+first ``qdrant_client.*`` adapter source (``adapters/real/qdrant_dense.py``);
+Plan 04-01 shipped ``tests/fixtures/missing_tenacity/qdrant_fake.py`` (the
+negative-case fixture). Plan 04-07 Task 1 removed the former xfail markers so
+the assertions below now run as hard tests.
 
 Refs:
 - .planning/phases/04-embedding-indexing/04-CONTEXT.md  D-21
@@ -32,10 +32,6 @@ _GATE_SCRIPT = _REPO_ROOT / "scripts" / "check_index_wraps.sh"
 _FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "missing_tenacity"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 04-02 lands the gate; Plan 04-01 lands the missing-tenacity fixture (wave-1 parallel). Plan 04-07 flips this green.",
-)
 def test_grep_gate_catches_unwrapped() -> None:
     """Grep gate exits non-zero when scanning a directory with an un-wrapped Qdrant call.
 
@@ -61,10 +57,6 @@ def test_grep_gate_catches_unwrapped() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="Plan 04-02 lands the gate. Self-contained positive-case test should pass once the gate is wired; xfail-strict-false until Plan 04-07 final flip.",
-)
 def test_grep_gate_passes_wrapped(tmp_path: Path) -> None:
     """Grep gate exits zero when every qdrant_client call sits next to a tenacity import.
 

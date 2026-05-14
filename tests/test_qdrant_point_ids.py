@@ -12,11 +12,10 @@ raises ``UnexpectedResponse 400`` per Qdrant maintainer #3461 / #5646). The fix
 is mechanical and preserves the spirit of CD-06: derive a deterministic UUID
 via uuid5 and store the human-readable chunk_id in ``point.payload["chunk_id"]``.
 
-These tests are intentionally ``@pytest.mark.xfail(strict=False)`` until Plan
-04-04 lands ``packages/docintel-core/src/docintel_core/adapters/real/qdrant_dense.py``.
-Plan 04-04 will commit the literal value of ``DOCINTEL_CHUNK_NAMESPACE`` into
-this test in the same commit that pins it in the adapter. Plan 04-07 Task 1
-removes the xfail markers.
+Plan 04-04 landed ``packages/docintel-core/src/docintel_core/adapters/real/qdrant_dense.py``
+and pinned the literal value of ``DOCINTEL_CHUNK_NAMESPACE`` here in the same
+commit; Plan 04-07 Task 1 removed the former xfail markers so these assertions
+now run as hard tests.
 
 Defensive: imports are wrapped in ``pytest.importorskip`` so the module
 collects without ImportError even before Plan 04-04 lands the adapter.
@@ -29,10 +28,6 @@ import uuid
 import pytest
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="chunk_id_to_point_id lands in Plan 04-04; xfail removed in Plan 04-07",
-)
 def test_uuid5_deterministic() -> None:
     """Pattern 3: ``chunk_id_to_point_id`` is content-addressed — same input → same output."""
     qdrant_dense = pytest.importorskip("docintel_core.adapters.real.qdrant_dense")
@@ -48,10 +43,6 @@ def test_uuid5_deterministic() -> None:
     uuid.UUID(a)  # raises ValueError if not a valid UUID — see Pitfall 1
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="chunk_id_to_point_id lands in Plan 04-04; xfail removed in Plan 04-07",
-)
 def test_uuid5_collision_resistant() -> None:
     """Pattern 3: distinct chunk_ids must produce distinct point IDs."""
     qdrant_dense = pytest.importorskip("docintel_core.adapters.real.qdrant_dense")
@@ -65,10 +56,6 @@ def test_uuid5_collision_resistant() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="DOCINTEL_CHUNK_NAMESPACE pinned in Plan 04-05; xfail removed in Plan 04-07",
-)
 def test_namespace_pinned() -> None:
     """Pattern 3: ``DOCINTEL_CHUNK_NAMESPACE`` is a stable module-level UUID constant.
 
@@ -87,9 +74,9 @@ def test_namespace_pinned() -> None:
     qdrant_dense = pytest.importorskip("docintel_core.adapters.real.qdrant_dense")
     namespace = qdrant_dense.DOCINTEL_CHUNK_NAMESPACE
 
-    assert isinstance(namespace, uuid.UUID), (
-        f"DOCINTEL_CHUNK_NAMESPACE must be a uuid.UUID; got {type(namespace).__name__}"
-    )
+    assert isinstance(
+        namespace, uuid.UUID
+    ), f"DOCINTEL_CHUNK_NAMESPACE must be a uuid.UUID; got {type(namespace).__name__}"
     # Plan 04-05 pinned literal — must match qdrant_dense.py DOCINTEL_CHUNK_NAMESPACE.
     expected_uuid = "576cc79e-7285-5efc-8e6e-b66d3e6f92ae"
     assert str(namespace) == expected_uuid, (

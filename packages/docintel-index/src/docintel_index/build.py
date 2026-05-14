@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Final
 
 import structlog
-
 from docintel_core.adapters.factory import make_adapters, make_index_stores
 from docintel_core.config import Settings
 from docintel_core.types import (
@@ -72,7 +71,7 @@ log = structlog.stdlib.get_logger(__name__)
 BATCH_SIZE: Final[int] = 64
 """Embedder batch size (CD-07).
 
-64 chunks × 384 dim × 4 bytes ≈ 96 KiB per batch — fits comfortably in CPU
+64 chunks x 384 dim x 4 bytes ~= 96 KiB per batch — fits comfortably in CPU
 L2 cache on the 6,053-chunk corpus. Stub embedder is sub-millisecond per
 batch; BGE-small-en-v1.5 (real mode) is ≈ 60 ms per batch on CPU. The full
 corpus completes in roughly 6 s real / < 1 s stub.
