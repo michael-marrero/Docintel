@@ -20,15 +20,15 @@ from __future__ import annotations
 
 from typing import Final
 
-from docintel_core.adapters.types import CompletionResponse, TokenUsage
-from docintel_core.types import REFUSAL_TEXT_SENTINEL
-
 # D-12: single canonical _CHUNK_RE home is docintel_generate.parse. The Pitfall 9
 # cycle concern (stub-in-core importing from generate-package) is acknowledged:
 # this is the ONE stub import allowed to cross packages (CONTEXT.md D-12 line 107).
 # The cycle is one-way at runtime — make_adapters() returns the stub only when
 # llm_provider="stub", at which point docintel-generate is already loaded.
 from docintel_generate.parse import _CHUNK_RE
+
+from docintel_core.adapters.types import CompletionResponse, TokenUsage
+from docintel_core.types import REFUSAL_TEXT_SENTINEL
 
 _STUB_REFUSAL: Final[str] = REFUSAL_TEXT_SENTINEL
 """Backward-compat alias for the canonical refusal sentinel.
@@ -115,10 +115,7 @@ class StubLLMClient:
             # `[STUB ANSWER citing [<list-repr>]]` which the regex captured
             # as a single nested match — Phase 6 Pitfall 5 fix.
             citations = " ".join(f"[{cid}]" for cid in chunk_ids)
-            text = (
-                f"Stub synthesis grounded in the provided context. "
-                f"Citations: {citations}"
-            )
+            text = f"Stub synthesis grounded in the provided context. " f"Citations: {citations}"
         prompt_tokens = len(prompt.split())
         completion_tokens = len(text.split())
         return CompletionResponse(

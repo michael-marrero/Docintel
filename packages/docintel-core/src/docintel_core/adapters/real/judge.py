@@ -51,6 +51,7 @@ import structlog
 from anthropic import APIConnectionError as AnthropicAPIConnectionError
 from anthropic import APITimeoutError as AnthropicAPITimeoutError
 from anthropic import RateLimitError as AnthropicRateLimitError
+from docintel_generate.prompts import JUDGE_PROMPT, build_judge_user_prompt
 from openai import APIConnectionError as OpenAIAPIConnectionError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from openai import RateLimitError as OpenAIRateLimitError
@@ -65,7 +66,6 @@ from tenacity import (
 from docintel_core.adapters.protocols import LLMClient
 from docintel_core.adapters.types import JudgeVerdict
 from docintel_core.config import Settings
-from docintel_generate.prompts import JUDGE_PROMPT, build_judge_user_prompt
 
 # Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_log;
 # structlog bound logger for all other structured log lines. Both are used now
@@ -168,7 +168,10 @@ def _judge_via_anthropic_raw(client: Any, user_prompt: str) -> dict[str, Any]:
     )
     # response.content is a list of blocks; the tool_use block carries .input.
     for block in response.content:
-        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "submit_verdict":
+        if (
+            getattr(block, "type", None) == "tool_use"
+            and getattr(block, "name", None) == "submit_verdict"
+        ):
             payload = getattr(block, "input", None)
             if isinstance(payload, dict):
                 return payload
@@ -217,7 +220,7 @@ def _judge_via_anthropic(client: Any, user_prompt: str) -> JudgeVerdict:
         return _sentinel_judgeverdict()
     try:
         return JudgeVerdict(**payload)
-    except Exception as exc:  # noqa: BLE001 — pydantic.ValidationError + any unexpected shape error
+    except Exception as exc:
         log.warning(
             "judge_structured_output_invalid",
             provider="anthropic",
@@ -330,7 +333,7 @@ def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
         return _sentinel_judgeverdict()
     try:
         return JudgeVerdict(**payload)
-    except Exception as exc:  # noqa: BLE001 — pydantic.ValidationError + any unexpected shape error
+    except Exception as exc:
         log.warning(
             "judge_structured_output_invalid",
             provider="openai",

@@ -35,8 +35,6 @@ Analogs:
 
 from __future__ import annotations
 
-import pytest
-
 
 def test_hero_comparative_stub() -> None:
     """D-14 + hero — end-to-end stub-mode generate() on the hero comparative question.
@@ -83,6 +81,5 @@ def test_hero_comparative_stub() -> None:
         f"got model={r.completion.model!r}"
     )
     assert len(r.retrieved_chunks) <= 5, (
-        f"D-14 hero: retrieved_chunks must be bounded by k=5; "
-        f"got len={len(r.retrieved_chunks)}"
+        f"D-14 hero: retrieved_chunks must be bounded by k=5; " f"got len={len(r.retrieved_chunks)}"
     )

@@ -124,12 +124,12 @@ def test_stub_llm_refusal(stub_bundle) -> None:
     from docintel_core.types import REFUSAL_TEXT_SENTINEL
 
     response = stub_bundle.llm.complete("What is the weather today?")
-    assert response.text == _STUB_REFUSAL, (
-        f"refusal-path text must equal _STUB_REFUSAL: got {response.text!r}"
-    )
-    assert response.text == REFUSAL_TEXT_SENTINEL, (
-        f"refusal-path text must equal REFUSAL_TEXT_SENTINEL: got {response.text!r}"
-    )
+    assert (
+        response.text == _STUB_REFUSAL
+    ), f"refusal-path text must equal _STUB_REFUSAL: got {response.text!r}"
+    assert (
+        response.text == REFUSAL_TEXT_SENTINEL
+    ), f"refusal-path text must equal REFUSAL_TEXT_SENTINEL: got {response.text!r}"
 
 
 # ---------------------------------------------------------------------------

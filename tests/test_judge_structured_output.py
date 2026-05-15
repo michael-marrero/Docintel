@@ -71,18 +71,18 @@ def test_judge_returns_judgeverdict() -> None:
         reference=["Apple revenue grew."],
         rubric="",
     )
-    assert isinstance(verdict, JudgeVerdict), (
-        f"D-09: judge must return JudgeVerdict; got {type(verdict).__name__}"
-    )
-    assert 0.0 <= verdict.score <= 1.0, (
-        f"D-09: JudgeVerdict.score must be in [0, 1]; got {verdict.score!r}"
-    )
-    assert isinstance(verdict.passed, bool), (
-        f"D-09: JudgeVerdict.passed must be bool; got {type(verdict.passed).__name__}"
-    )
-    assert isinstance(verdict.reasoning, str), (
-        f"D-09: JudgeVerdict.reasoning must be str; got {type(verdict.reasoning).__name__}"
-    )
+    assert isinstance(
+        verdict, JudgeVerdict
+    ), f"D-09: judge must return JudgeVerdict; got {type(verdict).__name__}"
+    assert (
+        0.0 <= verdict.score <= 1.0
+    ), f"D-09: JudgeVerdict.score must be in [0, 1]; got {verdict.score!r}"
+    assert isinstance(
+        verdict.passed, bool
+    ), f"D-09: JudgeVerdict.passed must be bool; got {type(verdict.passed).__name__}"
+    assert isinstance(
+        verdict.reasoning, str
+    ), f"D-09: JudgeVerdict.reasoning must be str; got {type(verdict.reasoning).__name__}"
     assert isinstance(verdict.unsupported_claims, list), (
         f"D-09: JudgeVerdict.unsupported_claims must be list; "
         f"got {type(verdict.unsupported_claims).__name__}"
@@ -139,20 +139,18 @@ def test_deserialization_failure_returns_sentinel() -> None:
         "docintel_core.adapters.real.judge._judge_via_anthropic_raw",
         side_effect=_bad_payload,
     ):
-        verdict = bundle.judge.judge(
-            prediction="anything", reference=["anything"], rubric=""
-        )
+        verdict = bundle.judge.judge(prediction="anything", reference=["anything"], rubric="")
 
     # The sentinel verdict per D-09 + Pitfall 6.
-    assert isinstance(verdict, JudgeVerdict), (
-        f"D-09 sentinel: result must still be a JudgeVerdict; got {type(verdict).__name__}"
-    )
-    assert verdict.score == 0.0, (
-        f"D-09 sentinel: score must be 0.0 on deserialization failure; got {verdict.score!r}"
-    )
-    assert verdict.passed is False, (
-        f"D-09 sentinel: passed must be False on deserialization failure; got {verdict.passed!r}"
-    )
+    assert isinstance(
+        verdict, JudgeVerdict
+    ), f"D-09 sentinel: result must still be a JudgeVerdict; got {type(verdict).__name__}"
+    assert (
+        verdict.score == 0.0
+    ), f"D-09 sentinel: score must be 0.0 on deserialization failure; got {verdict.score!r}"
+    assert (
+        verdict.passed is False
+    ), f"D-09 sentinel: passed must be False on deserialization failure; got {verdict.passed!r}"
     assert verdict.reasoning == "<deserialization failed>", (
         f"D-09 sentinel: reasoning must be '<deserialization failed>'; "
         f"got {verdict.reasoning!r}"

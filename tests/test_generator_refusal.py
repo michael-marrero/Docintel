@@ -92,18 +92,18 @@ def test_hard_zero_chunk_refusal() -> None:
     r = g.generate("nonsense out-of-corpus query", k=5)
 
     assert r.refused is True, f"D-15 Step B: refused must be True; got {r.refused!r}"
-    assert r.text == REFUSAL_TEXT_SENTINEL, (
-        f"D-11: refusal text must equal REFUSAL_TEXT_SENTINEL; got {r.text!r}"
-    )
-    assert r.completion is None, (
-        f"D-15 Step B: LLM must NOT be called on hard-refusal; got completion={r.completion!r}"
-    )
-    assert r.cited_chunk_ids == [], (
-        f"D-15 Step B: no citations on hard-refusal; got {r.cited_chunk_ids!r}"
-    )
-    assert r.retrieved_chunks == [], (
-        f"D-15 Step B: retrieved_chunks must be empty; got {r.retrieved_chunks!r}"
-    )
+    assert (
+        r.text == REFUSAL_TEXT_SENTINEL
+    ), f"D-11: refusal text must equal REFUSAL_TEXT_SENTINEL; got {r.text!r}"
+    assert (
+        r.completion is None
+    ), f"D-15 Step B: LLM must NOT be called on hard-refusal; got completion={r.completion!r}"
+    assert (
+        r.cited_chunk_ids == []
+    ), f"D-15 Step B: no citations on hard-refusal; got {r.cited_chunk_ids!r}"
+    assert (
+        r.retrieved_chunks == []
+    ), f"D-15 Step B: retrieved_chunks must be empty; got {r.retrieved_chunks!r}"
 
 
 def test_llm_driven_refusal() -> None:

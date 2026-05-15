@@ -40,8 +40,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _GATE_SCRIPT = _REPO_ROOT / "scripts" / "check_prompt_locality.sh"
 _NEG_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "prompt_locality_violations"

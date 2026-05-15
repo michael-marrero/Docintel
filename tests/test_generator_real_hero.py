@@ -50,7 +50,9 @@ import pytest
 
 
 @pytest.mark.real
-@pytest.mark.xfail(strict=True, reason="Wave 4 — Plan 06-07 promotes after workflow_dispatch run lands")
+@pytest.mark.xfail(
+    strict=True, reason="Wave 4 — Plan 06-07 promotes after workflow_dispatch run lands"
+)
 def test_generator_hero_real_mode() -> None:
     """Hero question — real-mode end-to-end + CD-06 cost + context-budget guards.
 
@@ -82,19 +84,15 @@ def test_generator_hero_real_mode() -> None:
         f"hero real-mode: multi-hop comparative MUST cite >= 2 chunks; "
         f"got cited_chunk_ids={r.cited_chunk_ids!r}"
     )
-    cited_tickers = {
-        c.ticker for c in r.retrieved_chunks if c.chunk_id in r.cited_chunk_ids
-    }
+    cited_tickers = {c.ticker for c in r.retrieved_chunks if c.chunk_id in r.cited_chunk_ids}
     assert len(cited_tickers) >= 2, (
         f"hero real-mode: multi-COMPANY coverage required (comparative across "
         f"companies); got cited_tickers={cited_tickers!r}"
     )
-    assert r.completion is not None, (
-        "hero real-mode: LLM was called; completion must be non-None"
-    )
-    assert r.completion.cost_usd < 0.20, (
-        f"CD-06: single hero call must cost < $0.20; got cost_usd={r.completion.cost_usd!r}"
-    )
+    assert r.completion is not None, "hero real-mode: LLM was called; completion must be non-None"
+    assert (
+        r.completion.cost_usd < 0.20
+    ), f"CD-06: single hero call must cost < $0.20; got cost_usd={r.completion.cost_usd!r}"
     assert r.completion.usage.prompt_tokens < 8000, (
         f"CD-06: context-window budget — K=5 x ~500 + scaffolding < 8000; "
         f"got prompt_tokens={r.completion.usage.prompt_tokens!r}"

@@ -161,10 +161,7 @@ def test_hallucinated_ids_dropped() -> None:
         def complete(self, prompt: str, system: str | None = None) -> CompletionResponse:
             del prompt, system
             return CompletionResponse(
-                text=(
-                    "Apple risk [AAPL-FY2024-Item-1A-007] and "
-                    "[NVDA-FY2024-Item-7-999]."
-                ),
+                text=("Apple risk [AAPL-FY2024-Item-1A-007] and " "[NVDA-FY2024-Item-7-999]."),
                 usage=TokenUsage(prompt_tokens=10, completion_tokens=10),
                 cost_usd=0.0,
                 latency_ms=0.0,
@@ -178,12 +175,12 @@ def test_hallucinated_ids_dropped() -> None:
     with capture_logs() as records:
         result = g.generate("apple risk", k=1)
 
-    assert "AAPL-FY2024-Item-1A-007" in result.cited_chunk_ids, (
-        f"D-13 Step D: real chunk_id must survive validation; got {result.cited_chunk_ids!r}"
-    )
-    assert "NVDA-FY2024-Item-7-999" not in result.cited_chunk_ids, (
-        f"D-13 Step D: hallucinated chunk_id must be dropped; got {result.cited_chunk_ids!r}"
-    )
+    assert (
+        "AAPL-FY2024-Item-1A-007" in result.cited_chunk_ids
+    ), f"D-13 Step D: real chunk_id must survive validation; got {result.cited_chunk_ids!r}"
+    assert (
+        "NVDA-FY2024-Item-7-999" not in result.cited_chunk_ids
+    ), f"D-13 Step D: hallucinated chunk_id must be dropped; got {result.cited_chunk_ids!r}"
     # Anti-pattern guard — text must NOT be modified (no sentence stripping per D-13).
     assert "[NVDA-FY2024-Item-7-999]" in result.text, (
         f"D-13 anti-pattern: hallucinated brackets must be preserved in text; "

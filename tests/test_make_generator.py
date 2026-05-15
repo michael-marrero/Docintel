@@ -47,9 +47,9 @@ def test_make_generator_stub() -> None:
     from docintel_core.config import Settings
 
     g = make_generator(Settings(llm_provider="stub"))
-    assert g.__class__.__name__ == "Generator", (
-        f"D-03: make_generator must return a Generator; got {g.__class__.__name__!r}"
-    )
+    assert (
+        g.__class__.__name__ == "Generator"
+    ), f"D-03: make_generator must return a Generator; got {g.__class__.__name__!r}"
     assert g.__class__.__module__ == "docintel_generate.generator", (
         f"D-03: Generator must live in docintel_generate.generator; "
         f"got module={g.__class__.__module__!r}"

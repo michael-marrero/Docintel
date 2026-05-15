@@ -43,15 +43,15 @@ def test_hash_format() -> None:
     """
     from docintel_generate.prompts import PROMPT_VERSION_HASH
 
-    assert isinstance(PROMPT_VERSION_HASH, str), (
-        f"D-08: PROMPT_VERSION_HASH must be str; got {type(PROMPT_VERSION_HASH).__name__}"
-    )
-    assert len(PROMPT_VERSION_HASH) == 12, (
-        f"D-08: PROMPT_VERSION_HASH must be 12 chars; got len={len(PROMPT_VERSION_HASH)}"
-    )
-    assert all(c in "0123456789abcdef" for c in PROMPT_VERSION_HASH), (
-        f"D-08: PROMPT_VERSION_HASH must be lowercase hex; got {PROMPT_VERSION_HASH!r}"
-    )
+    assert isinstance(
+        PROMPT_VERSION_HASH, str
+    ), f"D-08: PROMPT_VERSION_HASH must be str; got {type(PROMPT_VERSION_HASH).__name__}"
+    assert (
+        len(PROMPT_VERSION_HASH) == 12
+    ), f"D-08: PROMPT_VERSION_HASH must be 12 chars; got len={len(PROMPT_VERSION_HASH)}"
+    assert all(
+        c in "0123456789abcdef" for c in PROMPT_VERSION_HASH
+    ), f"D-08: PROMPT_VERSION_HASH must be lowercase hex; got {PROMPT_VERSION_HASH!r}"
 
 
 def test_per_prompt_hashes_exposed() -> None:
@@ -74,9 +74,9 @@ def test_per_prompt_hashes_exposed() -> None:
     ):
         assert isinstance(value, str), f"D-08: {name} must be str; got {type(value).__name__}"
         assert len(value) == 12, f"D-08: {name} must be 12 chars; got len={len(value)}"
-        assert all(c in "0123456789abcdef" for c in value), (
-            f"D-08: {name} must be lowercase hex; got {value!r}"
-        )
+        assert all(
+            c in "0123456789abcdef" for c in value
+        ), f"D-08: {name} must be lowercase hex; got {value!r}"
     # Distinctness — collision sanity check across the three prompts.
     distinct = {_SYNTHESIS_HASH, _REFUSAL_HASH, _JUDGE_HASH}
     assert len(distinct) == 3, (
@@ -100,9 +100,9 @@ def test_hash_sensitivity() -> None:
     from docintel_generate.prompts import _SYNTHESIS_HASH, SYNTHESIS_PROMPT, _h
 
     # Round-trip — _h(SYNTHESIS_PROMPT) must equal the module-level hash.
-    assert _h(SYNTHESIS_PROMPT) == _SYNTHESIS_HASH, (
-        "D-08: _h(SYNTHESIS_PROMPT) must equal _SYNTHESIS_HASH at module-import time"
-    )
+    assert (
+        _h(SYNTHESIS_PROMPT) == _SYNTHESIS_HASH
+    ), "D-08: _h(SYNTHESIS_PROMPT) must equal _SYNTHESIS_HASH at module-import time"
     # Sensitivity — a single-byte change must flip the hash.
     mutated = _h(SYNTHESIS_PROMPT + "x")
     assert mutated != _SYNTHESIS_HASH, (
