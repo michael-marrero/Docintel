@@ -105,6 +105,14 @@ jobs:
         # Qdrant HTTP path (Phase 4 IDX-* / Pitfall 6 dep drift defense).
         run: bash scripts/check_index_wraps.sh
 
+      - name: Check prompt locality (GEN-01)
+        # Every prompt-like string literal must live in
+        # packages/docintel-generate/src/docintel_generate/prompts.py
+        # (the canonical home). Script exits non-zero if any .py file under
+        # packages/ contains an inline prompt outside the allowlist
+        # (Phase 6 D-04 structural enforcement of GEN-01).
+        run: bash scripts/check_prompt_locality.sh
+
       - name: Chunk-idempotency gate (ING-04)
         # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
         # committed normalized JSON and asserts byte-identity vs. committed
