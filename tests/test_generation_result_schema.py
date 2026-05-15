@@ -56,7 +56,6 @@ def _ok_payload() -> dict:
     }
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships GenerationResult in docintel_core.types")
 def test_generation_result_frozen() -> None:
     """D-17 — Pydantic frozen=True; downstream callers must not mutate.
 
@@ -74,7 +73,6 @@ def test_generation_result_frozen() -> None:
         gr.refused = True  # type: ignore[misc]
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships GenerationResult.model_config extra='forbid'")
 def test_generation_result_extra_forbid() -> None:
     """D-17 — extra='forbid' rejects unknown fields on construction.
 

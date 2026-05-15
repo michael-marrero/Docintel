@@ -38,7 +38,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 from structlog.testing import capture_logs
 
 
@@ -82,7 +81,6 @@ class _FakeRetriever:
         return list(self._chunks)
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships Generator")
 def test_determinism() -> None:
     """GEN-03 + ADP-07 — three identical generate() calls produce identical output.
 
@@ -112,7 +110,6 @@ def test_determinism() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships citation-validation Step D")
 def test_citation_subset() -> None:
     """GEN-03 + D-13 Step D — cited_chunk_ids is a subset of retrieved set.
 
@@ -136,7 +133,6 @@ def test_citation_subset() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships Step D hallucination drop + CD-07 structlog")
 def test_hallucinated_ids_dropped() -> None:
     """D-13 Step D + CD-07 — hallucinated chunk_ids dropped from cited list; text preserved.
 
@@ -152,7 +148,7 @@ def test_hallucinated_ids_dropped() -> None:
     * A structlog warning ``generator_hallucinated_chunk_id`` fires.
     """
     from docintel_core.adapters import make_adapters
-    from docintel_core.adapters.types import CompletionResponse, Usage
+    from docintel_core.adapters.types import CompletionResponse, TokenUsage
     from docintel_core.config import Settings
     from docintel_generate.generator import Generator
 
@@ -169,7 +165,7 @@ def test_hallucinated_ids_dropped() -> None:
                     "Apple risk [AAPL-FY2024-Item-1A-007] and "
                     "[NVDA-FY2024-Item-7-999]."
                 ),
-                usage=Usage(prompt_tokens=10, completion_tokens=10),
+                usage=TokenUsage(prompt_tokens=10, completion_tokens=10),
                 cost_usd=0.0,
                 latency_ms=0.0,
                 model="fake-hallucination",

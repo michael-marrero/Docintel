@@ -16,6 +16,9 @@ Wave 0 (Plan 06-02) shipped the skeleton only. Wave 1 (Plan 06-03) lands
 Wave 2 (Plan 06-04) will add `Generator` + `GenerationResult` re-exports.
 """
 
+from docintel_core.types import GenerationResult
+
+from docintel_generate.generator import Generator
 from docintel_generate.prompts import (
     JUDGE_PROMPT,
     PROMPT_VERSION_HASH,
@@ -28,4 +31,6 @@ __all__ = [
     "PROMPT_VERSION_HASH",
     "REFUSAL_PROMPT",
     "SYNTHESIS_PROMPT",
+    "GenerationResult",
+    "Generator",
 ]
