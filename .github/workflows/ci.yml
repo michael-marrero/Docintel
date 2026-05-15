@@ -258,6 +258,13 @@ jobs:
     timeout-minutes: 30
     env:
       DOCINTEL_LLM_PROVIDER: real
+      # The python process runs on the runner host, NOT inside the docker
+      # network — so the default ``qdrant`` service hostname (from
+      # docker-compose.yml D-05) cannot be resolved. Override to localhost
+      # since the qdrant service maps port 6333 to the host. Run
+      # 25894710677 failed with `httpx.ConnectError: name resolution`
+      # because this override was missing.
+      DOCINTEL_QDRANT_URL: http://localhost:6333
     steps:
       - uses: actions/checkout@v4
 
