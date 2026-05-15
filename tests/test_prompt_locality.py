@@ -50,7 +50,6 @@ _POS_FIXTURE_DIR = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 4 — Plan 06-07 confirms gate exit 0 after all production code lands")
 def test_grep_gate_passes_on_canonical_layout() -> None:
     """GEN-01 — scanning ``packages/`` (no SCAN_DIR arg) exits 0 once Waves 1-3 land.
 
@@ -74,7 +73,6 @@ def test_grep_gate_passes_on_canonical_layout() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 — Plan 06-02 ships the bash script")
 def test_grep_gate_fails_on_violation() -> None:
     """GEN-01 — gate exits non-zero against the negative fixture (D-04 PHRASE_PATTERN).
 
@@ -98,7 +96,6 @@ def test_grep_gate_fails_on_violation() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 — Plan 06-02 ships the bash script with noqa handling")
 def test_grep_gate_respects_noqa() -> None:
     """GEN-01 — D-05 per-line ``# noqa: prompt-locality`` escape hatch.
 
