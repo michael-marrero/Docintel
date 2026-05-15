@@ -32,10 +32,7 @@ Analogs:
 
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.xfail(strict=True, reason="Wave 1 — Plan 06-03 ships docintel_generate.prompts")
 def test_hash_format() -> None:
     """GEN-02 + D-08 — PROMPT_VERSION_HASH is a 12-char lowercase hex string.
 
@@ -57,7 +54,6 @@ def test_hash_format() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 1 — Plan 06-03 ships docintel_generate.prompts")
 def test_per_prompt_hashes_exposed() -> None:
     """GEN-02 + D-08 — per-prompt hashes exposed for ablation localisation.
 
@@ -90,7 +86,6 @@ def test_per_prompt_hashes_exposed() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 1 — Plan 06-03 ships docintel_generate.prompts._h")
 def test_hash_sensitivity() -> None:
     """GEN-02 + D-08 + Pitfall 3 — single-byte change flips the hash.
 
