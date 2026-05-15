@@ -1,0 +1,28 @@
+{
+  "project_name": "docintel",
+  "created": "2026-04-28",
+  "last_updated": "2026-05-11",
+  "workflow": {
+    "commit_docs": false,
+    "atomic_commits": true,
+    "branch_per_phase": true,
+    "tests_before_code": true,
+    "offline_first_default": true,
+    "_auto_chain_active": true
+  },
+  "constraints": {
+    "single_env_reader": "packages/docintel-core/src/docintel_core/config.py",
+    "prompt_home": "packages/docintel-generate/src/docintel_generate/prompts.py",
+    "llm_provider_default": "stub",
+    "env_prefix": "DOCINTEL_"
+  },
+  "ci": {
+    "eval_in_ci": true,
+    "real_key_runs": "workflow_dispatch_only"
+  },
+  "reconstruction": {
+    "source": "CLAUDE.md + .planning/phases/01-scaffold-foundation/01-0{1,2}-SUMMARY.md",
+    "reason": "projectspec.md not present in this fresh clone; .planning/ is gitignored",
+    "date": "2026-05-11"
+  }
+}
