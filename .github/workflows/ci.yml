@@ -252,7 +252,10 @@ jobs:
     name: real-mode index build (manual trigger only)
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30-min budget: Phase 4's index build is ~7 min, Phase 5's canary adds
+    # bge-reranker-base download (~250 MB) + 8-case reranking (~10-15 min).
+    # Run 25890137612 cancelled at the original 15-min cap.
+    timeout-minutes: 30
     env:
       DOCINTEL_LLM_PROVIDER: real
     steps:
