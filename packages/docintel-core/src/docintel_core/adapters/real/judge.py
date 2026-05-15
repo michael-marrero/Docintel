@@ -1,100 +1,344 @@
-"""Cross-family LLMJudge that evaluates predictions via the complement provider.
+"""Cross-family LLMJudge with provider-native structured-output deserialization.
 
 D-04: The judge uses the OTHER provider from the generator to avoid circular-judge
 bias (a model rubber-stamping its own output). Factory wiring:
   - generator = AnthropicAdapter → judge wraps OpenAIAdapter
   - generator = OpenAIAdapter    → judge wraps AnthropicAdapter
 
-The underlying LLMClient.complete() is already tenacity-wrapped (via
-AnthropicAdapter or OpenAIAdapter). This module does NOT add a second @retry
-layer — double-wrapping would cause retry storms and obscure which provider
-is actually being retried.
+D-09 (Wave 3 migration): the Phase 2 placeholder system-prompt constant, the
+inline prompt-builder helper, and the heuristic score-extraction regex have all
+been retired. The canonical prompt body now lives in
+``docintel_generate.prompts.JUDGE_PROMPT``; the user-prompt builder is
+``docintel_generate.prompts.build_judge_user_prompt``. The heuristic parser is
+replaced with provider-native structured output:
+  - Anthropic: ``tools=[{"name": "submit_verdict", "input_schema": {...}}]`` +
+    ``tool_choice={"type": "tool", "name": "submit_verdict"}`` binds the response
+    to ``_JUDGE_VERDICT_SCHEMA``; ``response.content[*].input`` carries the dict
+    that deserializes directly into ``JudgeVerdict``.
+  - OpenAI: ``response_format={"type": "json_schema", "json_schema": {"strict":
+    true, "schema": _JUDGE_VERDICT_SCHEMA}}`` binds the response to the same
+    schema; ``response.choices[0].message.content`` is the JSON string that
+    deserializes into ``JudgeVerdict``.
 
-Tenacity import (ADP-06 gate): 'from tenacity import' must appear in every
-real adapter file. This file's judge() method calls self._llm.complete()
-which transitively crosses the LLM SDK boundary. The grep gate checks for
-'from tenacity import' in any file that contains SDK-adjacent call patterns.
-While judge.py's own .complete() call doesn't directly match the SDK patterns
-the gate greps for, we include the import here to satisfy the spirit of ADP-06
-and to make the dependency explicit to future readers.
+Tenacity wrap discipline (ADP-06 / D-18): the two raw-SDK helpers
+``_judge_via_anthropic_raw`` and ``_judge_via_openai_raw`` are wrapped with the
+same ``@retry`` decorator pattern used by ``llm_anthropic.py:102-108`` and
+``llm_openai.py:104-110``. Retry triggers on transient HTTP errors only
+(``RateLimitError``, ``APIConnectionError``, ``APITimeoutError``); deserialization
+failures are NEVER retried (Pitfall 6 — they would cause a retry storm).
+
+Sentinel-on-failure (RESEARCH Pitfall 6): the outer helpers
+``_judge_via_anthropic`` / ``_judge_via_openai`` catch any deserialization or
+shape error and return a sentinel ``JudgeVerdict(score=0.0, passed=False,
+reasoning="<deserialization failed>", unsupported_claims=[])``. Failures emit a
+``judge_structured_output_invalid`` structlog warning so Phase 9 can measure the
+failure rate; they NEVER raise. This preserves the eval signal as a measurement
+rather than promoting a per-call regression into a hard crash.
+
+Phase 2 D-04 cross-family wiring (the ``CrossFamilyJudge`` class shell + the
+``Settings.llm_real_provider`` complement-selection in ``make_adapters``) is
+preserved untouched. Only the prompt body and the parser changed (D-09: "prompt
++ parser, NOT dispatch").
 """
 
 from __future__ import annotations
 
+import json
 import logging
-import re
+from typing import Any
 
 import structlog
-from tenacity import retry  # noqa: F401 — imported for ADP-06 gate; retry delegated to self._llm
+from anthropic import APIConnectionError as AnthropicAPIConnectionError
+from anthropic import APITimeoutError as AnthropicAPITimeoutError
+from anthropic import RateLimitError as AnthropicRateLimitError
+from openai import APIConnectionError as OpenAIAPIConnectionError
+from openai import APITimeoutError as OpenAIAPITimeoutError
+from openai import RateLimitError as OpenAIRateLimitError
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-# The tenacity import above is intentional even though no @retry decorator
-# appears in this file. CrossFamilyJudge delegates retry responsibility to
-# self._llm.complete(), which is already @retry-wrapped by AnthropicAdapter
-# or OpenAIAdapter. Adding a second @retry here would double-wrap and create
-# retry storms. The import satisfies the structural ADP-06 contract (every
-# file in real/ with LLM-adjacent call patterns imports tenacity).
-# See CONTEXT.md D-18 and PLAN.md Task 02-05-03 note.
 from docintel_core.adapters.protocols import LLMClient
 from docintel_core.adapters.types import JudgeVerdict
 from docintel_core.config import Settings
+from docintel_generate.prompts import JUDGE_PROMPT, build_judge_user_prompt
 
+# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_log;
+# structlog bound logger for all other structured log lines. Both are used now
+# (the @retry decorator's before_sleep_log consumes _retry_log; the
+# deserialization-failure warning consumes the structlog logger).
 _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
 
-_JUDGE_SYSTEM_PROMPT = (
-    "You are a strict citation-faithfulness judge. "
-    "Evaluate whether each claim in the prediction is supported by the reference passages. "
-    "Respond with a score between 0.0 and 1.0 in the format 'score: 0.XX' "
-    "followed by your reasoning."
-)
 
-# Heuristic pattern to extract score from judge response (Phase 6 replaces with JSON-mode parse)
-_SCORE_PATTERN = re.compile(r"score\s*:\s*([0-9]*\.?[0-9]+)", re.IGNORECASE)
+_JUDGE_VERDICT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "passed": {"type": "boolean"},
+        "reasoning": {"type": "string"},
+        "unsupported_claims": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["score", "passed", "reasoning", "unsupported_claims"],
+}
+"""Locked JSON schema for ``JudgeVerdict`` structured-output.
+
+Both providers consume this dict:
+  - Anthropic ``tools=[{"name": "submit_verdict", "input_schema": <schema>}]``
+  - OpenAI ``response_format={"type": "json_schema", "json_schema": {"schema":
+    <schema>}}``
+
+``additionalProperties: false`` AND all four fields in ``required`` are
+mandatory for both providers' strict mode. Field order matches
+``JudgeVerdict`` (``score`` ∈ [0.0, 1.0], ``passed`` bool, ``reasoning`` str,
+``unsupported_claims`` list[str]).
+"""
 
 
-def _build_judge_prompt(prediction: str, reference: list[str], rubric: str) -> str:
-    """Build a placeholder judging prompt (Phase 6 replaces with canonical prompts.py version).
+def _sentinel_judgeverdict() -> JudgeVerdict:
+    """Return the sentinel verdict on structured-output deserialization failure.
 
-    Args:
-        prediction: The generated answer text to evaluate.
-        reference:  List of reference passage strings for grounding.
-        rubric:     Optional evaluation criteria.
-
-    Returns:
-        A string prompt for the judge LLM.
+    Pitfall 6: failures are MEASUREMENTS, not retry triggers. Phase 9 eval
+    pipeline counts these as zero-score judgments. The structlog warning
+    ``judge_structured_output_invalid`` is the canary; if eval reports show
+    consistent sentinel verdicts, investigate model behavior (not retries).
     """
-    ref_text = "\n".join(f"[{i}] {r}" for i, r in enumerate(reference))
-    rubric_section = f"\nRubric: {rubric}" if rubric else ""
-    return (
-        f"Score whether each claim in the prediction is supported by the reference passages.\n\n"
-        f"Prediction:\n{prediction}\n\n"
-        f"Reference passages:\n{ref_text}"
-        f"{rubric_section}"
-    )
-
-
-def _parse_judge_response(text: str) -> JudgeVerdict:
-    """Parse the judge LLM response into a JudgeVerdict.
-
-    Phase 2 heuristic: extract 'score: 0.XX' pattern from response text.
-    Phase 6 will replace this with structured JSON-mode parsing.
-
-    Args:
-        text: Raw response text from the judge LLM.
-
-    Returns:
-        JudgeVerdict with extracted score and reasoning.
-    """
-    match = _SCORE_PATTERN.search(text)
-    score = float(match.group(1)) if match else 0.0
-    # Clamp to [0.0, 1.0] in case the model emits out-of-range values
-    score = max(0.0, min(1.0, score))
     return JudgeVerdict(
-        score=score,
-        passed=score >= 0.5,
-        reasoning=text,
-        unsupported_claims=[],  # Phase 6 will parse these from structured output
+        score=0.0,
+        passed=False,
+        reasoning="<deserialization failed>",
+        unsupported_claims=[],
     )
+
+
+@retry(
+    wait=wait_exponential(multiplier=1, min=1, max=20),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type(
+        (
+            AnthropicRateLimitError,
+            AnthropicAPIConnectionError,
+            AnthropicAPITimeoutError,
+        )
+    ),
+    before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+    reraise=True,
+)
+def _judge_via_anthropic_raw(client: Any, user_prompt: str) -> dict[str, Any]:
+    """Raw Anthropic structured-output SDK call (D-09 + CD-09).
+
+    Calls ``client.messages.create`` with ``tools=[{strict: true}]`` +
+    ``tool_choice={"type": "tool", "name": "submit_verdict"}`` per RESEARCH
+    Pattern 3 lines 532-551. Extracts the ``submit_verdict`` tool_use block's
+    ``.input`` dict and returns it for deserialization upstream.
+
+    Wrapped with the same ``@retry`` pattern as ``llm_anthropic.py:102-108``.
+    Retries only on transient HTTP errors (``RateLimitError``,
+    ``APIConnectionError``, ``APITimeoutError``); deserialization failures are
+    handled OUTSIDE this function (in ``_judge_via_anthropic``) so they do not
+    trigger retry storms (Pitfall 6).
+
+    Args:
+        client: An ``anthropic.Anthropic`` SDK client instance.
+        user_prompt: The user-side prompt built by ``build_judge_user_prompt``.
+
+    Returns:
+        The ``.input`` dict from the ``submit_verdict`` tool_use block. If the
+        response contains no such block, returns an empty dict so the caller
+        treats it as a deserialization failure and emits the sentinel.
+    """
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2048,
+        system=JUDGE_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
+        tools=[
+            {
+                "name": "submit_verdict",
+                "description": "Submit the faithfulness verdict for the prediction.",
+                "input_schema": _JUDGE_VERDICT_SCHEMA,
+            }
+        ],
+        tool_choice={"type": "tool", "name": "submit_verdict"},
+    )
+    # response.content is a list of blocks; the tool_use block carries .input.
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "submit_verdict":
+            payload = getattr(block, "input", None)
+            if isinstance(payload, dict):
+                return payload
+    return {}
+
+
+def _judge_via_anthropic(client: Any, user_prompt: str) -> JudgeVerdict:
+    """Anthropic judge dispatch with sentinel-on-failure (D-09 + Pitfall 6).
+
+    Calls ``_judge_via_anthropic_raw`` (which is ``@retry``-wrapped at the SDK
+    layer) and deserializes the returned dict into ``JudgeVerdict``. On any
+    deserialization or shape error, emits a ``judge_structured_output_invalid``
+    structlog warning and returns the sentinel verdict — NEVER raises.
+
+    Args:
+        client: An ``anthropic.Anthropic`` SDK client instance.
+        user_prompt: The user-side prompt built by ``build_judge_user_prompt``.
+
+    Returns:
+        A ``JudgeVerdict`` deserialized from the structured-output response, or
+        the sentinel verdict from ``_sentinel_judgeverdict`` on failure.
+    """
+    try:
+        payload = _judge_via_anthropic_raw(client, user_prompt)
+    except (
+        AnthropicRateLimitError,
+        AnthropicAPIConnectionError,
+        AnthropicAPITimeoutError,
+    ) as exc:
+        # Transient errors after the @retry decorator exhausted its budget;
+        # surface as a sentinel rather than crashing the eval run.
+        log.warning(
+            "judge_structured_output_invalid",
+            provider="anthropic",
+            error=str(exc),
+            error_class=type(exc).__name__,
+            reason="transient_after_retries",
+        )
+        return _sentinel_judgeverdict()
+    if not payload:
+        log.warning(
+            "judge_structured_output_invalid",
+            provider="anthropic",
+            error="missing_tool_use_block_or_empty_input",
+        )
+        return _sentinel_judgeverdict()
+    try:
+        return JudgeVerdict(**payload)
+    except Exception as exc:  # noqa: BLE001 — pydantic.ValidationError + any unexpected shape error
+        log.warning(
+            "judge_structured_output_invalid",
+            provider="anthropic",
+            error=str(exc),
+            error_class=type(exc).__name__,
+            payload_preview=str(payload)[:200],
+        )
+        return _sentinel_judgeverdict()
+
+
+@retry(
+    wait=wait_exponential(multiplier=1, min=1, max=20),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type(
+        (
+            OpenAIRateLimitError,
+            OpenAIAPIConnectionError,
+            OpenAIAPITimeoutError,
+        )
+    ),
+    before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+    reraise=True,
+)
+def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:
+    """Raw OpenAI structured-output SDK call (D-09 + CD-09).
+
+    Calls ``client.chat.completions.create`` with ``response_format={"type":
+    "json_schema", "json_schema": {"strict": true, "schema": ...}}`` per
+    RESEARCH Pattern 3 lines 553-581 (the stable path; avoids ``.beta.parse()``
+    instability per RESEARCH Sources tertiary issue #1733/#1763).
+
+    Wrapped with the same ``@retry`` pattern as ``llm_openai.py:104-110``.
+    Retries only on transient HTTP errors; deserialization failures are handled
+    OUTSIDE this function so they do not trigger retry storms (Pitfall 6).
+
+    Args:
+        client: An ``openai.OpenAI`` SDK client instance.
+        user_prompt: The user-side prompt built by ``build_judge_user_prompt``.
+
+    Returns:
+        The decoded JSON dict from ``response.choices[0].message.content``. If
+        the content is missing or fails to JSON-decode, returns an empty dict
+        so the caller treats it as a deserialization failure.
+    """
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        max_tokens=2048,
+        messages=[
+            {"role": "system", "content": JUDGE_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "submit_verdict",
+                "strict": True,
+                "schema": _JUDGE_VERDICT_SCHEMA,
+            },
+        },
+    )
+    content = response.choices[0].message.content
+    if not content:
+        return {}
+    try:
+        decoded = json.loads(content)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    return decoded
+
+
+def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
+    """OpenAI judge dispatch with sentinel-on-failure (D-09 + Pitfall 6).
+
+    Calls ``_judge_via_openai_raw`` (which is ``@retry``-wrapped at the SDK
+    layer) and deserializes the returned dict into ``JudgeVerdict``. On any
+    deserialization or shape error, emits a ``judge_structured_output_invalid``
+    structlog warning and returns the sentinel verdict — NEVER raises.
+
+    Args:
+        client: An ``openai.OpenAI`` SDK client instance.
+        user_prompt: The user-side prompt built by ``build_judge_user_prompt``.
+
+    Returns:
+        A ``JudgeVerdict`` deserialized from the structured-output response, or
+        the sentinel verdict from ``_sentinel_judgeverdict`` on failure.
+    """
+    try:
+        payload = _judge_via_openai_raw(client, user_prompt)
+    except (
+        OpenAIRateLimitError,
+        OpenAIAPIConnectionError,
+        OpenAIAPITimeoutError,
+    ) as exc:
+        log.warning(
+            "judge_structured_output_invalid",
+            provider="openai",
+            error=str(exc),
+            error_class=type(exc).__name__,
+            reason="transient_after_retries",
+        )
+        return _sentinel_judgeverdict()
+    if not payload:
+        log.warning(
+            "judge_structured_output_invalid",
+            provider="openai",
+            error="missing_or_undecodable_response_content",
+        )
+        return _sentinel_judgeverdict()
+    try:
+        return JudgeVerdict(**payload)
+    except Exception as exc:  # noqa: BLE001 — pydantic.ValidationError + any unexpected shape error
+        log.warning(
+            "judge_structured_output_invalid",
+            provider="openai",
+            error=str(exc),
+            error_class=type(exc).__name__,
+            payload_preview=str(payload)[:200],
+        )
+        return _sentinel_judgeverdict()
 
 
 class CrossFamilyJudge:
@@ -108,6 +352,15 @@ class CrossFamilyJudge:
     This avoids circular-judge bias where a model rubber-stamps its own output.
     Factory wiring is done by make_adapters() (factory.py); this class receives
     an already-constructed LLMClient as complement_llm.
+
+    Phase 6 D-09 migration: ``.judge()`` no longer calls ``self._llm.complete()``
+    with a placeholder prompt + heuristic regex parser. Instead, it dispatches
+    by underlying adapter family (``AnthropicAdapter`` / ``OpenAIAdapter``) to
+    the matching structured-output helper (``_judge_via_anthropic`` /
+    ``_judge_via_openai``), which calls the SDK directly with provider-native
+    structured-output bindings and deserializes into ``JudgeVerdict``. The class
+    shell, ``__init__``, degraded-mode detection, and ``.name`` property are
+    preserved untouched (Phase 2 D-04 contract).
     """
 
     def __init__(self, complement_llm: LLMClient, cfg: Settings) -> None:
@@ -167,14 +420,20 @@ class CrossFamilyJudge:
     ) -> JudgeVerdict:
         """Evaluate prediction faithfulness via the complement provider's LLM.
 
-        The underlying self._llm.complete() is already @retry-wrapped by
-        AnthropicAdapter / OpenAIAdapter. No additional retry here (D-18:
-        avoiding double-wrap). The tenacity import at the top of this module
-        satisfies the ADP-06 structural property.
+        Phase 6 D-09 migration: the prompt body now lives in
+        ``docintel_generate.prompts.JUDGE_PROMPT``; the user-prompt builder is
+        ``docintel_generate.prompts.build_judge_user_prompt``; the parser is
+        provider-native structured output (Anthropic ``tools=[{strict: true}]``
+        / OpenAI ``response_format={'type': 'json_schema', 'strict': true}``).
+        Phase 2 D-04 cross-family wiring (the factory dispatch in
+        ``make_adapters``) is preserved untouched — this method dispatches by
+        adapter family at the SDK call layer, not at the protocol layer.
 
-        Phase 2 placeholder prompt and heuristic score parsing. Phase 6 will
-        replace _build_judge_prompt() and _parse_judge_response() with the
-        canonical versions from generation/prompts.py (GEN-01).
+        Deserialization failures emit a ``judge_structured_output_invalid``
+        structlog warning and return the sentinel
+        ``JudgeVerdict(score=0.0, passed=False, reasoning="<deserialization
+        failed>", unsupported_claims=[])`` — NEVER raise (Pitfall 6: failures
+        are measurements, not retry triggers).
 
         Args:
             prediction: The generated answer text to evaluate.
@@ -183,8 +442,21 @@ class CrossFamilyJudge:
 
         Returns:
             JudgeVerdict with score [0,1], passed flag, reasoning, and
-            unsupported_claims (empty list until Phase 6 structured parsing).
+            unsupported_claims, deserialized directly from the provider's
+            structured-output response (or the sentinel on failure).
         """
-        prompt = _build_judge_prompt(prediction, reference, rubric)
-        response = self._llm.complete(prompt, system=_JUDGE_SYSTEM_PROMPT)
-        return _parse_judge_response(response.text)
+        user_prompt = build_judge_user_prompt(prediction, reference, rubric)
+
+        # Lazy imports to avoid circular core→real→core cycles at module load.
+        from docintel_core.adapters.real.llm_anthropic import AnthropicAdapter
+        from docintel_core.adapters.real.llm_openai import OpenAIAdapter
+
+        if isinstance(self._llm, AnthropicAdapter):
+            return _judge_via_anthropic(self._llm._get_client(), user_prompt)
+        elif isinstance(self._llm, OpenAIAdapter):
+            return _judge_via_openai(self._llm._get_client(), user_prompt)
+        else:
+            raise TypeError(
+                f"unsupported judge adapter type: {type(self._llm).__name__}; "
+                f"expected AnthropicAdapter or OpenAIAdapter (Phase 2 D-04 contract)"
+            )
