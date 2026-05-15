@@ -88,6 +88,7 @@ Next steps:
    This ensures the docker volume mount doesn't claim the parent dir as root.
 2. Commit + push. **WAIT for the push CI run to complete** (concurrency group will otherwise cancel any workflow_dispatch run — see run 25894439192).
 3. **Re-trigger workflow_dispatch:** `gh workflow run ci.yml --ref main`. Wait for completion. Expected: `test_reranker_canary_real_mode PASSED` or a real D-16-actionable canary assertion failure.
+   *(Run **25896508029** was already triggered with fix `93ec39a` and is in_progress as of 2026-05-15 02:12 UTC — check with `gh run view 25896508029` before re-triggering.)*
 4. **If PASS** — append a "Closed Decisions" row in STATE.md citing the workflow run URL; mark Phase 5 fully complete.
 3. **If FAIL with assertion error** — apply D-16 debug protocol from the canary's `_DEBUG_BLOCK`: check chunk `n_tokens < 500` FIRST (Phase 3 invariant; note A1 shows 1794/6053 chunks exceed XLM-RoBERTa 500-token threshold so `chunk_reranker_token_overflow` warnings are expected — not a regression), THEN bge-reranker-base SDK pin, THEN RRF/chunk-size. Iterate on `data/eval/canary/cases.jsonl` curation if the strict criterion holds for individual cases but not aggregate.
 4. **If FAIL with infrastructure error** (timeout, DNS, env): keep iterating on the workflow YAML; the canary code is correct.
