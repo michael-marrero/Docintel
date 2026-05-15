@@ -24,7 +24,7 @@ Read these first when picking up work:
 - **One phase = one branch:** `git checkout -b phase/<N>-<name>` before any code.
 - **Tests before code where possible**, especially for the eval harness.
 - **No hidden state.** Every config goes through `src/docintel/config.py` (Pydantic v2 + `pydantic-settings`). No magic env reads in random modules.
-- **All prompts live in `src/docintel/generation/prompts.py`**, versioned with a hash. Grep for inline string-literal prompts must return zero matches.
+- **All prompts live in `packages/docintel-generate/src/docintel_generate/prompts.py`**, versioned with a hash. Grep for inline string-literal prompts must return zero matches.
 - **No silent retries on LLM calls.** Every LLM/embedding call wrapped with `tenacity` retry that logs each attempt via `before_sleep_log`.
 - **Adapters/protocols for swappable components.** `Embedder`, `Reranker`, `LLMClient`, `LLMJudge` — protocols + at least one real adapter + one stub adapter each. Single factory `make_adapters(cfg)` reads `LLM_PROVIDER`.
 - **Offline-first.** `LLM_PROVIDER=stub` is the default everywhere (CI, `.env.example`, `docker-compose.yml`). Stubs are deterministic and cover the entire pipeline including eval.

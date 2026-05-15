@@ -35,13 +35,20 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# Acyclic by inspection: docintel_core/adapters/types.py imports only
+# ``pydantic`` (BaseModel, ConfigDict) and ``docintel_core.adapters.protocols``;
+# it does NOT import ``docintel_core.types``. Verified 2026-05-15.
+from docintel_core.adapters.types import CompletionResponse
+
 __all__ = [
+    "REFUSAL_TEXT_SENTINEL",
     "Chunk",
     "CompanyEntry",
+    "GenerationResult",
     "IndexManifest",
     "IndexManifestBM25",
     "IndexManifestDense",
@@ -189,6 +196,87 @@ class RetrievedChunk(BaseModel):
     item_code: str
     # citation anchor — Phase 3 D-16
     char_span_in_section: tuple[int, int]
+
+
+class GenerationResult(BaseModel):
+    """Phase 6 generation output. Phase 7 wraps into Answer.
+
+    Home: docintel_core.types — matches RetrievedChunk precedent (Phase 5 CD-02).
+    Phase 7 Citation imports this contract without depending on docintel-generate;
+    the schema is a one-way export from core. ``docintel-generate`` imports the
+    shape (and the construction site lives there); ``docintel-core`` owns the
+    Pydantic contract (Pitfall 9: upward-stack import direction — generate →
+    core; never the reverse).
+
+    D-17 contract: six fields exactly. Adding a field is a schema change that
+    must be visible (a new plan, a SUMMARY entry, a Phase 9/10/13 consumer
+    update). The six fields are:
+
+    * ``text`` — raw LLM output; on hard refusal (Step B of D-15) equals
+      ``REFUSAL_TEXT_SENTINEL`` byte-for-byte.
+    * ``cited_chunk_ids`` — de-duplicated, validated against the retrieved
+      set per D-13 step 4; hallucinated IDs are DROPPED here (the dropped
+      brackets remain in ``text`` so Phase 9 MET-04 can measure the failure
+      rate honestly — no sentence stripping).
+    * ``refused`` — ``True`` iff hard zero-chunk path (Step B) OR LLM emitted
+      the canonical refusal sentinel (Step D ``is_refusal(text)``).
+    * ``retrieved_chunks`` — the K ``RetrievedChunk`` instances Phase 5
+      returned (frozen, immutable; Phase 7 renders them as citations,
+      Phase 11 ablation reports diff them across runs).
+    * ``completion`` — the ``CompletionResponse`` from the LLM, or ``None``
+      on the hard-refusal path (the LLM was not called, no usage / cost /
+      latency to record). Phase 9 MET-05 sources ``cost_usd`` and
+      ``latency_ms`` from this field; Phase 10 manifest reads ``model``.
+    * ``prompt_version_hash`` — combined ``PROMPT_VERSION_HASH`` at
+      generation time (Phase 6 D-08). Phase 10 EVAL-02 manifest header
+      consumes this verbatim.
+
+    frozen=True so downstream callers cannot mutate. Phase 7's Answer
+    wraps GenerationResult; Phase 9 metrics aggregate over a list of them;
+    Phase 13's UI renders citations from them. ``frozen=True`` prevents
+    any of those phases from accidentally mutating a shared instance
+    (defense against shared-list corruption — RetrievedChunk precedent).
+
+    extra='forbid' so a tampered or partial construction raises
+    ``pydantic.ValidationError`` immediately at the boundary. Adding a
+    debug field requires a deliberate schema change.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # raw LLM output (or REFUSAL_TEXT_SENTINEL on hard refusal)
+    text: str
+    # de-duplicated, validated against retrieved_chunks set; hallucinated IDs dropped per D-13
+    cited_chunk_ids: list[str]
+    # True iff hard zero-chunk path OR LLM emitted refusal sentinel
+    refused: bool
+    # the K chunks Phase 5 returned (frozen, immutable)
+    retrieved_chunks: list[RetrievedChunk]
+    # None on hard refusal (LLM not called); otherwise the LLM's return
+    completion: CompletionResponse | None
+    # combined PROMPT_VERSION_HASH at generation time
+    prompt_version_hash: str
+
+
+REFUSAL_TEXT_SENTINEL: Final[str] = (
+    "I cannot answer this question from the retrieved 10-K excerpts."
+)
+"""Canonical refusal sentinel for Phase 6 (D-11) — single source of truth across
+stub LLM, generator (docintel-generate), and Phase 7 Citation parser.
+
+Pitfall 9 (RESEARCH Open Question 1) resolution: this constant lives HERE in
+docintel_core.types — not in docintel_generate.prompts — so the upward-stack
+import direction is preserved. docintel-generate imports from docintel-core;
+never the reverse. The stub adapter
+(packages/docintel-core/src/docintel_core/adapters/stub/llm.py) imports this
+name in Plan 06-05; docintel_generate.prompts.REFUSAL_PROMPT also equals this
+string body (Plan 06-03 imports it as the canonical body for hash computation).
+
+The string is exactly 63 characters; no trailing whitespace; no surrounding
+punctuation beyond the terminal period. Phase 9 MET-03 faithfulness tests
+assert byte-exact ``text.startswith(REFUSAL_TEXT_SENTINEL)`` — any drift in
+this constant breaks Phase 9 / 10 / 13.
+"""
 
 
 class IndexManifestEmbedder(BaseModel):

@@ -204,17 +204,43 @@ Plans:
 
 ## Phase 6: generation
 
-**Status:** Pending
+**Status:** Planned
 **Branch:** `phase/6-generation`
 **Depends on:** Phase 2 (ADP-03), Phase 5 (RET-04)
-**Provides:** `src/docintel/generation/prompts.py` with versioned prompts, generator wrapping `LLMClient`, refusal path
+**Provides:** `packages/docintel-generate/src/docintel_generate/prompts.py` with versioned prompts, generator wrapping `LLMClient`, refusal path
 **Closes:** GEN-01..GEN-04
 
+**Goal:** Ship the query-time generation layer — a new 8th workspace package `docintel-generate` with a single `prompts.py` module owning ALL canonical prompts (synthesis, refusal, judge) under a per-prompt + combined `PROMPT_VERSION_HASH`; a `Generator(bundle, retriever)` class with a 5-step `.generate(query, k) -> GenerationResult` pipeline (retrieval → format → call → parse → telemetry) exposed via a 4th sibling factory `make_generator(cfg)`; dual-layer refusal (hard zero-chunk + LLM-driven canonical sentinel); a `scripts/check_prompt_locality.sh` CI grep gate enforcing GEN-01. Also migrates the Phase 2 placeholder judge prompt + heuristic regex parser to the canonical `JUDGE_PROMPT` + provider-native structured output (Anthropic `tools=[{strict: true}]` / OpenAI `response_format={'json_schema': {'strict': true}}`) so Phase 9 inherits a stable manifest hash.
+
+**Plans:** 7 plans across 5 waves
+
+Plans:
+**Wave 0** *(tests-first scaffolding + workspace package skeleton + grep gate + doc-path updates; both plans run in parallel — disjoint files_modified)*
+- [ ] 06-01-PLAN.md — Wave 0: 10 test scaffolds (xfail-strict) for GEN-01..04 + D-03/D-09/D-14/D-16/D-17 + 2 fixture dirs (negative + noqa-escape) for the prompt-locality grep gate
+- [ ] 06-02-PLAN.md — Wave 0: new 8th workspace package `docintel-generate` skeleton + `REFUSAL_TEXT_SENTINEL` in `docintel_core.types` (Pitfall 9 cycle-resolution) + `scripts/check_prompt_locality.sh` CI grep gate + 5 doc-path updates per D-02 + uv.lock regen
+
+**Wave 1** *(blocked on Wave 0 completion)*
+- [ ] 06-03-PLAN.md — Wave 1: `prompts.py` (3 named `Final[str]` prompts SYNTHESIS/REFUSAL/JUDGE + per-prompt + combined `PROMPT_VERSION_HASH` via hashlib at import time + `build_judge_user_prompt` helper) + `parse.py` (`_CHUNK_RE` + `is_refusal` helper) + `__init__.py` Wave-1 re-exports (D-07, D-08, D-10, D-11, CD-01, CD-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 06-04-PLAN.md — Wave 2: `Generator` class + 5-step pipeline + `make_generator(cfg)` 4th sibling factory in `docintel_core.adapters.factory` + `GenerationResult` Pydantic model in `docintel_core.types` + `__init__.py` Wave-2 re-exports (D-03, D-13, D-14, D-15, D-16, D-17, CD-03, CD-04, CD-05, CD-06, CD-07)
+
+**Wave 3** *(blocked on Wave 2 completion; two plans run in parallel — disjoint files_modified)*
+- [ ] 06-05-PLAN.md — Wave 3: stub adapter update — `_STUB_REFUSAL` re-alias `REFUSAL_TEXT_SENTINEL` from core + `_CHUNK_RE` re-import from `docintel_generate.parse` (D-12, Pitfall 5)
+- [ ] 06-06-PLAN.md — Wave 3: judge migration — remove Phase 2 placeholder `_JUDGE_SYSTEM_PROMPT`/`_build_judge_prompt`/`_SCORE_PATTERN`/`_parse_judge_response`; import `JUDGE_PROMPT` + `build_judge_user_prompt` from `docintel_generate.prompts`; provider-native structured output via 2 new `@retry`-wrapped helpers (`_judge_via_anthropic` + `_judge_via_openai`) deserializing into `JudgeVerdict`; sentinel-on-failure per Pitfall 6 (D-09, CD-09, Pitfall 6, Pitfall 8)
+
+**Wave 4** *(blocked on Wave 3 completion — phase gate, CHECKPOINT)*
+- [ ] 06-07-PLAN.md — Wave 4: CI YAML step wiring (D-06) + xfail-removal sweep (20 markers across 9 test files; `test_generator_real_hero.py` xfail preserved per Phase 5 precedent) + Decision-Coverage Audit at `.planning/phases/06-generation/06-DECISIONS-AUDIT.md` (27/27 ✓ for D-01..D-17 + CD-01..CD-10 + Pitfall 9 resolution) + developer-review checkpoint
+
 **Success criteria:**
-- All prompts live in `prompts.py`; grep for inline string-literal prompts outside this file returns zero matches (CI gate)
-- Each prompt has a deterministic `PROMPT_VERSION_HASH` exposed for the manifest
-- Stub generator returns deterministic placeholder answers covering the full schema
-- Refusal path returns explicit refusal when evidence is insufficient
+- All prompts live in `packages/docintel-generate/src/docintel_generate/prompts.py`; grep for inline string-literal prompts outside this file returns zero matches (CI gate via `scripts/check_prompt_locality.sh`)
+- Each prompt has a deterministic per-prompt + combined `PROMPT_VERSION_HASH` (sha256[:12] hex) exposed for Phase 10's EVAL-02 manifest header
+- Stub generator returns deterministic placeholder answers covering the full schema; new canonical refusal sentinel `"I cannot answer this question from the retrieved 10-K excerpts."` replaces Phase 2 placeholder
+- Dual-layer refusal: hard zero-chunk skip (`Generator` Step B) AND LLM-driven canonical sentinel detection (`Generator` Step D)
+- `Generator.generate(query, k) -> GenerationResult` single seam exposed; `make_generator(cfg)` 4th sibling factory composes adapters + retriever
+- Phase 6 adds ZERO new env vars (Settings unchanged per FND-11); ZERO new tenacity wrap sites on `Generator.generate()` (CD-04 inherited; helpers in judge.py preserve wrap-discipline per ADP-06); four CI grep gates (`check_adapter_wraps`, `check_index_wraps`, `check_ingest_wraps`, `check_prompt_locality`) all green
+- Judge migration: `_JUDGE_SYSTEM_PROMPT` / heuristic `_SCORE_PATTERN` retired; provider-native structured output (Anthropic `tools=[{strict: true}]` / OpenAI `response_format={'type': 'json_schema', 'strict': true}`) deserializes directly into `JudgeVerdict`
+- Decision-Coverage Audit at `.planning/phases/06-generation/06-DECISIONS-AUDIT.md` shows 27/27 ✓ for D-01..D-17 + CD-01..CD-10 + Pitfall 9 resolution
 
 ---
 

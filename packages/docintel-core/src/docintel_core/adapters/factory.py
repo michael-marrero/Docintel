@@ -24,6 +24,18 @@ cheap and does NOT pull in ``docintel_retrieve`` transitively. The
 return-type annotation uses a string forward reference (``-> "Retriever"``)
 to keep that discipline pure: no top-level (even TYPE_CHECKING) import
 is required.
+
+Phase 6 amendment (D-03): ``make_generator(cfg)`` is the fourth sibling
+factory. It composes both ``make_adapters(cfg)`` and ``make_retriever(cfg)``
+and constructs ``docintel_generate.generator.Generator``. The Generator
+import lives INSIDE the function body (same Pattern S5 lazy-import
+discipline as ``make_retriever``) so module-load of
+``docintel_core.adapters.factory`` does NOT pull in ``docintel_generate``
+transitively. The return-type annotation is resolved via the TYPE_CHECKING
+block at module top (matching the ``make_retriever`` precedent for
+maintainability — string forward references and TYPE_CHECKING imports
+are equally pure for the lazy-import gate; this module mixes the two
+already so we keep TYPE_CHECKING for ``Generator``).
 """
 
 from __future__ import annotations
@@ -47,6 +59,7 @@ from docintel_core.adapters.types import AdapterBundle, IndexStoreBundle
 # (``tests/test_make_retriever.py::test_factory_lazy_imports_retriever_module``
 # enforces the runtime gate).
 if TYPE_CHECKING:
+    from docintel_generate.generator import Generator
     from docintel_retrieve.retriever import Retriever
 
     from docintel_core.adapters.real.judge import CrossFamilyJudge
@@ -203,3 +216,62 @@ def make_retriever(cfg: Settings) -> Retriever:
     bundle = make_adapters(cfg)
     stores = make_index_stores(cfg)
     return Retriever(bundle=bundle, stores=stores, cfg=cfg)
+
+
+def make_generator(cfg: Settings) -> Generator:
+    """Construct and return a Generator composed of AdapterBundle + Retriever.
+
+    Phase 6 D-03: fourth sibling factory alongside ``make_adapters(cfg)``,
+    ``make_index_stores(cfg)``, and ``make_retriever(cfg)``. Calls both
+    ``make_adapters`` and ``make_retriever`` internally and constructs
+    ``Generator(bundle=adapters, retriever=retriever)``. Lives in
+    ``docintel_core.adapters.factory`` (NOT in ``docintel-generate``) so the
+    import direction matches every prior phase: ``docintel-generate`` imports
+    from ``docintel-core``, never the reverse.
+
+    Lazy-import discipline (D-12 + Pattern S5): ``from
+    docintel_generate.generator import Generator`` lives INSIDE the function
+    body so ``import docintel_core.adapters.factory`` stays cheap. The
+    ``tests/test_make_generator.py::test_factory_lazy_imports_generator_module``
+    gate fails if this import is hoisted to module scope.
+
+    The return-type annotation uses ``Generator`` resolved by the
+    ``TYPE_CHECKING`` block at the module top — matches the
+    ``make_retriever`` precedent (the two factory siblings stay consistent).
+
+    CD-03 (recommended): eager-load. ``Generator(bundle, retriever)``
+    construction is cheap — just stashes the two references. First-call
+    cost is the underlying LLM SDK init, which is already lazy in
+    ``AnthropicAdapter._get_client`` (commit ``9ec4d36``).
+
+    CD-05: NO factory-level cache. Phase 13 FastAPI ``lru_cache``s the
+    constructed Generator at the dependency-injection layer; Phase 10
+    eval harness constructs once per run. Mirrors the
+    ``make_adapters(cfg)`` precedent of no factory cache.
+
+    NOTE: this function calls BOTH ``make_adapters(cfg)`` AND
+    ``make_retriever(cfg)``. The latter internally calls
+    ``make_adapters(cfg)`` AGAIN — so two ``AdapterBundle`` instances are
+    constructed per ``make_generator`` invocation. That is intentional
+    per CD-05 (no factory cache; cheap construction). The deferred-idea
+    "factor make_retriever to accept an optional bundle arg" was rejected
+    (breaks Phase 5 D-04 contract).
+
+    Args:
+        cfg: Settings instance with ``llm_provider`` set (and ``data_dir``
+             + ``index_dir`` consulted transitively by the Retriever's
+             eager chunk-map load + MANIFEST cardinality check).
+
+    Returns:
+        Generator ready to call ``.generate(query, k)``. The instance holds
+        an ``AdapterBundle`` + ``Retriever`` reference; subsequent
+        ``.generate`` calls do not re-trigger factory dispatch.
+    """
+    # Lazy import — keeps `import docintel_core.adapters.factory` cheap
+    # (D-12 + Pattern S5). The test_factory_lazy_imports_generator_module
+    # gate fails if this import is hoisted to module scope.
+    from docintel_generate.generator import Generator
+
+    bundle = make_adapters(cfg)
+    retriever = make_retriever(cfg)
+    return Generator(bundle=bundle, retriever=retriever)

@@ -110,9 +110,26 @@ def test_stub_llm_complete(stub_bundle) -> None:
 
 
 def test_stub_llm_refusal(stub_bundle) -> None:
-    """StubLLMClient returns canonical refusal text when prompt contains no chunk IDs."""
+    """StubLLMClient returns canonical refusal text when prompt contains no chunk IDs.
+
+    Phase 6 D-11 + Plan 06-05: ``_STUB_REFUSAL`` now byte-equals
+    ``REFUSAL_TEXT_SENTINEL`` from ``docintel_core.types`` (the canonical
+    refusal sentinel ``"I cannot answer this question from the retrieved
+    10-K excerpts."``). The Phase 2 placeholder substring assertions
+    (``"REFUSAL" in upper`` / ``"No evidence" in text``) are retired in
+    favour of a symbolic byte-identity assertion against the canonical
+    constant — single source of truth, no byte-literal drift.
+    """
+    from docintel_core.adapters.stub.llm import _STUB_REFUSAL
+    from docintel_core.types import REFUSAL_TEXT_SENTINEL
+
     response = stub_bundle.llm.complete("What is the weather today?")
-    assert "REFUSAL" in response.text.upper() or "No evidence" in response.text
+    assert (
+        response.text == _STUB_REFUSAL
+    ), f"refusal-path text must equal _STUB_REFUSAL: got {response.text!r}"
+    assert (
+        response.text == REFUSAL_TEXT_SENTINEL
+    ), f"refusal-path text must equal REFUSAL_TEXT_SENTINEL: got {response.text!r}"
 
 
 # ---------------------------------------------------------------------------
