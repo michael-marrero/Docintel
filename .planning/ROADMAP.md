@@ -207,7 +207,7 @@ Plans:
 **Status:** Pending
 **Branch:** `phase/6-generation`
 **Depends on:** Phase 2 (ADP-03), Phase 5 (RET-04)
-**Provides:** `src/docintel/generation/prompts.py` with versioned prompts, generator wrapping `LLMClient`, refusal path
+**Provides:** `packages/docintel-generate/src/docintel_generate/prompts.py` with versioned prompts, generator wrapping `LLMClient`, refusal path
 **Closes:** GEN-01..GEN-04
 
 **Success criteria:**
