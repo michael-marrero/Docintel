@@ -90,7 +90,6 @@ def test_judge_returns_judgeverdict() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 3 — Plan 06-06 ships structured-output dispatch + sentinel fallback")
 def test_deserialization_failure_returns_sentinel() -> None:
     """D-09 + Pitfall 6 — deserialization failure returns a sentinel verdict.
 
@@ -106,11 +105,14 @@ def test_deserialization_failure_returns_sentinel() -> None:
     raising would convert a per-call regression into a hard crash and
     distort the eval signal.
 
-    The test patches ``adapters.real.judge._judge_via_anthropic`` (the
-    internal dispatch under the ``CrossFamilyJudge`` Phase 2 D-04 wiring)
-    to return a payload that won't deserialize. Plan 06-06 ships the
-    helper + the sentinel fallback; this test flips from xfail to
-    passing then.
+    The test patches ``adapters.real.judge._judge_via_anthropic_raw`` (the
+    raw SDK helper under the ``CrossFamilyJudge`` Phase 2 D-04 wiring) to
+    return a payload that won't deserialize. To exercise the Anthropic
+    dispatch path under D-04 cross-family wiring, the bundle is built with
+    ``llm_real_provider="openai"`` so the judge complement is the
+    Anthropic adapter (generator=openai → judge=anthropic). Plan 06-06
+    ships the helper + the sentinel fallback; this test asserts the
+    sentinel verdict shape.
     """
     from docintel_core.adapters import make_adapters
     from docintel_core.adapters.types import JudgeVerdict
@@ -120,17 +122,17 @@ def test_deserialization_failure_returns_sentinel() -> None:
     bundle = make_adapters(
         Settings(
             llm_provider="real",
-            llm_real_provider="anthropic",
+            llm_real_provider="openai",
             anthropic_api_key=SecretStr("dummy-anthropic-key-for-test"),
             openai_api_key=SecretStr("dummy-openai-key-for-test"),
         )
     )
 
-    # Patch the internal Anthropic dispatch helper so no real API call is made.
-    # Plan 06-06 lands `_judge_via_anthropic` (the new structured-output helper);
-    # we mock its raw SDK return-value shape to a payload that fails JudgeVerdict
-    # deserialization. The fallback catches the ValidationError and returns the
-    # sentinel.
+    # Patch the internal Anthropic raw SDK helper so no real API call is made.
+    # Plan 06-06 lands `_judge_via_anthropic_raw` (the @retry-wrapped raw
+    # structured-output helper); we mock its return-value shape to a payload
+    # that fails JudgeVerdict deserialization. The outer `_judge_via_anthropic`
+    # wrapper catches the ValidationError and returns the sentinel.
     def _bad_payload(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
         return {"invalid": "shape", "missing_all_four_fields": True}
 
