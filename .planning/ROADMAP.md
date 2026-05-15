@@ -207,7 +207,7 @@ Plans:
 **Status:** Planned
 **Branch:** `phase/6-generation`
 **Depends on:** Phase 2 (ADP-03), Phase 5 (RET-04)
-**Provides:** `src/docintel/generation/prompts.py` with versioned prompts, generator wrapping `LLMClient`, refusal path
+**Provides:** `packages/docintel-generate/src/docintel_generate/prompts.py` with versioned prompts, generator wrapping `LLMClient`, refusal path
 **Closes:** GEN-01..GEN-04
 
 **Goal:** Ship the query-time generation layer — a new 8th workspace package `docintel-generate` with a single `prompts.py` module owning ALL canonical prompts (synthesis, refusal, judge) under a per-prompt + combined `PROMPT_VERSION_HASH`; a `Generator(bundle, retriever)` class with a 5-step `.generate(query, k) -> GenerationResult` pipeline (retrieval → format → call → parse → telemetry) exposed via a 4th sibling factory `make_generator(cfg)`; dual-layer refusal (hard zero-chunk + LLM-driven canonical sentinel); a `scripts/check_prompt_locality.sh` CI grep gate enforcing GEN-01. Also migrates the Phase 2 placeholder judge prompt + heuristic regex parser to the canonical `JUDGE_PROMPT` + provider-native structured output (Anthropic `tools=[{strict: true}]` / OpenAI `response_format={'json_schema': {'strict': true}}`) so Phase 9 inherits a stable manifest hash.

@@ -25,6 +25,7 @@ docintel-eval     = { workspace = true }
 docintel-index    = { workspace = true }
 docintel-retrieve = { workspace = true }
 docintel-ingest   = { workspace = true }
+docintel-generate = { workspace = true }
 torch = [
     { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
 ]

@@ -17,6 +17,7 @@ members = [
     "docintel-api",
     "docintel-core",
     "docintel-eval",
+    "docintel-generate",
     "docintel-index",
     "docintel-ingest",
     "docintel-retrieve",
@@ -294,6 +295,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "docintel-core", editable = "packages/docintel-core" }]
+
+[[package]]
+name = "docintel-generate"
+version = "0.1.0"
+source = { editable = "packages/docintel-generate" }
+dependencies = [
+    { name = "docintel-core" },
+    { name = "docintel-retrieve" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "docintel-core", editable = "packages/docintel-core" },
+    { name = "docintel-retrieve", editable = "packages/docintel-retrieve" },
+]
 
 [[package]]
 name = "docintel-index"

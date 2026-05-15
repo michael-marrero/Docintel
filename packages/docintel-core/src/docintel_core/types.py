@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -48,6 +48,7 @@ __all__ = [
     "IndexManifestEmbedder",
     "NormalizedFiling",
     "NormalizedFilingManifest",
+    "REFUSAL_TEXT_SENTINEL",
     "RetrievedChunk",
 ]
 
@@ -189,6 +190,27 @@ class RetrievedChunk(BaseModel):
     item_code: str
     # citation anchor — Phase 3 D-16
     char_span_in_section: tuple[int, int]
+
+
+REFUSAL_TEXT_SENTINEL: Final[str] = (
+    "I cannot answer this question from the retrieved 10-K excerpts."
+)
+"""Canonical refusal sentinel for Phase 6 (D-11) — single source of truth across
+stub LLM, generator (docintel-generate), and Phase 7 Citation parser.
+
+Pitfall 9 (RESEARCH Open Question 1) resolution: this constant lives HERE in
+docintel_core.types — not in docintel_generate.prompts — so the upward-stack
+import direction is preserved. docintel-generate imports from docintel-core;
+never the reverse. The stub adapter
+(packages/docintel-core/src/docintel_core/adapters/stub/llm.py) imports this
+name in Plan 06-05; docintel_generate.prompts.REFUSAL_PROMPT also equals this
+string body (Plan 06-03 imports it as the canonical body for hash computation).
+
+The string is exactly 63 characters; no trailing whitespace; no surrounding
+punctuation beyond the terminal period. Phase 9 MET-03 faithfulness tests
+assert byte-exact ``text.startswith(REFUSAL_TEXT_SENTINEL)`` — any drift in
+this constant breaks Phase 9 / 10 / 13.
+"""
 
 
 class IndexManifestEmbedder(BaseModel):
