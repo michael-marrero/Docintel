@@ -280,6 +280,14 @@ jobs:
       - name: Sync workspace (frozen)
         run: uv sync --all-packages --frozen
 
+      - name: Pre-create data/indices/ as runner-owned
+        # The qdrant compose volume mount (./data/indices/.qdrant) creates
+        # parent dirs on the host as ROOT. If the python process tries to
+        # mkdir data/indices/bm25/ later, it fails with EACCES. Pre-creating
+        # the dirs as the runner user before docker starts claims ownership.
+        # Run 25895662489 failed with `PermissionError` because this was missing.
+        run: mkdir -p data/indices/bm25 data/indices/dense data/indices/.qdrant
+
       - name: Start qdrant via compose profile 'real'
         run: docker compose --profile real up -d qdrant
 
