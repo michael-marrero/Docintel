@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 05 complete (PR #5 merged to main; real-mode canary running under workflow_dispatch)
-last_updated: "2026-05-14T22:31:00.000Z"
+status: "Phase 06 context gathered (D-01..D-17 captured; chain auto-advances to plan-phase). Phase 05 real-mode canary still EMPIRICAL-PENDING."
+last_updated: "2026-05-15T15:41:27.648Z"
 progress:
   total_phases: 14
-  completed_phases: 5
-  total_plans: 34
+  completed_phases: 4
+  total_plans: 27
   completed_plans: 29
-  percent: 85
+  percent: 100
 ---
 
 # STATE: docintel
@@ -32,6 +32,8 @@ See: `.planning/PROJECT.md` (updated 2026-05-11)
 - **Phase 14 (v2)** — Deferred.
 
 ## Recent Activity
+
+- 2026-05-15 — Phase 6 context gathered via `/gsd-discuss-phase 6 --chain`. Decisions D-01..D-17 captured in `.planning/phases/06-generation/06-CONTEXT.md`: **new 8th workspace package `docintel-generate`** at `packages/docintel-generate/` (mirrors Phase 3/4/5 precedent); **CLAUDE.md / config.json / REQUIREMENTS GEN-01 / ROADMAP / PROJECT.md path-references updated** by Phase 6 plan (original `src/docintel/generation/prompts.py` literal path never existed in this clone); **three named module constants** `SYNTHESIS_PROMPT` / `REFUSAL_PROMPT` / `JUDGE_PROMPT` with per-prompt `_SYNTHESIS_HASH`/`_REFUSAL_HASH`/`_JUDGE_HASH` (sha256[:12]) + combined `PROMPT_VERSION_HASH` (EVAL-02 manifest reads combined; ablation reports + structlog read per-prompt); **judge prompt + parser migrated** from Phase 2 placeholder in `adapters/real/judge.py` (heuristic `_SCORE_PATTERN` regex → Anthropic tool-use / OpenAI `response_format` structured-output deserializing directly into `JudgeVerdict`); Phase 2 D-04 cross-family wiring untouched; **inline `[chunk_id]` citations** with locked fenced example in `SYNTHESIS_PROMPT` matching existing stub `_CHUNK_RE = re.compile(r"\[([^\]]+)\]")`; **`Generator(bundle, retriever)` class** + 4th sibling factory `make_generator(cfg)` in `docintel_core.adapters.factory`; **`GenerationResult` Pydantic model** in `docintel_core.types` with `ConfigDict(extra="forbid", frozen=True)` carrying `text`, `cited_chunk_ids`, `refused`, `retrieved_chunks`, `completion: CompletionResponse | None`, `prompt_version_hash`; **dual-layer refusal** — hard zero-chunk skip + LLM-driven sentinel `"I cannot answer this question from the retrieved 10-K excerpts."` (replaces Phase 2 stub `_STUB_REFUSAL` value); **numbered `<context>` blocks** with `[chunk_id | company | fiscal_year | section]` headers as the chunk-formatting contract; **faithfulness measured, not enforced** (hallucinated chunk_ids logged via `generator_hallucinated_chunk_id` warning + dropped from `cited_chunk_ids`; no re-prompting, no sentence-stripping; Phase 9 MET-03/MET-04 own the measurement); **single `generator_completed` structlog line** mirroring Phase 5 `retriever_search_completed` with 14 fields (Phase 9 MET-05 reads `cost_usd`+`total_ms`; Phase 12 binds `trace_id` via contextvars without retrofit); **new CI grep gate `scripts/check_prompt_locality.sh`** mirroring `check_adapter_wraps.sh`/`check_index_wraps.sh`/`check_ingest_wraps.sh` (path allowlist + per-line `# noqa: prompt-locality` escape; default-excludes `prompts.py`, `tests/`, `conftest.py`, `adapters/stub/llm.py`'s pre-existing `_STUB_REFUSAL` + `_CHUNK_RE`); NO new tenacity wraps (Phase 5 CD-04 + Phase 2 D-18 inherited verbatim); NO new Settings fields (FND-11 single-env-reader preserved); package count holds at 8 through Phase 13. Chain mode auto-advances to plan-phase next.
 
 - 2026-05-15 — Workflow_dispatch run **25895662489** (fourth attempt after qdrant DNS fix `e26b352`): `real-mode index build` **failed with `PermissionError: [Errno 13] Permission denied: 'data/indices/bm25'`**. Root cause: the qdrant container's volume mount `./data/indices/.qdrant:/qdrant/storage` (compose D-05) creates `data/indices/` on the host as root before the python process can `mkdir data/indices/bm25/`. The job's python process runs as the `runner` user → permission denied. **Fix:** either (a) `mkdir -p data/indices/{bm25,dense,.qdrant}` BEFORE `docker compose --profile real up qdrant`, OR (b) add `sudo chown -R $(whoami):$(whoami) data/indices` after qdrant starts, OR (c) change the compose volume to a named docker volume. Recommend (a) — simplest, no privilege escalation. **Iteration paused at this point** — 4 infrastructure failures in a row (API key → timeout → DNS → permissions). Each fix surfaces the next layer; the canary code itself has never been exercised. Phase 4's `workflow_dispatch real-index-build` job was implemented but NEVER end-to-end run before Phase 5; this run is the discovery process. Picking up: apply fix (a), re-trigger, expect either canary PASS or substantive D-16 application.
 
@@ -82,13 +84,16 @@ Next steps:
 
 1. **Patch `.github/workflows/ci.yml::real-index-build`** — add a step BEFORE `Start qdrant via compose profile 'real'` that pre-creates the index directories as the runner user:
    ```yaml
+
    - name: Pre-create data/indices/ as runner-owned
      run: mkdir -p data/indices/bm25 data/indices/dense data/indices/.qdrant
    ```
    This ensures the docker volume mount doesn't claim the parent dir as root.
+
 2. Commit + push. **WAIT for the push CI run to complete** (concurrency group will otherwise cancel any workflow_dispatch run — see run 25894439192).
 3. **Re-trigger workflow_dispatch:** `gh workflow run ci.yml --ref main`. Wait for completion. Expected: `test_reranker_canary_real_mode PASSED` or a real D-16-actionable canary assertion failure.
    *(Run **25896508029** was already triggered with fix `93ec39a` and is in_progress as of 2026-05-15 02:12 UTC — check with `gh run view 25896508029` before re-triggering.)*
+
 4. **If PASS** — append a "Closed Decisions" row in STATE.md citing the workflow run URL; mark Phase 5 fully complete.
 3. **If FAIL with assertion error** — apply D-16 debug protocol from the canary's `_DEBUG_BLOCK`: check chunk `n_tokens < 500` FIRST (Phase 3 invariant; note A1 shows 1794/6053 chunks exceed XLM-RoBERTa 500-token threshold so `chunk_reranker_token_overflow` warnings are expected — not a regression), THEN bge-reranker-base SDK pin, THEN RRF/chunk-size. Iterate on `data/eval/canary/cases.jsonl` curation if the strict criterion holds for individual cases but not aggregate.
 4. **If FAIL with infrastructure error** (timeout, DNS, env): keep iterating on the workflow YAML; the canary code is correct.
