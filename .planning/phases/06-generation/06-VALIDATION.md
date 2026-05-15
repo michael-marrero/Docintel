@@ -45,7 +45,7 @@ created: 2026-05-15
 | 06-03-* | 03 | 1 | GEN-02 | — | `PROMPT_VERSION_HASH` 12-char hex; per-prompt + combined; module-import-time computation | unit | `uv run pytest tests/test_prompt_version_hash.py -x` | ❌ W0 | ⬜ pending |
 | 06-04-* | 04 | 2 | GEN-03 + D-03 + D-17 | — | `Generator(bundle, retriever)` + `make_generator(cfg)` + `GenerationResult` (frozen) | unit + integration | `uv run pytest tests/test_generator_stub_determinism.py tests/test_make_generator.py tests/test_generation_result_schema.py tests/test_generator_search_integration.py -ra -q` | ❌ W0 | ⬜ pending |
 | 06-05-* | 05 | 3 | D-09 (judge migration) + D-12 (stub refusal sync) | — | judge prompt + parser migrated; structured-output deserializes to `JudgeVerdict`; stub `_STUB_REFUSAL` matches `REFUSAL_PROMPT` sentinel | unit | `uv run pytest tests/test_judge_structured_output.py -x` | ❌ W0 | ⬜ pending |
-| 06-06-* | 06 | 4 | GEN-04 + D-16 | — | `generator_completed` 14-field structlog; dual-layer refusal; hero question end-to-end | unit + integration | `uv run pytest tests/test_generator_refusal.py tests/test_generator_telemetry.py -ra -q` | ❌ W0 | ⬜ pending |
+| 06-06-* | 06 | 4 | GEN-04 + D-16 | — | `generator_completed` 15-field structlog (per D-16 verbatim count); dual-layer refusal; hero question end-to-end | unit + integration | `uv run pytest tests/test_generator_refusal.py tests/test_generator_telemetry.py -ra -q` | ❌ W0 | ⬜ pending |
 | 06-07-* | 07 | 4 | phase gate | — | xfail removal sweep + CI wiring + Decision-Coverage Audit | unit | `uv run pytest -ra -q -m "not real" && bash scripts/check_prompt_locality.sh && bash scripts/check_adapter_wraps.sh` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -65,7 +65,7 @@ Test scaffolds (xfail markers; promoted as task-level work consumes each require
 - [ ] `tests/test_make_generator.py` — covers D-03 (factory returns `Generator` for stub Settings; lazy-import gate — `import docintel_core.adapters.factory` does NOT load `docintel_generate.generator`)
 - [ ] `tests/test_judge_structured_output.py` — covers D-09 (judge structured-output deserializes into `JudgeVerdict`; deserialization-failure sentinel `JudgeVerdict(score=0.0, passed=False, …)`)
 - [ ] `tests/test_generator_search_integration.py` — covers D-14 + hero (end-to-end stub: comparative question → non-empty `cited_chunk_ids` covering multiple tickers)
-- [ ] `tests/test_generator_telemetry.py` — covers D-16 (`generator_completed` structlog emits all 14 fields)
+- [ ] `tests/test_generator_telemetry.py` — covers D-16 (`generator_completed` structlog emits all 15 named fields)
 - [ ] `tests/test_generation_result_schema.py` — covers D-17 (`GenerationResult` is frozen + `extra="forbid"`)
 - [ ] `tests/test_generator_real_hero.py` — covers hero question real-mode (xfail until `workflow_dispatch` lands; mirrors Phase 5 `test_reranker_canary_real_mode`)
 - [ ] `tests/fixtures/prompt_locality_violations/` — fixture dir with a planted violation file for the GEN-01 negative case
