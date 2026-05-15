@@ -38,19 +38,6 @@ from __future__ import annotations
 import pytest
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Plan 06-05 retires the Phase 2 placeholder _STUB_REFUSAL value and the "
-        "in-file _CHUNK_RE duplicate (D-11 + D-12); it does NOT rework the stub's "
-        "[STUB ANSWER citing chunk_ids] template, which emits a Python repr-list of "
-        "full D-14 header strings (e.g. 'chunk_id: AAPL-... | company: ...'). "
-        "Generator Step D parses those as hallucinated IDs, so cited_chunk_ids "
-        "comes back empty and the hero assertion fails. The stub-template rework "
-        "to emit bare [chunk_id] brackets matching D-14 chunk_id values is a "
-        "future-plan deliverable (out of scope for 06-05's acceptance criteria)."
-    ),
-)
 def test_hero_comparative_stub() -> None:
     """D-14 + hero — end-to-end stub-mode generate() on the hero comparative question.
 

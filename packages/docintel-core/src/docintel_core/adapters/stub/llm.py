@@ -90,13 +90,34 @@ class StubLLMClient:
         Returns:
             CompletionResponse with deterministic text, usage, zero cost/latency.
         """
-        chunk_ids = _CHUNK_RE.findall(prompt)
+        raw_matches = _CHUNK_RE.findall(prompt)
+        # D-14 context-block headers have shape:
+        #   [chunk_id: AAPL-FY2024-Item-1A-018 | company: AAPL | fiscal_year: 2024 | section: Item 1A]
+        # The Generator's Step D regex extracts the WHOLE bracket content,
+        # but the validated chunk_id set carries the BARE id. Extract the bare
+        # id from each header so the stub's emitted citations match the
+        # retrieved-chunks set. Bare-bracket prompts (`[AAPL-FY2024-Item-1A-018]`
+        # from older tests) pass through unchanged.
+        chunk_ids: list[str] = []
+        for match in raw_matches:
+            if match.startswith("chunk_id:"):
+                first_pair = match.split("|", 1)[0]
+                bare = first_pair.split(":", 1)[1].strip()
+                chunk_ids.append(bare)
+            else:
+                chunk_ids.append(match)
         if not chunk_ids:
             text = _STUB_REFUSAL
         else:
+            # Emit each chunk_id as a separate bare `[chunk_id]` token so the
+            # Generator's `_CHUNK_RE.findall(text)` (D-13 step 3) correctly
+            # extracts every cited id. The Phase 2 placeholder emitted
+            # `[STUB ANSWER citing [<list-repr>]]` which the regex captured
+            # as a single nested match — Phase 6 Pitfall 5 fix.
+            citations = " ".join(f"[{cid}]" for cid in chunk_ids)
             text = (
-                f"Based on the provided context: {prompt[:200]}... "
-                f"[STUB ANSWER citing {chunk_ids}]"
+                f"Stub synthesis grounded in the provided context. "
+                f"Citations: {citations}"
             )
         prompt_tokens = len(prompt.split())
         completion_tokens = len(text.split())
