@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: "Phase 06 planned (7 plans × 5 waves; plan-checker iter 2 PASSED). Chain auto-advances to execute-phase. Phase 05 real-mode canary still EMPIRICAL-PENDING."
-last_updated: "2026-05-15T15:41:27.648Z"
+status: Phase 06 planned (7 plans × 5 waves; plan-checker iter 2 PASSED). Chain auto-advances to execute-phase. Phase 05 real-mode canary still EMPIRICAL-PENDING.
+last_updated: "2026-05-15T17:01:56.018Z"
 progress:
   total_phases: 14
   completed_phases: 4
-  total_plans: 27
+  total_plans: 34
   completed_plans: 29
-  percent: 100
+  percent: 85
 ---
 
 # STATE: docintel
@@ -19,7 +19,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-05-11)
 
 **Core value:** Eval harness reports real numbers (Hit@5, MRR, faithfulness, citation accuracy, latency, $/query) with Wilson + bootstrap CIs, re-run by CI on every PR.
-**Current focus:** Phase 6 — generation (next; Phase 5 merged via PR #5 with EMPIRICAL-PENDING real-mode canary running).
+**Current focus:** Phase 06 — generation
 
 ## Where We Are
 
