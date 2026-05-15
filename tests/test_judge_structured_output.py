@@ -45,7 +45,6 @@ import pytest
 
 
 @pytest.mark.real
-@pytest.mark.xfail(strict=True, reason="Wave 3 — Plan 06-06 ships structured-output dispatch + JudgeVerdict deserializer")
 def test_judge_returns_judgeverdict() -> None:
     """D-09 real-mode — structured-output dispatch deserializes into JudgeVerdict.
 
