@@ -41,7 +41,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 from structlog.testing import capture_logs
 
 
@@ -73,7 +72,6 @@ class _FakeRetriever:
         return list(self._chunks)
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships Step B hard-refusal")
 def test_hard_zero_chunk_refusal() -> None:
     """D-15 Step B + D-11 — empty retrieval → hard refusal without LLM call.
 
@@ -108,7 +106,6 @@ def test_hard_zero_chunk_refusal() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships Step D `.startswith(REFUSAL_TEXT_SENTINEL)`")
 def test_llm_driven_refusal() -> None:
     """D-15 Step D + D-11 — LLM-driven refusal sets refused=True; completion is non-None.
 
@@ -124,7 +121,7 @@ def test_llm_driven_refusal() -> None:
     line 306).
     """
     from docintel_core.adapters import make_adapters
-    from docintel_core.adapters.types import CompletionResponse, Usage
+    from docintel_core.adapters.types import CompletionResponse, TokenUsage
     from docintel_core.config import Settings
     from docintel_core.types import REFUSAL_TEXT_SENTINEL
     from docintel_generate.generator import Generator
@@ -138,7 +135,7 @@ def test_llm_driven_refusal() -> None:
             del prompt, system
             return CompletionResponse(
                 text=REFUSAL_TEXT_SENTINEL,
-                usage=Usage(prompt_tokens=10, completion_tokens=20),
+                usage=TokenUsage(prompt_tokens=10, completion_tokens=20),
                 cost_usd=0.0,
                 latency_ms=0.0,
                 model="fake-refuser",
@@ -160,7 +157,6 @@ def test_llm_driven_refusal() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 emits generator_refused_zero_chunks structlog")
 def test_zero_chunks_warning() -> None:
     """D-15 Step B + RESEARCH §Pattern 1 line 352 — generator_refused_zero_chunks structlog.
 

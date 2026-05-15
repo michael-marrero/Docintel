@@ -31,10 +31,7 @@ Analogs:
 
 from __future__ import annotations
 
-import pytest
 
-
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 ships make_generator + Generator")
 def test_make_generator_stub() -> None:
     """D-03 — make_generator(Settings(llm_provider='stub')) returns a Generator.
 
@@ -59,7 +56,6 @@ def test_make_generator_stub() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 wires make_generator lazy-import")
 def test_factory_lazy_imports_generator_module() -> None:
     """D-12 + Pattern S5 — importing the factory does NOT load docintel_generate.
 

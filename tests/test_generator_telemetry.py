@@ -48,7 +48,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 from structlog.testing import capture_logs
 
 
@@ -80,7 +79,6 @@ class _FakeRetriever:
         return list(self._chunks)
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 2 — Plan 06-04 emits generator_completed")
 def test_completed_fields() -> None:
     """D-16 — generator_completed emits exactly once with all 15 named fields.
 
