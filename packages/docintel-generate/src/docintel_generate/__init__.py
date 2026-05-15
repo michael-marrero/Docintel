@@ -11,9 +11,21 @@ Public surface is built up incrementally across Plans 06-03..06-04:
 - Plan 06-03 adds SYNTHESIS_PROMPT, REFUSAL_PROMPT, JUDGE_PROMPT, PROMPT_VERSION_HASH re-exports.
 - Plan 06-04 adds Generator, GenerationResult re-exports.
 
-Wave 0 (this plan, 06-02) ships the skeleton only — no imports, empty `__all__`.
-The submodules (`prompts`, `parse`, `generator`) do not yet exist; adding imports
-here before they land would fail at import time.
+Wave 0 (Plan 06-02) shipped the skeleton only. Wave 1 (Plan 06-03) lands
+`prompts` + `parse` submodules and re-exports the four public prompt names.
+Wave 2 (Plan 06-04) will add `Generator` + `GenerationResult` re-exports.
 """
 
-__all__: list[str] = []
+from docintel_generate.prompts import (
+    JUDGE_PROMPT,
+    PROMPT_VERSION_HASH,
+    REFUSAL_PROMPT,
+    SYNTHESIS_PROMPT,
+)
+
+__all__ = [
+    "JUDGE_PROMPT",
+    "PROMPT_VERSION_HASH",
+    "REFUSAL_PROMPT",
+    "SYNTHESIS_PROMPT",
+]
