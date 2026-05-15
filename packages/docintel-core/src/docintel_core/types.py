@@ -45,6 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from docintel_core.adapters.types import CompletionResponse
 
 __all__ = [
+    "REFUSAL_TEXT_SENTINEL",
     "Chunk",
     "CompanyEntry",
     "GenerationResult",
@@ -54,7 +55,6 @@ __all__ = [
     "IndexManifestEmbedder",
     "NormalizedFiling",
     "NormalizedFilingManifest",
-    "REFUSAL_TEXT_SENTINEL",
     "RetrievedChunk",
 ]
 
