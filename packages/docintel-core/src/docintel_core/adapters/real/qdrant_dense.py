@@ -300,19 +300,29 @@ class QdrantDenseStore:
         return out
 
     def verify(self) -> bool:
-        """Re-read ``client.get_collection`` and confirm SERVICE-side identity (D-14).
+        """Re-read ``client.get_collection`` + ``client.count`` and confirm SERVICE-side identity (D-14).
 
         Returns True iff the collection exists with ``points_count > 0``,
         ``vector_size == 384``, and ``distance == "Cosine"``. Plan 04-05's
         verify.py CLI does the load-bearing comparison against the MANIFEST-
         recorded values; this method confirms the server identity matches
         the pinned D-06 geometry.
+
+        **Phase 6 / Plan 04-05 amendment (workflow_dispatch run 25947078366):**
+        ``CollectionInfo.points_count`` is populated lazily by Qdrant's
+        optimizer — immediately after a batch insert it can read 0 or None
+        even with ``wait=True`` on every upsert. ``client.count(exact=True)``
+        is the load-bearing exact count; ``get_collection`` is used only for
+        the static geometry (vector_size + distance). Without this split,
+        a verify call that races the optimizer reports failure on a healthy
+        collection (D-14 false positive).
         """
         try:
             info = self._get_collection_info()
+            count_result = self._count_points_exact()
         except (ResponseHandlingException, UnexpectedResponse):
             return False
-        points_count = int(info.points_count) if info.points_count is not None else 0
+        points_count = int(count_result.count)
         if points_count == 0:
             return False
         vectors_config: Any = info.config.params.vectors
@@ -415,5 +425,28 @@ class QdrantDenseStore:
         reraise=True,
     )
     def _get_collection_info(self) -> Any:
-        """Wrapped ``client.get_collection`` — carries ``points_count`` + ``vectors`` config."""
+        """Wrapped ``client.get_collection`` — carries ``points_count`` + ``vectors`` config.
+
+        Note: ``CollectionInfo.points_count`` is populated by Qdrant's optimizer
+        and may be stale (None or 0) immediately after batch insertion. Use
+        ``_count_points_exact`` for the load-bearing count check (verify()
+        amendment for workflow_dispatch run 25947078366).
+        """
         return self._client.get_collection(collection_name=self._collection)
+
+    @retry(
+        wait=wait_exponential(multiplier=1, min=1, max=20),
+        stop=stop_after_attempt(5),
+        retry=retry_if_exception_type(ResponseHandlingException),
+        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        reraise=True,
+    )
+    def _count_points_exact(self) -> Any:
+        """Wrapped ``client.count`` with ``exact=True`` — bypasses the optimizer lag.
+
+        Returns a ``CountResult`` whose ``.count`` is the EXACT current point
+        count in the collection, irrespective of optimizer state. This is the
+        D-14 verify path's count source; ``_get_collection_info()`` still
+        carries the static geometry (vector_size + distance).
+        """
+        return self._client.count(collection_name=self._collection, exact=True)
