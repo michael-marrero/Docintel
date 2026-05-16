@@ -257,7 +257,12 @@ class QdrantDenseStore:
         # vectors — D-06 uses unnamed/default).
         vectors_config: Any = info.config.params.vectors
         self._vector_size = int(vectors_config.size)
-        self._distance = str(vectors_config.distance.name)
+        # Use the enum's `.value` ("Cosine") rather than `.name` ("COSINE"):
+        # types.py:319 + verify() and MANIFEST schema all expect the
+        # serialized form per Phase 4 D-06. Surfaced by workflow_dispatch
+        # run 25947851137 — commit stored "COSINE", verify compared to
+        # "Cosine", mismatch killed the D-14 gate on every healthy collection.
+        self._distance = str(vectors_config.distance.value)
 
         identity = (
             f"qdrant:{self._collection}:{self._points_count}:"
@@ -328,7 +333,8 @@ class QdrantDenseStore:
         vectors_config: Any = info.config.params.vectors
         if int(vectors_config.size) != _VECTOR_SIZE:
             return False
-        if str(vectors_config.distance.name) != "Cosine":
+        # Match commit()'s `.value` discipline (see line ~265 comment).
+        if str(vectors_config.distance.value) != "Cosine":
             return False
         return True
 
