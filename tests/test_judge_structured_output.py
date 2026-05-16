@@ -60,10 +60,26 @@ def test_judge_returns_judgeverdict() -> None:
     Costs real API credits; gated by ``@pytest.mark.real`` (deselected
     on every PR's default ``-m "not real"`` run; collected only in the
     ``real-index-build`` workflow_dispatch job).
+
+    Cross-family wiring (Phase 2 D-04): generator=Anthropic → judge=OpenAI.
+    Both keys are required at the SDK call site. The test skips cleanly
+    when either is missing — mirrors the ``test_adapters.py`` real-key
+    gating pattern. Adds the missing CI secret to surface the test as a
+    forcing function in the upstream env, not a CI failure.
     """
+    import os
+
     from docintel_core.adapters import make_adapters
     from docintel_core.adapters.types import JudgeVerdict
     from docintel_core.config import Settings
+
+    if not os.environ.get("DOCINTEL_ANTHROPIC_API_KEY"):
+        pytest.skip("DOCINTEL_ANTHROPIC_API_KEY not set — skipped in CI without real keys")
+    if not os.environ.get("DOCINTEL_OPENAI_API_KEY"):
+        pytest.skip(
+            "DOCINTEL_OPENAI_API_KEY not set — cross-family judge (D-04) "
+            "requires both keys; skipped in CI without real keys"
+        )
 
     bundle = make_adapters(Settings(llm_provider="real", llm_real_provider="anthropic"))
     verdict = bundle.judge.judge(

@@ -50,9 +50,6 @@ import pytest
 
 
 @pytest.mark.real
-@pytest.mark.xfail(
-    strict=True, reason="Wave 4 — Plan 06-07 promotes after workflow_dispatch run lands"
-)
 def test_generator_hero_real_mode() -> None:
     """Hero question — real-mode end-to-end + CD-06 cost + context-budget guards.
 
