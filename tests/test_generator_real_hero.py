@@ -63,9 +63,24 @@ def test_generator_hero_real_mode() -> None:
     synthesis prompt has to handle it AND the single-doc factual case
     from Phase 8's ground-truth set under the same template (CD-01
     rationale). Phase 9 measurement will tell us if this holds.
+
+    Skips cleanly when the Anthropic API key is absent. Mirrors the
+    ``test_adapters.py:298`` real-key gating pattern and the sibling
+    ``test_judge_returns_judgeverdict`` skip in this directory. Provision
+    DOCINTEL_ANTHROPIC_API_KEY in GitHub Actions secrets + pass it
+    through to the workflow_dispatch ``real-index-build`` job env to
+    flip the test from SKIP to PASS/FAIL with the actual hero numbers.
     """
+    import os
+
     from docintel_core.adapters.factory import make_generator
     from docintel_core.config import Settings
+
+    if not os.environ.get("DOCINTEL_ANTHROPIC_API_KEY"):
+        pytest.skip(
+            "DOCINTEL_ANTHROPIC_API_KEY not set — required for the hero "
+            "Anthropic .complete() call; skipped in CI without real keys"
+        )
 
     g = make_generator(Settings(llm_provider="real", llm_real_provider="anthropic"))
     r = g.generate(
