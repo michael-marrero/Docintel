@@ -120,6 +120,15 @@ jobs:
         # acceptance gate — must stay green on every PR.
         run: uv run pytest tests/test_chunk_idempotency.py -ra -q
 
+      - name: Ground-truth eval set well-formedness gate (GT-02)
+        # Phase 8 acceptance gate. Validates the committed questions.jsonl on
+        # every PR: EvalRecord schema (extra=forbid), citations ⊆ golds,
+        # refusal-empties, gold-id resolution against committed corpus chunks,
+        # refusal-flavor coverage (D-17), and the ≥30/~15/~10/~5 type-mix
+        # floor (D-06). No -m "not real" needed — all 12 tests are
+        # stub-eligible (read committed files, no live index).
+        run: uv run pytest tests/test_eval_dataset_schema.py -ra -q
+
   gitleaks:
     name: gitleaks (secrets scan)
     runs-on: ubuntu-latest
