@@ -811,7 +811,7 @@ class Answer(BaseModel):
         # Lazy in-method import preserves module-level import direction
         # (generate → core; never the reverse at module scope).
         # The ONE allowed cross-package call per CONTEXT.md D-12.
-        from docintel_generate.parse import parse_confidence  # type: ignore[attr-defined]  # noqa: PLC0415
+        from docintel_generate.parse import parse_confidence  # noqa: PLC0415
 
         text_stripped, confidence = parse_confidence(gr.text)
 
