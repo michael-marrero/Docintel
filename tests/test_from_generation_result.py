@@ -36,9 +36,13 @@ from typing import Any
 
 import pytest
 
-pytestmark = pytest.mark.xfail(
+# Module-level xfail removed in Plan 07-02 execution (Wave 2).
+# Tests that require parse_confidence (Plan 07-03) keep per-test xfail markers.
+# Tests for the refusal path and ANS-03 invariant (no parse_confidence needed)
+# go green in Plan 07-02 and carry no xfail marker.
+_XFAIL_NEEDS_PARSE_CONFIDENCE = pytest.mark.xfail(
     strict=True,
-    reason="Phase 7 Wave 1/2: from_generation_result / parse_confidence not yet defined",
+    reason="Phase 7 Wave 3: parse_confidence not yet defined (Plan 07-03)",
 )
 
 # Small fixture maps injected via the optional keyword args of
@@ -93,6 +97,7 @@ def _ok_gr_refusal() -> Any:
     )
 
 
+@_XFAIL_NEEDS_PARSE_CONFIDENCE
 def test_from_generation_result() -> None:
     """ANS-02 + ANS-03 + D-15 + D-16 — non-refusal path builds Answer with one Citation.
 
@@ -166,6 +171,7 @@ def test_refused_confidence_low() -> None:
     )
 
 
+@_XFAIL_NEEDS_PARSE_CONFIDENCE
 def test_confidence_marker_stripped() -> None:
     """Pitfall 6 — '[confidence:' not in answer.text after from_generation_result.
 
