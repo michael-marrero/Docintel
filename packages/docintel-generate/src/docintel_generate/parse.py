@@ -93,9 +93,13 @@ def parse_confidence(
     Co-located with ``_CHUNK_RE``/``is_refusal`` per GEN-01 (single canonical
     home for all text-extraction helpers in ``docintel-generate``).
     """
-    m = _CONFIDENCE_RE.search(text)
-    if m is None:
+    # The marker is appended LAST (SYNTHESIS_PROMPT rule 5). Use the final
+    # occurrence so a stray earlier "[confidence: ...]" inside the answer body
+    # cannot truncate the response at the first match.
+    matches = list(_CONFIDENCE_RE.finditer(text))
+    if not matches:
         return text, None
+    m = matches[-1]
     confidence = m.group(1).lower()
     stripped = text[: m.start()].rstrip()
     return stripped, confidence  # type: ignore[return-value]

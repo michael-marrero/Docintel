@@ -537,17 +537,6 @@ class CompanyEntry(BaseModel):
 # Phase 7 Answer / Citation models and supporting constants
 # ---------------------------------------------------------------------------
 
-# Deliberate duplication of the confidence regex from docintel_generate.parse.
-# ``docintel_core.types`` MUST NOT import from ``docintel_generate`` (upward
-# import direction: generate → core; never the reverse). The ~5-line regex is
-# acceptable technical debt — the same rationale as _ITEM_CODE_TITLE_MAP below.
-# Research Flag 1 in 07-RESEARCH.md covers this design decision.
-# Keep in sync with docintel_generate.parse._CONFIDENCE_RE.
-_CONFIDENCE_RE: Final[re.Pattern[str]] = re.compile(
-    r"\[confidence:\s*(high|medium|low)\]",
-    re.IGNORECASE,
-)
-
 # Canonical 10-K item code → item title mapping for Phase 7 Citation.item_title.
 # Copied verbatim from docintel_ingest.chunk._CANONICAL_ITEM_TITLES.
 # ``docintel_core.types`` MUST NOT import from ``docintel_ingest`` (import
@@ -594,16 +583,17 @@ def _load_ticker_name_map() -> dict[str, str]:
     coupling in test context).
 
     Path resolution: ``types.py`` is at
-    ``packages/docintel-core/src/docintel_core/types.py`` → 5 parents up
-    lands at the repo root. ``data/corpus/companies.snapshot.csv`` is
-    committed (Phase 3 D-04).
+    ``packages/docintel-core/src/docintel_core/types.py`` → 4 parents up
+    (docintel_core → src → docintel-core → packages → repo root) lands at
+    the repo root. ``data/corpus/companies.snapshot.csv`` is committed
+    (Phase 3 D-04).
 
     Pitfall 4 (07-RESEARCH.md): MUST be a module-level function, NOT a method.
     ``@functools.lru_cache`` on an instance method holds a reference to
     ``self``, leaking memory. Module-level placement is safe.
     """
     csv_path = (
-        Path(__file__).parents[5] / "data" / "corpus" / "companies.snapshot.csv"
+        Path(__file__).parents[4] / "data" / "corpus" / "companies.snapshot.csv"
     )
     result: dict[str, str] = {}
     with csv_path.open(encoding="utf-8", newline="") as fh:

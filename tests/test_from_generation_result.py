@@ -212,3 +212,57 @@ def test_ans03_invariant_empty_cited_ids() -> None:
             ticker_name_map=TICKER_MAP,
             item_code_title_map=ITEM_MAP,
         )
+
+
+def test_load_ticker_name_map_reads_committed_csv() -> None:
+    """D-07/D-16 regression — the module-level loader resolves the committed CSV.
+
+    Guards against the repo-root path off-by-one (parents[N]): every other test
+    injects ``ticker_name_map=`` and never exercises the on-disk fallback, so a
+    wrong ``parents[]`` index raises FileNotFoundError ONLY in production. This
+    test calls the loader directly so that failure surfaces in CI.
+    """
+    from docintel_core.types import _load_ticker_name_map
+
+    _load_ticker_name_map.cache_clear()
+    result = _load_ticker_name_map()
+    assert result, "ticker→name map loaded from companies.snapshot.csv must be non-empty"
+    assert result["AAPL"] == "Apple Inc."
+
+
+def test_from_generation_result_no_injected_maps_uses_disk() -> None:
+    """D-07/D-16 regression — from_generation_result works without injected maps.
+
+    Exercises the real production seam Phase 13 calls: no ticker_name_map and no
+    item_code_title_map are passed, so company resolves from the committed CSV
+    and item_title from the module-level _ITEM_CODE_TITLE_MAP. This is the path
+    the off-by-one path bug broke (and that the all-injecting tests masked).
+    Also asserts the no-marker default: text without a [confidence:] marker
+    yields confidence="medium" (WR-03 fallback coverage).
+    """
+    from docintel_core.types import Answer, GenerationResult, RetrievedChunk
+
+    rc = RetrievedChunk(
+        chunk_id="AAPL-FY2024-Item-1A-007",
+        text="Apple disclosed supplier concentration as a key risk factor.",
+        score=0.9,
+        ticker="AAPL",
+        fiscal_year=2024,
+        item_code="Item 1A",
+        char_span_in_section=(0, 61),
+    )
+    gr = GenerationResult(
+        # No trailing [confidence: ...] marker → parse_confidence returns None →
+        # from_generation_result defaults confidence to "medium".
+        text="Apple disclosed supplier concentration [AAPL-FY2024-Item-1A-007]",
+        cited_chunk_ids=["AAPL-FY2024-Item-1A-007"],
+        refused=False,
+        retrieved_chunks=[rc],
+        completion=None,
+        prompt_version_hash="abcdef012345",
+    )
+    answer = Answer.from_generation_result(gr)  # no injected maps — reads disk
+    assert len(answer.citations) == 1
+    assert answer.citations[0].company == "Apple Inc."
+    assert answer.citations[0].item_title == "Risk Factors"
+    assert answer.confidence == "medium"

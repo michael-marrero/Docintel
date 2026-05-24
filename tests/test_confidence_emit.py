@@ -71,6 +71,27 @@ def test_parse_confidence_missing() -> None:
     )
 
 
+def test_parse_confidence_uses_trailing_marker() -> None:
+    """D-04 robustness — the LAST marker wins; a stray earlier marker must not truncate.
+
+    The confidence marker is appended LAST (SYNTHESIS_PROMPT rule 5). If the
+    answer body itself quotes a "[confidence: ...]" string, parse_confidence
+    must key off the trailing marker and preserve the body up to it — not split
+    at the first occurrence (which would silently drop the rest of the answer).
+    """
+    from docintel_generate.parse import parse_confidence
+
+    text = "We rate it [confidence: low] internally, but here is the answer.\n[confidence: high]"
+    stripped, conf = parse_confidence(text)
+    assert conf == "high", (
+        f"D-04: the trailing marker must win; got conf={conf!r}"
+    )
+    assert stripped.endswith("here is the answer."), (
+        f"D-04: body before the trailing marker must be preserved (no truncation "
+        f"at the first stray marker); got stripped={stripped!r}"
+    )
+
+
 def test_synthesis_hash_rotated() -> None:
     """D-04 — after SYNTHESIS_PROMPT edit, _SYNTHESIS_HASH != old value + PROMPT_VERSION_HASH != old value.
 
