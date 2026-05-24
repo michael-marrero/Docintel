@@ -58,7 +58,7 @@ class EvalRecord(BaseModel):
     """chunk_ids; every chunk independently supporting the answer (Hit@K / MRR target). [] for refusal."""
 
     expected_citation_ids: list[str]
-    """Strict subset of gold_passage_ids that a correct answer MUST cite (MET-04 target). [] for refusal."""
+    """Strict subset of gold_passage_ids a correct answer must reference (MET-04 precision target); [] for refusal."""
 
     gold_answer: str
     """Extractive reference answer (MET-03 faithfulness target). Sentinel string for refusal (D-18)."""
