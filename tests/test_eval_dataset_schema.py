@@ -5,9 +5,9 @@ questions.jsonl dataset against a 12-function well-formedness suite.
 
 Wave-0 semantics (Plan 01): the schema + gold-ID-resolution gates run green
 against the single-record seed. Curation-volume gates (test_record_count,
-test_question_type_mix, test_refusal_flavor_coverage) are xfail-strict until
-the curation waves (Plans 02-04) populate the dataset to ≥30 records; Plan 05
-removes exactly these 3 markers once curation completes.
+test_question_type_mix, test_refusal_flavor_coverage) were scaffolded with
+strict-fail markers until the curation waves (Plans 02-04) populated the
+dataset to ≥30 records. Plan 05 removed those markers — all 12 tests green.
 
 All tests are stub-mode eligible — they read committed corpus chunk files from
 disk, never a live index. Do NOT add the real marker to any test in this file.
@@ -32,7 +32,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _QUESTIONS_PATH = _REPO_ROOT / "data" / "eval" / "ground_truth" / "questions.jsonl"
 
 # ---------------------------------------------------------------------------
-# Dataset volume floors (D-06 — curation gates; xfail-strict until Plans 02-04)
+# Dataset volume floors (D-06 — curation gates; markers removed by Plan 05)
 # ---------------------------------------------------------------------------
 _MIN_RECORDS = 30
 _MIN_SINGLE_DOC = 15
@@ -130,7 +130,7 @@ def corpus_chunk_tokens() -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# Test functions — 12 total (9 model/seed GREEN at Wave 0; 3 xfail-strict)
+# Test functions — 12 total (all green after Plan 05 removed the 3 markers)
 # ---------------------------------------------------------------------------
 
 # --- Filesystem & load gate -------------------------------------------------
@@ -157,10 +157,9 @@ def test_all_records_parse(all_records: list[object]) -> None:
     )
 
 
-# --- Curation-volume gates (xfail-strict until Plans 02-04) -----------------
+# --- Curation-volume gates (markers removed by Plan 05; all 3 now plain) ----
 
 
-@pytest.mark.xfail(strict=True, reason="curation-volume gate — populated in Plans 02-04")
 def test_record_count(all_records: list[object]) -> None:
     """GT-01: dataset must contain at least 30 records (D-06 floor)."""
     assert len(all_records) >= _MIN_RECORDS, (
@@ -169,7 +168,6 @@ def test_record_count(all_records: list[object]) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="curation-volume gate — populated in Plans 02-04")
 def test_question_type_mix(all_records: list[object]) -> None:
     """GT-01: dataset must cover the required type mix (D-06).
 
@@ -280,10 +278,9 @@ def test_expected_citation_ids_resolve(
             )
 
 
-# --- Curation-coverage gates (xfail-strict) ---------------------------------
+# --- Curation-coverage gates (marker removed by Plan 05; plain pass) --------
 
 
-@pytest.mark.xfail(strict=True, reason="curation-volume gate — populated in Plans 02-04")
 def test_refusal_flavor_coverage(all_records: list[object]) -> None:
     """GT-01 (D-17): dataset must cover all 5 refusal out-of-corpus flavors.
 
