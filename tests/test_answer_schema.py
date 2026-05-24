@@ -37,10 +37,8 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.xfail(
-    strict=True,
-    reason="Phase 7 Wave 1: Answer/Citation not yet defined",
-)
+# xfail markers removed in Plan 07-02 execution (Wave 2):
+# Answer + Citation are now defined in docintel_core.types.
 
 
 def _ok_citation_payload() -> dict:
