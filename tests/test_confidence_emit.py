@@ -1,4 +1,4 @@
-"""Plan 07-01 Wave 0 xfail scaffolds for D-04 confidence emit mechanics.
+"""Phase 7 Plan 03 tests for D-04 confidence emit mechanics.
 
 Covers VALIDATION.md rows for D-04 (SYNTHESIS_PROMPT confidence instruction +
 parse_confidence helper + hash rotation):
@@ -7,18 +7,11 @@ parse_confidence helper + hash rotation):
   returns ("...text.", "high"); marker absent from stripped text.
 * test_parse_confidence_missing — no marker → (text, None); caller falls
   back to "medium".
-* test_synthesis_hash_rotated — after the Wave 2 SYNTHESIS_PROMPT edit,
+* test_synthesis_hash_rotated — after the Plan 07-03 SYNTHESIS_PROMPT edit,
   _SYNTHESIS_HASH != "dab1bcf7379f" and PROMPT_VERSION_HASH != "dab1bcf7379f"
   (the old Phase 6 combined hash). The test asserts inequality with the old
   value only — does NOT hardcode the new expected hash (which is re-derived
   at import time from the edited SYNTHESIS_PROMPT body).
-
-All three tests are xfail-strict-marked because parse_confidence does not
-yet exist in docintel_generate.parse at Wave 0, and SYNTHESIS_PROMPT has
-not yet been edited (the hash rotation happens in Wave 2). The in-function
-imports raise ImportError or the hash assertion fails → pytest counts these
-as expected failures under xfail(strict=True). Plans 07-02 (parse_confidence)
-and 07-03 (SYNTHESIS_PROMPT edit) flip these xfails to passing.
 
 Analogs:
 * ``tests/test_prompt_version_hash.py`` (full file, 112 lines) —
@@ -29,13 +22,6 @@ Analogs:
 """
 
 from __future__ import annotations
-
-import pytest
-
-pytestmark = pytest.mark.xfail(
-    strict=True,
-    reason="Phase 7 Wave 1/2: from_generation_result / parse_confidence not yet defined",
-)
 
 # Old Phase 6 combined PROMPT_VERSION_HASH value (pre-Phase-7 SYNTHESIS_PROMPT edit).
 # After Plan 07-03 edits SYNTHESIS_PROMPT to add the confidence instruction,

@@ -1,4 +1,4 @@
-"""Plan 07-01 Wave 0 xfail scaffolds for ANS-02, ANS-03, D-05, D-13, D-15, D-16.
+"""Phase 7 Plan 01-03 tests for ANS-02, ANS-03, D-05, D-13, D-15, D-16.
 
 Covers VALIDATION.md rows for from_generation_result — the Phase 7 conversion
 classmethod that wraps GenerationResult into a citation-grade Answer:
@@ -16,11 +16,6 @@ classmethod that wraps GenerationResult into a citation-grade Answer:
 * test_ans03_invariant_empty_cited_ids — cited_chunk_ids=[] + refused=False
   → ValidationError from the model-validator (D-13 / ANS-03 invariant).
 
-All five tests are xfail-strict-marked because Answer.from_generation_result
-does not yet exist at Wave 0. The in-function imports raise ImportError →
-pytest counts this as the expected failure under xfail(strict=True).
-Plan 07-02 ships from_generation_result and these xfails flip to passing.
-
 Analogs:
 * ``tests/test_generator_stub_determinism.py`` — GenerationResult
   fixture-construction patterns (_ok_gr_non_refusal/_ok_gr_refusal style).
@@ -36,14 +31,6 @@ from typing import Any
 
 import pytest
 
-# Module-level xfail removed in Plan 07-02 execution (Wave 2).
-# Tests that require parse_confidence (Plan 07-03) keep per-test xfail markers.
-# Tests for the refusal path and ANS-03 invariant (no parse_confidence needed)
-# go green in Plan 07-02 and carry no xfail marker.
-_XFAIL_NEEDS_PARSE_CONFIDENCE = pytest.mark.xfail(
-    strict=True,
-    reason="Phase 7 Wave 3: parse_confidence not yet defined (Plan 07-03)",
-)
 
 # Small fixture maps injected via the optional keyword args of
 # Answer.from_generation_result (D-16 Focus Q4 Option 2 — avoids filesystem
@@ -97,7 +84,6 @@ def _ok_gr_refusal() -> Any:
     )
 
 
-@_XFAIL_NEEDS_PARSE_CONFIDENCE
 def test_from_generation_result() -> None:
     """ANS-02 + ANS-03 + D-15 + D-16 — non-refusal path builds Answer with one Citation.
 
@@ -171,7 +157,6 @@ def test_refused_confidence_low() -> None:
     )
 
 
-@_XFAIL_NEEDS_PARSE_CONFIDENCE
 def test_confidence_marker_stripped() -> None:
     """Pitfall 6 — '[confidence:' not in answer.text after from_generation_result.
 

@@ -1,4 +1,4 @@
-"""Plan 07-01 Wave 0 xfail scaffolds for ANS-02 Citation Pydantic shape (D-07..D-11).
+"""Phase 7 Plan 01-02 tests for ANS-02 Citation Pydantic shape (D-07..D-11).
 
 Covers VALIDATION.md rows for ANS-02 — the Phase 7 Citation schema that
 Phase 13 UI uses to render hoverable, highlighted citation quotes:
@@ -10,13 +10,6 @@ Phase 13 UI uses to render hoverable, highlighted citation quotes:
   (D-11 citation anchor for the Phase 13 highlight UI).
 * test_citation_extra_forbid — extra="forbid" rejects unknown fields.
 * test_citation_frozen — frozen=True; downstream callers must not mutate.
-
-All four tests are xfail-strict-marked because ``Citation`` does not yet
-live in ``docintel_core.types`` at Wave 0. The in-function
-``from docintel_core.types import Citation`` raises ImportError → pytest
-counts this as the expected failure under xfail(strict=True). Plan 07-02
-adds ``Citation`` to ``docintel_core.types`` and these xfails flip to
-passing.
 
 Analogs:
 * ``tests/test_retrieved_chunk_schema.py`` (full file, 99 lines) —
@@ -30,8 +23,6 @@ from __future__ import annotations
 
 import pytest
 
-# xfail markers removed in Plan 07-02 execution (Wave 2):
-# Citation is now defined in docintel_core.types.
 
 
 def _ok_citation_payload() -> dict:

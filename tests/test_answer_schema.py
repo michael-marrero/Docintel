@@ -1,4 +1,4 @@
-"""Plan 07-01 Wave 0 xfail scaffolds for ANS-01 Answer Pydantic shape (D-01..D-05).
+"""Phase 7 Plan 01-03 tests for ANS-01 Answer Pydantic shape (D-01..D-05).
 
 Covers VALIDATION.md rows for ANS-01 — the Phase 7 → Phase 9/13 public
 contract for the Answer schema:
@@ -16,13 +16,6 @@ contract for the Answer schema:
 * test_refusal_empty_citations_valid — refused=True + citations=[] +
   confidence="low" constructs without error (D-05).
 
-All six tests are xfail-strict-marked because ``Answer`` does not yet live
-in ``docintel_core.types`` at Wave 0. The in-function
-``from docintel_core.types import Answer`` raises ImportError → pytest
-counts this as the expected failure under xfail(strict=True). Plan 07-02
-adds ``Answer`` and ``Citation`` to ``docintel_core.types`` and these
-xfails flip to passing.
-
 Analogs:
 * ``tests/test_generation_result_schema.py`` (full file, 92 lines) —
   Phase 6 D-17 ``GenerationResult`` analog; same Pydantic-frozen +
@@ -37,8 +30,6 @@ from __future__ import annotations
 
 import pytest
 
-# xfail markers removed in Plan 07-02 execution (Wave 2):
-# Answer + Citation are now defined in docintel_core.types.
 
 
 def _ok_citation_payload() -> dict:
