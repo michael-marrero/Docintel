@@ -27,7 +27,6 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_hit_at_k_strict_all_golds() -> None:
     """MET-01: hit_at_k returns 0 unless ALL golds are in top-K (D-12).
 
@@ -43,7 +42,6 @@ def test_hit_at_k_strict_all_golds() -> None:
     assert hit_at_k(ranking, gold, k=2) == 0, "D-12: B not in top-2, must be 0"
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_hit_at_k_all_present() -> None:
     """MET-01: hit_at_k returns 1 when ALL golds are in top-K (D-12).
 
@@ -155,7 +153,6 @@ def test_refusal_dual_signal() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_mrr_first_gold() -> None:
     """MET-02: mrr = reciprocal rank of FIRST gold in the ranking (D-13).
 
@@ -172,7 +169,6 @@ def test_mrr_first_gold() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_mrr_no_gold() -> None:
     """MET-02: mrr = 0.0 when no gold is found in the ranking (D-13).
 
