@@ -462,3 +462,24 @@ def test_bootstrap_delta_sign() -> None:
     assert lo > 0.0, (
         f"MET-06: CI lower bound must exclude 0 (significant improvement), got lo={lo}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for CR-01 / WR-01 / WR-02 / WR-03 guards
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_delta_ci_empty_raises() -> None:
+    """CR-01 regression: bootstrap_delta_ci([], []) must raise ValueError, never return nan."""
+    from docintel_eval.metrics import bootstrap_delta_ci
+
+    with pytest.raises(ValueError, match="at least one paired observation"):
+        bootstrap_delta_ci([], [])
+
+
+def test_bootstrap_delta_ci_mismatched_length_raises() -> None:
+    """CR-01 regression: bootstrap_delta_ci raises ValueError on mismatched arm lengths."""
+    from docintel_eval.metrics import bootstrap_delta_ci
+
+    with pytest.raises(ValueError, match="equal-length arms"):
+        bootstrap_delta_ci([1.0, 2.0], [1.0])

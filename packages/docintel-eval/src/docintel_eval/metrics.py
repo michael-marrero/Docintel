@@ -109,7 +109,9 @@ def bootstrap_delta_ci(
         and (ci_low, ci_high) is the percentile bootstrap CI.
 
     Raises:
-        AssertionError: If arm_a and arm_b have different lengths.
+        ValueError: If arm_a and arm_b have different lengths.
+        ValueError: If arm_a (and arm_b) are empty — bootstrap is undefined
+            on zero observations.
 
     Note:
         Uses ``np.random.default_rng(seed).integers(...)`` — NOT ``np.random.randint``
@@ -118,8 +120,11 @@ def bootstrap_delta_ci(
     """
     a = np.asarray(arm_a, dtype=float)
     b = np.asarray(arm_b, dtype=float)
-    assert len(a) == len(b), "Paired bootstrap requires equal-length arms"
+    if len(a) != len(b):
+        raise ValueError("Paired bootstrap requires equal-length arms")
     n = len(a)
+    if n == 0:
+        raise ValueError("bootstrap_delta_ci requires at least one paired observation")
     rng = np.random.default_rng(seed)
     boot_deltas = np.empty(n_boot)
     for i in range(n_boot):
