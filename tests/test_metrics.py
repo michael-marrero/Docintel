@@ -59,7 +59,6 @@ def test_hit_at_k_all_present() -> None:
     assert hit_at_k(ranking, gold, k=5) == 1, "D-12: A and B both in top-5, must be 1"
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_wilson_ci_boundary() -> None:
     """MET-01: Wilson CI lower bound ≥ 0 at k=0 and upper bound ≤ 1 at k=n.
 
@@ -440,7 +439,6 @@ def test_latency_percentiles_real() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_bootstrap_delta_determinism() -> None:
     """MET-06: bootstrap_delta_ci is deterministic — same seed yields bit-exact CI bounds.
 
@@ -460,7 +458,6 @@ def test_bootstrap_delta_determinism() -> None:
     assert hi1 == hi2, "MET-06: CI upper bound must be bit-exact equal (same seed)"
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_bootstrap_delta_sign() -> None:
     """MET-06: bootstrap_delta_ci lo > 0 when arm_a significantly outperforms arm_b.
 
