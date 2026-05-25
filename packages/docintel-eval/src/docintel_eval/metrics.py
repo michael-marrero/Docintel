@@ -240,7 +240,7 @@ def compute_retrieval_metrics(
     """
     # We import EvalRecord here (not at module top) to avoid circular imports
     # and to keep the function testable with duck-typed objects.
-    from docintel_eval.dataset import EvalRecord  # type: ignore[attr-defined]
+    from docintel_eval.dataset import EvalRecord
 
     k_values = [1, 3, 5, 10]
     hit_counts: dict[int, int] = {k: 0 for k in k_values}
