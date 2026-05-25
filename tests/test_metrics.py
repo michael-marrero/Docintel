@@ -187,7 +187,6 @@ def test_mrr_no_gold() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_faithfulness_denominator_only_answered() -> None:
     """MET-03: faithfulness pass-rate denominator = answered (non-refused) only (D-05).
 
@@ -212,7 +211,6 @@ def test_faithfulness_denominator_only_answered() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_faithfulness_excludes_refusals() -> None:
     """MET-03: refused answers are excluded from faithfulness computation (D-05).
 
@@ -229,7 +227,6 @@ def test_faithfulness_excludes_refusals() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_faithfulness_stub_is_zero() -> None:
     """MET-03: stub judge always returns score=0.0/passed=False (D-02/D-03).
 
@@ -257,7 +254,6 @@ def test_faithfulness_stub_is_zero() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_citation_accuracy_rate() -> None:
     """MET-04: citation precision rate = fraction of citations in expected_citation_ids.
 
@@ -356,7 +352,6 @@ def test_query_timing_record_schema() -> None:
         )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_latency_percentiles_stub() -> None:
     """MET-05: p50/p95 computed from stub QueryTimingRecord list (cost=0.0, non-repr.).
 
@@ -393,7 +388,6 @@ def test_latency_percentiles_stub() -> None:
 
 
 @pytest.mark.real
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_latency_percentiles_real() -> None:
     """MET-05: p50/p95 + $/query from real timing records (workflow_dispatch only).
 
