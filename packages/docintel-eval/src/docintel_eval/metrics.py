@@ -36,6 +36,7 @@ __all__ = [
     "RefusalMatrixResult",
     "wilson_ci",
     "hit_at_k",
+    "reciprocal_rank",
     "mrr",
     "bootstrap_delta_ci",
     "compute_retrieval_metrics",
