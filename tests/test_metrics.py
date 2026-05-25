@@ -485,6 +485,21 @@ def test_bootstrap_delta_ci_mismatched_length_raises() -> None:
         bootstrap_delta_ci([1.0, 2.0], [1.0])
 
 
+def test_hit_at_k_invalid_k_raises() -> None:
+    """WR-03 regression: hit_at_k raises ValueError for k=0 and k=-1 (public API guard).
+
+    k=0 previously returned vacuous 1 for empty gold_set; k=-1 used Python negative-slice
+    semantics (dropped last element). Both are now errors.
+    """
+    from docintel_eval.metrics import hit_at_k
+
+    with pytest.raises(ValueError, match="k >= 1"):
+        hit_at_k(["A", "B", "C"], {"A"}, 0)
+
+    with pytest.raises(ValueError, match="k >= 1"):
+        hit_at_k(["A", "B", "C"], {"A"}, -1)
+
+
 def test_refusal_matrix_misaligned_raises() -> None:
     """WR-01 regression: compute_refusal_matrix raises ValueError when len(records) != len(answers).
 

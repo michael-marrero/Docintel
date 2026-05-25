@@ -155,13 +155,21 @@ def hit_at_k(ranked_chunk_ids: list[str], gold_set: set[str], k: int) -> int:
     Args:
         ranked_chunk_ids: Ranked list from Retriever.search(query, k>=10).
         gold_set:         Set of gold passage IDs from EvalRecord.gold_passage_ids.
-        k:                Cutoff depth (typically 1, 3, 5, or 10).
+        k:                Cutoff depth (typically 1, 3, 5, or 10). Must be >= 1.
 
     Returns:
         1 if gold_set ⊆ set(ranked_chunk_ids[:k]), else 0.
+        Returns 0 when gold_set is empty (vacuous true is suppressed by design
+        — an empty gold set means no golds to find, so the question is excluded
+        by the harness before calling this function).
+
+    Raises:
+        ValueError: If k <= 0.
     """
+    if k <= 0:
+        raise ValueError(f"hit_at_k requires k >= 1, got {k}")
     top_k = set(ranked_chunk_ids[:k])
-    return 1 if gold_set.issubset(top_k) else 0
+    return 1 if gold_set and gold_set.issubset(top_k) else 0
 
 
 def reciprocal_rank(ranked_chunk_ids: list[str], gold_set: set[str]) -> float:
