@@ -76,7 +76,7 @@ def wilson_ci(k: int, n: int, confidence: float = 0.95) -> tuple[float, float]:
     if n == 0:
         return (0.0, 1.0)
     result = binomtest(k, n).proportion_ci(confidence_level=confidence, method="wilson")
-    return (result.low, result.high)
+    return (float(result.low), float(result.high))
 
 
 def bootstrap_delta_ci(
