@@ -89,7 +89,6 @@ def test_wilson_ci_boundary() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_multidoc_coverage_flag() -> None:
     """MET-01: multi-doc coverage flag is False when any component company is missed (D-14).
 
@@ -123,7 +122,6 @@ def test_multidoc_coverage_flag() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_refusal_dual_signal() -> None:
     """MET-01: D-18 dual-signal refusal — BOTH refused=True AND sentinel text required.
 
@@ -275,7 +273,6 @@ def test_citation_accuracy_rate() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_citation_accuracy_wilson_ci() -> None:
     """MET-04: Wilson CI on citation precision rate (D-04).
 
@@ -293,7 +290,6 @@ def test_citation_accuracy_wilson_ci() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_refusal_matrix_partition() -> None:
     """MET-04: true_refused + false_answered partitions n_should_refuse (D-04).
 
@@ -325,7 +321,6 @@ def test_refusal_matrix_partition() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="Wave 0 scaffold — metrics.py not yet implemented")
 def test_query_timing_record_schema() -> None:
     """MET-05: QueryTimingRecord validates with extra="forbid" and frozen=True (D-06).
 
