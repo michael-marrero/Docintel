@@ -483,3 +483,21 @@ def test_bootstrap_delta_ci_mismatched_length_raises() -> None:
 
     with pytest.raises(ValueError, match="equal-length arms"):
         bootstrap_delta_ci([1.0, 2.0], [1.0])
+
+
+def test_refusal_matrix_misaligned_raises() -> None:
+    """WR-01 regression: compute_refusal_matrix raises ValueError when len(records) != len(answers).
+
+    Verifies the alignment guard fires before any computation — silent zip-truncation
+    that corrupts false_answer_rate is no longer possible.
+    """
+    from unittest.mock import MagicMock
+
+    from docintel_eval.metrics import compute_refusal_matrix
+
+    # Build 3 minimal record-like objects and only 2 answers
+    records = [MagicMock(id=f"q{i}", question_type="factual") for i in range(3)]
+    answers = [MagicMock(refused=False, text="answer") for _ in range(2)]
+
+    with pytest.raises(ValueError, match="aligned inputs"):
+        compute_refusal_matrix(records, answers)

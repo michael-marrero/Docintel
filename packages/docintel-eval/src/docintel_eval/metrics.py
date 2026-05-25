@@ -668,22 +668,20 @@ def compute_refusal_matrix(
     Returns:
         Frozen RefusalMatrixResult.
     """
-    # Build answer lookup by position / question_id if available
-    answer_by_qid: dict[str, "Answer"] = {}
-    for rec, ans in zip(records, answers):
-        rec_id: str = rec.id  # type: ignore[attr-defined]
-        answer_by_qid[rec_id] = ans
+    if len(records) != len(answers):
+        raise ValueError(
+            f"compute_refusal_matrix requires aligned inputs: "
+            f"got {len(records)} records, {len(answers)} answers"
+        )
 
     n_should_refuse = 0
     true_refused = 0
     n_should_answer = 0
     false_refused = 0
 
-    for rec in records:
-        rec_id = rec.id  # type: ignore[attr-defined]
+    for rec, ans in zip(records, answers):
         question_type: str = rec.question_type  # type: ignore[attr-defined]
-        maybe_ans: "Answer | None" = answer_by_qid.get(rec_id)
-        refused = _is_refusal(maybe_ans) if maybe_ans is not None else False
+        refused = _is_refusal(ans)
 
         if question_type == "refusal":
             n_should_refuse += 1
