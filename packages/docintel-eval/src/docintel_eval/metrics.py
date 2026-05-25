@@ -603,21 +603,26 @@ def compute_citation_accuracy(
 ) -> CitationAccuracyResult:
     """MET-04: per-question citation precision with Wilson 95% CI (D-04).
 
-    Headline: precision = |cited ∩ expected_ids| / |cited|.
-    Wilson CI is computed on the per-citation binary (each citation is a
-    Bernoulli trial: 1 iff in gold set). For the aggregate over a question
-    set, the caller iterates over records and aggregates precision==1.0 rates.
+    Computes citation precision for a **single question**:
+    ``precision = |cited_chunk_ids ∩ expected_ids| / |cited_chunk_ids|``.
 
-    This function operates on a single question's citations (Pitfall 4: only
-    call over non-refused answers — enforced by caller).
+    The Wilson 95% CI treats each citation as an independent Bernoulli trial
+    (1 if the cited chunk is in ``expected_ids``, 0 otherwise). The CI
+    denominator is therefore the **number of citations** for this question.
+
+    This function is intentionally scoped to one question. Any cross-question
+    aggregation (e.g. fraction of questions with precision == 1.0) is owned
+    by Phase 10's report renderer, which filters to non-refused answers before
+    iterating.
 
     Args:
-        cited_chunk_ids: List of chunk IDs the Answer cited.
+        cited_chunk_ids: List of chunk IDs the Answer cited for this question.
         expected_ids:    Set of expected citation IDs from EvalRecord
                          (``expected_citation_ids`` field, D-04 precision target).
 
     Returns:
         Frozen CitationAccuracyResult with per-citation Wilson CI.
+        Returns precision=0.0 and n_citations=0 when no citations are present.
     """
     n_cited = len(cited_chunk_ids)
     if n_cited == 0:
