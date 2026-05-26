@@ -74,6 +74,27 @@ jobs:
         # Catches non-deterministic build paths AND silent dep drift.
         run: uv run docintel-index verify
 
+      - name: Eval run (stub-mode, EVAL-01/EVAL-03)
+        # D-09: generates + validates but does NOT commit. Stub run is fast + deterministic.
+        # Must run AFTER "Build indices (stub)" step — make_retriever loads data/indices/.
+        # (Pitfall 6: eval step must come after docintel-index all because make_retriever
+        # loads data/indices artifacts that must exist first.)
+        run: uv run docintel-eval run
+
+      - name: Eval validate (EVAL-04)
+        # D-11: validate subcommand is the well-formedness gate (no NaN, all manifest fields,
+        # 32 questions). report_dir is the most-recent timestamped dir under data/eval/reports/.
+        # ls -1td sorts by mtime so the freshly-generated timestamped dir is newest.
+        run: |
+          latest=$(ls -1td data/eval/reports/*/ | head -1)
+          uv run docintel-eval validate "$latest"
+
+      - name: Eval stub-sample drift gate (EVAL-03)
+        # Open-Question-2: auto-detect report-format drift in the committed stub-sample on
+        # every PR. Re-validates the canonical committed sample so schema changes are caught
+        # before they break the real-mode committed reports.
+        run: uv run docintel-eval validate data/eval/reports/stub-sample
+
       - name: pytest
         # Deselect real-mode tests (-m "not real") — they require
         # API keys + qdrant service + HF model download. Real-mode runs
@@ -325,6 +346,88 @@ jobs:
 
       - name: Real-only pytest
         run: uv run pytest -m real -ra -q
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile real down -v
+
+  # Phase 10 D-10: real-mode eval run, manual trigger only.
+  # Mirrors real-index-build. Gated on workflow_dispatch — never runs on push/PR
+  # (no API keys on untrusted PRs, T-10-CI1). Builds the real index, runs the
+  # full 32-question eval, validates the produced report, and COMMITS it under
+  # data/eval/reports/<ts>/ with [skip ci] so the published numbers are in-repo.
+  # The stub PR eval (lint-and-test Eval run step) generates + validates but
+  # never commits (D-09); only this job and the one canonical stub-sample commit.
+  real-eval:
+    name: real-mode eval run (manual trigger only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DOCINTEL_LLM_PROVIDER: real
+      # The python process runs on the runner host, NOT inside the docker
+      # network — override to localhost since qdrant maps port 6333 to host.
+      DOCINTEL_QDRANT_URL: http://localhost:6333
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace (frozen)
+        run: uv sync --all-packages --frozen
+
+      - name: Pre-create data/indices/ as runner-owned
+        # Pre-create before docker starts so the runner user owns the dirs
+        # (qdrant compose volume mount creates parent dirs as root otherwise).
+        run: mkdir -p data/indices/bm25 data/indices/dense data/indices/.qdrant
+
+      - name: Start qdrant via compose profile 'real'
+        run: docker compose --profile real up -d qdrant
+
+      - name: Wait for qdrant /readyz
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            if curl -fsS http://localhost:6333/readyz; then
+              echo "qdrant ready on attempt $i"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FAIL: qdrant /readyz never returned 200"
+          docker compose --profile real logs qdrant
+          exit 1
+
+      - name: Real-mode index build
+        run: uv run docintel-index all
+
+      - name: Real-mode eval run
+        run: uv run docintel-eval run
+
+      - name: Real-mode eval validate
+        # D-11: validate the freshly-produced report before committing.
+        # ls -1td sorts by mtime; the just-produced timestamped dir is newest.
+        run: |
+          latest=$(ls -1td data/eval/reports/*/ | head -1)
+          uv run docintel-eval validate "$latest"
+
+      - name: Commit report (D-10)
+        # D-10: committed reports come from real-mode workflow_dispatch runs.
+        # [skip ci] prevents an infinite trigger loop. The GITHUB_TOKEN is
+        # GitHub-managed and scoped to the repo — no project secret introduced.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/eval/reports/
+          git commit -m "chore: commit real-mode eval report [skip ci]" || echo "Nothing to commit"
+          git push
 
       - name: Tear down
         if: always()
