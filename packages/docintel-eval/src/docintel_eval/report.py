@@ -273,11 +273,17 @@ def render_markdown(
             hit5_str = (
                 f"{hit5_val:.3f} " f"[{float(hit5_ci_raw[0]):.3f}, {float(hit5_ci_raw[1]):.3f}]"
             )
-            faith_val: float = float(row.get("faithfulness_rate", 0.0))
-            faith_ci_raw: Any = row.get("faithfulness_ci", (0.0, 1.0))
-            faith_str = (
-                f"{faith_val:.3f} " f"[{float(faith_ci_raw[0]):.3f}, {float(faith_ci_raw[1]):.3f}]"
-            )
+            faith_rate_raw: Any = row.get("faithfulness_rate")
+            if faith_rate_raw is None:
+                # Real mode: per-type faithfulness not yet tracked (Phase 11 wires this)
+                faith_str = "n/a (see headline)"
+            else:
+                faith_val: float = float(faith_rate_raw)
+                faith_ci_raw: Any = row.get("faithfulness_ci", (0.0, 1.0))
+                faith_str = (
+                    f"{faith_val:.3f} "
+                    f"[{float(faith_ci_raw[0]):.3f}, {float(faith_ci_raw[1]):.3f}]"
+                )
             false_ref_str = "—"
         lines.append(f"| {qtype} | {n_row} | {hit5_str} | {faith_str} | {false_ref_str} |")
     lines.append("")

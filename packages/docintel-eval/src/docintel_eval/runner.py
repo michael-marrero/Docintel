@@ -20,10 +20,9 @@ from __future__ import annotations
 import hashlib
 import subprocess
 import time
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from docintel_core.adapters.factory import make_generator
@@ -32,6 +31,7 @@ from docintel_core.config import Settings
 from docintel_eval.dataset import EvalRecord, load_questions
 from docintel_eval.metrics import (
     QueryTimingRecord,
+    _is_refusal,
     compute_citation_accuracy,
     compute_faithfulness,
     compute_latency_stats,
@@ -170,13 +170,16 @@ def run_eval(
             result.completion.model if result.completion is not None else "stub-refusal"
         )
 
+        # D-18 dual-signal refusal: consistent with compute_refusal_matrix
+        refused_flag: bool = _is_refusal(answer)
+
         timings.append(
             QueryTimingRecord(
                 question_id=record.id,
                 total_ms=total_ms,
                 cost_usd=cost_usd_val,
                 model=model_name,
-                refused=result.refused,
+                refused=refused_flag,
                 retrieval_ms=None,  # Phase 12 wires sub-stage resolution
                 generation_ms=None,
             )
@@ -190,7 +193,7 @@ def run_eval(
 
         # Per-question citation accuracy (Pitfall 5 — call per question)
         gold_set: set[str] = set(record.gold_passage_ids)
-        if not result.refused:
+        if not refused_flag:
             cited_ids: list[str] = [cit.chunk_id for cit in answer.citations]
             cit_result = compute_citation_accuracy(cited_ids, set(record.expected_citation_ids))
             citation_hits_total += sum(
@@ -220,7 +223,7 @@ def run_eval(
             {
                 "id": record.id,
                 "question_type": record.question_type,
-                "refused": result.refused,
+                "refused": refused_flag,
                 "hit_at_1": q_hit1,
                 "hit_at_3": q_hit3,
                 "hit_at_5": q_hit5,
@@ -236,27 +239,22 @@ def run_eval(
     # ------------------------------------------------------------------
     # Step 5: compute aggregate metrics
     # ------------------------------------------------------------------
-    records_seq: Sequence[object] = records
-    answers_seq: Sequence[Any] = answers
-    retrieval_result = compute_retrieval_metrics(list(records_seq), rankings, k_multidoc=k)
-    faithfulness_result = compute_faithfulness(list(answers_seq), generator._bundle.judge)
-    refusal_result = compute_refusal_matrix(list(records_seq), list(answers_seq))
+    retrieval_result = compute_retrieval_metrics(
+        cast(list[object], records), rankings, k_multidoc=k
+    )
+    faithfulness_result = compute_faithfulness(answers, generator._bundle.judge)
+    refusal_result = compute_refusal_matrix(cast(list[object], records), answers)
     latency_result = compute_latency_stats(timings)
 
     # Headline citation precision: total hits / total citations across answered qs
     citation_headline: float = (
         citation_hits_total / citation_n_total if citation_n_total > 0 else 0.0
     )
-    # Wilson CI on citation headline (for results.json — not currently in report
-    # but surfaced in render_markdown signature as a scalar)
-    _citation_headline_ci = wilson_ci(citation_hits_total, citation_n_total)
-    del _citation_headline_ci  # used only by the report; pass scalar to render_markdown
-
     # ------------------------------------------------------------------
     # Step 6: build per-type breakdown rows for render_markdown
     # ------------------------------------------------------------------
     per_type_rows: list[dict[str, Any]] = _build_per_type_rows(
-        records, per_question_rows, faithfulness_result.n_answered
+        records, per_question_rows, str(cfg.llm_provider) == "stub"
     )
 
     # ------------------------------------------------------------------
@@ -286,6 +284,9 @@ def run_eval(
     # Step 8: determine hero record (fallback to first record if absent)
     # ------------------------------------------------------------------
     if hero_record is None:
+        if not records:
+            log.error("eval_run_no_questions", questions_path=str(questions_path))
+            return 1
         hero_record = records[0]
         hero_result_text = answers[0].text if answers else ""
         hero_ranking = rankings.get(records[0].id, [])
@@ -348,42 +349,34 @@ def run_eval(
 def _build_per_type_rows(
     records: list[EvalRecord],
     per_question_rows: list[dict[str, Any]],
-    n_answered: int,
+    is_stub: bool,
 ) -> list[dict[str, Any]]:
     """Build the per-question-type breakdown rows for render_markdown Section 4.
 
     Args:
         records:           Full list of EvalRecord objects.
         per_question_rows: Per-question metric dicts (same order as records).
-        n_answered:        Total answered questions from faithfulness result.
+        is_stub:           True iff running in stub mode (cfg.llm_provider == "stub").
+                           Controls whether faithfulness_rate is 0.0 (stub, honest) or
+                           None (real mode, not yet tracked per-type).
 
     Returns:
         List of row dicts for single_doc, multi_doc, refusal types.
     """
     type_stats: dict[str, dict[str, Any]] = {
-        "single_doc": {"n": 0, "hit5_hits": 0, "faith_pass": 0, "false_ref": 0},
-        "multi_doc": {"n": 0, "hit5_hits": 0, "faith_pass": 0, "false_ref": 0},
-        "refusal": {"n": 0, "false_ref_count": 0, "n_should_answer": 0},
+        "single_doc": {"n": 0, "hit5_hits": 0},
+        "multi_doc": {"n": 0, "hit5_hits": 0},
+        "refusal": {"n": 0},
     }
 
     for record, row in zip(records, per_question_rows, strict=True):
         qtype: str = record.question_type
-        refused: bool = bool(row.get("refused", False))
 
         if qtype in ("single_doc", "multi_doc"):
             type_stats[qtype]["n"] += 1
             type_stats[qtype]["hit5_hits"] += int(row.get("hit_at_5", 0))
-            # Faithfulness pass: stub always 0; real mode uses threshold
-            # We track as answered-not-refused (conservative)
-            if not refused:
-                type_stats[qtype]["faith_pass"] += 0  # stub always fails
-            if refused and qtype != "refusal":
-                type_stats[qtype]["false_ref"] += 1
         elif qtype == "refusal":
             type_stats["refusal"]["n"] += 1
-            if not refused:
-                # False refusal = should refuse but answered
-                pass  # false refusal for refusal type = NOT refused (answered)
 
     # Compute per-type metrics
     rows: list[dict[str, Any]] = []
@@ -411,10 +404,11 @@ def _build_per_type_rows(
             hit5_hits: int = int(stats["hit5_hits"])
             hit5_rate: float = hit5_hits / n if n > 0 else 0.0
             hit5_ci = wilson_ci(hit5_hits, n)
-            # Faithfulness rate per type: stub = 0.0; real mode would need
-            # per-question judge results — track as 0.0 for stub
-            faith_rate: float = 0.0
-            faith_ci = wilson_ci(0, max(n, 1))
+            # Faithfulness rate per type: stub = 0.0 (honest — stub judge always
+            # fails); real mode = None (per-question judge verdicts not yet plumbed
+            # through per_question_rows; Phase 11 will wire this).
+            faith_rate: float | None = 0.0 if is_stub else None
+            faith_ci: tuple[float, float] | None = wilson_ci(0, max(n, 1)) if is_stub else None
             rows.append(
                 {
                     "type": qtype,
