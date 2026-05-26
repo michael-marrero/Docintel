@@ -352,10 +352,6 @@ def test_cache_gitignored() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_validate_ok_on_wellformed(tmp_path: Path) -> None:
     """EVAL-04: docintel-eval validate exits 0 on a structurally valid report dir.
 
@@ -382,10 +378,6 @@ def test_validate_ok_on_wellformed(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_validate_fails_missing_manifest_field(tmp_path: Path) -> None:
     """EVAL-04: validate exits 1 when a required manifest field is absent.
 
@@ -413,10 +405,6 @@ def test_validate_fails_missing_manifest_field(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_validate_fails_nan(tmp_path: Path) -> None:
     """EVAL-04: validate exits 1 when results.json contains a float NaN.
 
@@ -455,10 +443,6 @@ def test_validate_fails_nan(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_validate_fails_wrong_n(tmp_path: Path) -> None:
     """EVAL-04: validate exits 1 when manifest.n_questions != 32.
 

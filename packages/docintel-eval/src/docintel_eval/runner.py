@@ -156,7 +156,11 @@ def run_eval(
         # Wrap generator.generate() in perf_counter (Option A — RESEARCH verdict)
         t0: float = time.perf_counter()
         result = generator.generate(record.question, k=k_gen)
-        total_ms: float = (time.perf_counter() - t0) * 1000
+        _elapsed_ms: float = (time.perf_counter() - t0) * 1000
+        # D-08 / D-12: stub-mode latency is non-representative and
+        # non-deterministic (wall clock varies per run). Zero it out in stub
+        # mode so two successive stub runs produce bit-exact per_question rows.
+        total_ms: float = 0.0 if str(cfg.llm_provider) == "stub" else _elapsed_ms
 
         answer = Answer.from_generation_result(result)
         answers.append(answer)

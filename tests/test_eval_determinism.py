@@ -35,10 +35,6 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run_eval lands in Wave 1",
-)
 def test_stub_run_deterministic(tmp_path: Path) -> None:
     """D-12: two stub runs with the same seed produce identical per_question values.
 

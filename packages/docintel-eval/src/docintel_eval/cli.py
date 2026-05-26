@@ -81,11 +81,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "validate":
         from pathlib import Path
 
-        from docintel_eval.validate import (  # type: ignore[import-not-found]
-            cmd_validate,
-        )
+        from docintel_eval.validate import cmd_validate
 
-        return cmd_validate(Path(args.report_dir).resolve())  # type: ignore[no-any-return]
+        resolved = Path(args.report_dir).resolve()
+        # T-10-03 path traversal mitigation: confine report_dir under
+        # data/eval/reports/ before calling cmd_validate.
+        reports_root = Path("data/eval/reports").resolve()
+        if resolved != reports_root and reports_root not in resolved.parents:
+            log.error(
+                "validate_path_outside_reports",
+                report_dir=str(resolved),
+                reports_root=str(reports_root),
+            )
+            return 1
+        return cmd_validate(resolved)
 
     # argparse with required=True guarantees args.cmd is a registered subcommand,
     # so this fallback is unreachable. Kept for defensive completeness.
