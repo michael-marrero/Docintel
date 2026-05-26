@@ -23,12 +23,11 @@ Requirement coverage:
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Module-level path anchors (test_eval_dataset_schema.py pattern — line 31)
@@ -117,6 +116,24 @@ def _make_valid_results(*, n_questions: int = 32) -> dict:
     return {"manifest": manifest, "per_question": per_question}
 
 
+def _run_eval_into(tmp_path: Path) -> Path:
+    """Run the stub eval pipeline into an isolated tmp dir; return the report dir.
+
+    Calls run_eval(cfg, output_dir=...) directly (the determinism-test pattern) so
+    the run writes under tmp_path instead of polluting the real (non-gitignored)
+    data/eval/reports/ tree. The CLI entrypoint itself is covered separately by
+    test_run_exits_zero_stub / test_eval_cli_help_fast.
+    """
+    from docintel_core.config import Settings  # type: ignore[import-not-found]
+    from docintel_eval.runner import run_eval  # type: ignore[import-not-found]
+
+    cfg = Settings()
+    report_dir = tmp_path / "report"
+    exit_code = run_eval(cfg, output_dir=report_dir)
+    assert exit_code == 0, f"run_eval must exit 0 in stub mode; got {exit_code}"
+    return report_dir
+
+
 # ---------------------------------------------------------------------------
 # EVAL-01: docintel-eval run exits 0 in stub mode and writes report artifacts
 # ---------------------------------------------------------------------------
@@ -143,20 +160,28 @@ def test_run_exits_zero_stub() -> None:
         cwd=str(_REPO_ROOT),
         env=env,
     )
-    assert result.returncode == 0, (
-        f"EVAL-01: docintel-eval run must exit 0 in stub mode. " f"stderr={result.stderr!r}"
-    )
 
-    after = set(_REPORTS_DIR.glob("*/"))
-    new_dirs = after - before
-    assert new_dirs, "EVAL-01: run must create a new timestamped dir under data/eval/reports/"
-    report_dir = next(iter(new_dirs))
-    assert (
-        report_dir / "report.md"
-    ).exists(), f"EVAL-01: {report_dir}/report.md must exist after run"
-    assert (
-        report_dir / "results.json"
-    ).exists(), f"EVAL-01: {report_dir}/results.json must exist after run"
+    # This is the one test that exercises the real `docintel-eval run` entrypoint,
+    # which has no --output-dir flag (D-02) and writes under data/eval/reports/.
+    # Diff the dir snapshot to find what it created, assert, then clean up so the
+    # run does not litter the (non-gitignored) reports tree. The other run-side
+    # tests call run_eval(output_dir=tmp_path) via _run_eval_into and never touch it.
+    new_dirs = set(_REPORTS_DIR.glob("*/")) - before
+    try:
+        assert (
+            result.returncode == 0
+        ), f"EVAL-01: docintel-eval run must exit 0 in stub mode. stderr={result.stderr!r}"
+        assert new_dirs, "EVAL-01: run must create a new timestamped dir under data/eval/reports/"
+        report_dir = next(iter(new_dirs))
+        assert (
+            report_dir / "report.md"
+        ).exists(), f"EVAL-01: {report_dir}/report.md must exist after run"
+        assert (
+            report_dir / "results.json"
+        ).exists(), f"EVAL-01: {report_dir}/results.json must exist after run"
+    finally:
+        for _d in new_dirs:
+            shutil.rmtree(_d, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -205,25 +230,7 @@ def test_results_json_manifest_fields(tmp_path: Path) -> None:
     Runs docintel-eval run, loads the output results.json, and asserts
     the manifest dict contains every key in _REQUIRED_MANIFEST_FIELDS.
     """
-    import os
-
-    env = {**os.environ, "DOCINTEL_LLM_PROVIDER": "stub", "HF_HUB_OFFLINE": "1"}
-    before = set(_REPORTS_DIR.glob("*/")) if _REPORTS_DIR.exists() else set()
-
-    result = subprocess.run(
-        [sys.executable, "-m", "docintel_eval.cli", "run"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=str(_REPO_ROOT),
-        env=env,
-    )
-    assert result.returncode == 0, f"run must exit 0; stderr={result.stderr!r}"
-
-    after = set(_REPORTS_DIR.glob("*/"))
-    new_dirs = after - before
-    assert new_dirs, "run must create a report dir"
-    report_dir = next(iter(new_dirs))
+    report_dir = _run_eval_into(tmp_path)
 
     data = json.loads((report_dir / "results.json").read_text(encoding="utf-8"))
     manifest = data.get("manifest", {})
@@ -245,25 +252,7 @@ def test_report_md_sections(tmp_path: Path) -> None:
     The six locked sections are: Manifest, Headline Results, Latency,
     Per-Question-Type Breakdown, Refusal, Hero.
     """
-    import os
-
-    env = {**os.environ, "DOCINTEL_LLM_PROVIDER": "stub", "HF_HUB_OFFLINE": "1"}
-    before = set(_REPORTS_DIR.glob("*/")) if _REPORTS_DIR.exists() else set()
-
-    result = subprocess.run(
-        [sys.executable, "-m", "docintel_eval.cli", "run"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=str(_REPO_ROOT),
-        env=env,
-    )
-    assert result.returncode == 0, f"run must exit 0; stderr={result.stderr!r}"
-
-    after = set(_REPORTS_DIR.glob("*/"))
-    new_dirs = after - before
-    assert new_dirs, "run must create a report dir"
-    report_dir = next(iter(new_dirs))
+    report_dir = _run_eval_into(tmp_path)
 
     text = (report_dir / "report.md").read_text(encoding="utf-8")
     for header in _REPORT_SECTIONS:
@@ -285,27 +274,9 @@ def test_manifest_prompt_hash_not_hardcoded(tmp_path: Path) -> None:
     Asserts the hash is sourced at runtime from docintel_generate.prompts,
     not hardcoded. The hash rotates with prompt edits (Phase 7 D-04).
     """
-    import os
-
     from docintel_generate.prompts import PROMPT_VERSION_HASH  # type: ignore[import-not-found]
 
-    env = {**os.environ, "DOCINTEL_LLM_PROVIDER": "stub", "HF_HUB_OFFLINE": "1"}
-    before = set(_REPORTS_DIR.glob("*/")) if _REPORTS_DIR.exists() else set()
-
-    result = subprocess.run(
-        [sys.executable, "-m", "docintel_eval.cli", "run"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=str(_REPO_ROOT),
-        env=env,
-    )
-    assert result.returncode == 0, f"run must exit 0; stderr={result.stderr!r}"
-
-    after = set(_REPORTS_DIR.glob("*/"))
-    new_dirs = after - before
-    assert new_dirs, "run must create a report dir"
-    report_dir = next(iter(new_dirs))
+    report_dir = _run_eval_into(tmp_path)
 
     data = json.loads((report_dir / "results.json").read_text(encoding="utf-8"))
     manifest_hash = data["manifest"]["prompt_version_hash"]
@@ -480,25 +451,7 @@ def test_rankings_use_k10(tmp_path: Path) -> None:
     generator.generate(k=5). GenerationResult.retrieved_chunks is capped
     at k=5 and cannot populate Hit@10 (Pitfall 1).
     """
-    import os
-
-    env = {**os.environ, "DOCINTEL_LLM_PROVIDER": "stub", "HF_HUB_OFFLINE": "1"}
-    before = set(_REPORTS_DIR.glob("*/")) if _REPORTS_DIR.exists() else set()
-
-    result = subprocess.run(
-        [sys.executable, "-m", "docintel_eval.cli", "run"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=str(_REPO_ROOT),
-        env=env,
-    )
-    assert result.returncode == 0, f"run must exit 0; stderr={result.stderr!r}"
-
-    after = set(_REPORTS_DIR.glob("*/"))
-    new_dirs = after - before
-    assert new_dirs, "run must create a report dir"
-    report_dir = next(iter(new_dirs))
+    report_dir = _run_eval_into(tmp_path)
 
     data = json.loads((report_dir / "results.json").read_text(encoding="utf-8"))
     per_question = data.get("per_question", [])
@@ -523,25 +476,7 @@ def test_stub_representative_false(tmp_path: Path) -> None:
     Stub latency/cost are non-representative ($0, CI-runner wall-clock) and
     must be clearly labeled — 'measure, don't fake' discipline.
     """
-    import os
-
-    env = {**os.environ, "DOCINTEL_LLM_PROVIDER": "stub", "HF_HUB_OFFLINE": "1"}
-    before = set(_REPORTS_DIR.glob("*/")) if _REPORTS_DIR.exists() else set()
-
-    result = subprocess.run(
-        [sys.executable, "-m", "docintel_eval.cli", "run"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=str(_REPO_ROOT),
-        env=env,
-    )
-    assert result.returncode == 0, f"run must exit 0; stderr={result.stderr!r}"
-
-    after = set(_REPORTS_DIR.glob("*/"))
-    new_dirs = after - before
-    assert new_dirs, "run must create a report dir"
-    report_dir = next(iter(new_dirs))
+    report_dir = _run_eval_into(tmp_path)
 
     data = json.loads((report_dir / "results.json").read_text(encoding="utf-8"))
     assert (
