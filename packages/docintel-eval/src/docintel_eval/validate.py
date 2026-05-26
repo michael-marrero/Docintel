@@ -10,7 +10,7 @@ Six checks (in order):
   1. report.md + results.json must exist.
   2. manifest must contain all 13 required fields.
   3. manifest.n_questions must equal 32.
-  4. Recursive NaN scan — no float NaN anywhere in the parsed JSON.
+  4. Recursive NaN/Inf scan — no float NaN or Infinity anywhere in the parsed JSON.
   5. per_question must have exactly 32 rows.
   6. manifest.dataset_hash must match sha256(questions.jsonl) if the file exists.
 
@@ -23,8 +23,8 @@ Security note (T-10-03 path traversal):
 Design notes:
   - No torch, sentence-transformers, or pipeline imports — pure file-I/O gate.
   - CPython's json.loads accepts the non-standard NaN / Infinity tokens that
-    json.dumps(..., allow_nan=True) writes; _has_nan then catches float NaNs.
-  - _has_nan type-narrows each branch for mypy --strict compatibility.
+    json.dumps(..., allow_nan=True) writes; _has_nan_or_inf catches both.
+  - _has_nan_or_inf type-narrows each branch for mypy --strict compatibility.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ import structlog
 
 log = structlog.stdlib.get_logger(__name__)
 
-__all__ = ["cmd_validate"]
+__all__ = ["cmd_validate", "_has_nan_or_inf"]
 
 # ---------------------------------------------------------------------------
 # Required manifest field names (D-07 thirteen-field contract)
@@ -69,20 +69,20 @@ _EXPECTED_N_QUESTIONS: int = 32
 # ---------------------------------------------------------------------------
 
 
-def _has_nan(obj: object) -> bool:
-    """Return True iff obj (or any nested value) is a float NaN.
+def _has_nan_or_inf(obj: object) -> bool:
+    """Return True iff obj (or any nested value) is a float NaN or Infinity.
 
-    CPython's json.loads accepts the non-standard NaN token written by
-    json.dumps(..., allow_nan=True), producing a Python float('nan').
-    math.isnan detects it; isinstance guards let mypy --strict verify
-    that each branch narrows the type correctly.
+    CPython's json.loads accepts the non-standard NaN / Infinity tokens written
+    by json.dumps(..., allow_nan=True), producing float('nan') or float('inf').
+    Both math.isnan and math.isinf detect them; isinstance guards let mypy
+    --strict verify that each branch narrows the type correctly.
     """
     if isinstance(obj, float):
-        return math.isnan(obj)
+        return math.isnan(obj) or math.isinf(obj)
     if isinstance(obj, dict):
-        return any(_has_nan(v) for v in obj.values())
+        return any(_has_nan_or_inf(v) for v in obj.values())
     if isinstance(obj, list):
-        return any(_has_nan(item) for item in obj)
+        return any(_has_nan_or_inf(item) for item in obj)
     return False
 
 
@@ -98,7 +98,7 @@ def cmd_validate(report_dir: Path) -> int:
       1. Both report.md and results.json must exist.
       2. All 13 required manifest fields must be present.
       3. manifest.n_questions must equal 32.
-      4. No float NaN anywhere in the parsed JSON.
+      4. No float NaN or Infinity anywhere in the parsed JSON.
       5. per_question must have exactly 32 rows.
       6. manifest.dataset_hash must match a fresh sha256 of questions.jsonl
          (only checked when data/eval/ground_truth/questions.jsonl exists).
@@ -167,15 +167,15 @@ def cmd_validate(report_dir: Path) -> int:
         return 1
 
     # ------------------------------------------------------------------
-    # Check 4: no float NaN anywhere in the JSON (T-10-01 corrupted values)
+    # Check 4: no float NaN or Infinity anywhere in the JSON (T-10-01)
     #
-    # CPython's json.loads accepts the non-standard NaN token that
-    # json.dumps(..., allow_nan=True) writes, so a plain read_text /
-    # json.loads round-trip produces float('nan') objects which _has_nan
-    # catches via math.isnan.
+    # CPython's json.loads accepts the non-standard NaN / Infinity tokens
+    # that json.dumps(..., allow_nan=True) writes, producing float('nan')
+    # or float('inf') objects that _has_nan_or_inf catches via math.isnan
+    # and math.isinf.
     # ------------------------------------------------------------------
-    if _has_nan(data):
-        log.error("validate_nan_found", report_dir=str(report_dir))
+    if _has_nan_or_inf(data):
+        log.error("validate_nan_or_inf_found", report_dir=str(report_dir))
         return 1
 
     # ------------------------------------------------------------------
