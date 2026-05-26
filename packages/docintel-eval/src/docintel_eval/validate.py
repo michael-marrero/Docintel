@@ -208,8 +208,7 @@ def cmd_validate(report_dir: Path) -> int:
     reports_root = Path("data/eval/reports").resolve()
     report_dir_resolved = report_dir.resolve()
     is_under_reports = (
-        report_dir_resolved == reports_root
-        or reports_root in report_dir_resolved.parents
+        report_dir_resolved == reports_root or reports_root in report_dir_resolved.parents
     )
     questions_path = Path("data/eval/ground_truth/questions.jsonl")
     if is_under_reports and questions_path.exists():

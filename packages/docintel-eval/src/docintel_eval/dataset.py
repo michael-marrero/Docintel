@@ -18,9 +18,8 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
-
 from docintel_core.types import REFUSAL_TEXT_SENTINEL  # noqa: F401 — re-exported for tests
+from pydantic import BaseModel, ConfigDict, model_validator
 
 __all__ = ["EvalRecord", "load_questions"]
 
@@ -34,7 +33,7 @@ class EvalRecord(BaseModel):
 
     mode="after" is required so self.gold_passage_ids is already list[str] (not
     the raw JSON array) — same reasoning as Answer._citations_required_when_not_refused
-    in docintel_core.types (PATTERNS.md lines 59–65).
+    in docintel_core.types (PATTERNS.md lines 59-65).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -73,7 +72,7 @@ class EvalRecord(BaseModel):
     """Free-form slice tags, e.g. ['numeric', 'long-gold', 'cross-company', 'false-premise']."""
 
     @model_validator(mode="after")
-    def _citations_subset_of_golds(self) -> "EvalRecord":
+    def _citations_subset_of_golds(self) -> EvalRecord:
         """D-04: expected_citation_ids must be a subset of gold_passage_ids.
 
         Raises ValueError naming the record id and the offending citation id so
@@ -90,7 +89,7 @@ class EvalRecord(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _refusal_fields_empty(self) -> "EvalRecord":
+    def _refusal_fields_empty(self) -> EvalRecord:
         """D-05: refusal records must have both gold lists empty.
 
         Raises ValueError if question_type='refusal' but either gold_passage_ids
@@ -111,7 +110,7 @@ def load_questions(path: Path) -> list[EvalRecord]:
     """Load and validate all EvalRecord objects from a JSONL file.
 
     Follows the canary loader shape (splitlines + strip + skip empty) from
-    tests/test_reranker_canary.py _load_cases() (PATTERNS.md lines 113–125).
+    tests/test_reranker_canary.py _load_cases() (PATTERNS.md lines 113-125).
     Each line is validated by EvalRecord.model_validate — any schema violation
     raises pydantic.ValidationError at load time.
 

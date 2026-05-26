@@ -1,6 +1,6 @@
 """docintel-eval metrics module: MET-01..MET-06 pure functions + frozen result models.
 
-Phase 9 (MET-01..MET-06) metric computation over EvalRecord × Answer inputs.
+Phase 9 (MET-01..MET-06) metric computation over EvalRecord x Answer inputs.
 All functions are pure (no I/O, no LLM calls). Result models are frozen
 Pydantic v2 contracts consumed by Phase 10 (report renderer) and Phase 11
 (ablation bootstrap).
@@ -18,33 +18,32 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+from docintel_core.types import REFUSAL_TEXT_SENTINEL
 from pydantic import BaseModel, ConfigDict
 from scipy.stats import binomtest
-
-from docintel_core.types import REFUSAL_TEXT_SENTINEL
 
 if TYPE_CHECKING:
     from docintel_core.adapters.protocols import LLMJudge
     from docintel_core.types import Answer
 
 __all__ = [
-    "QueryTimingRecord",
-    "RetrievalMetricsResult",
-    "FaithfulnessResult",
     "CitationAccuracyResult",
+    "FaithfulnessResult",
     "LatencyResult",
+    "QueryTimingRecord",
     "RefusalMatrixResult",
-    "wilson_ci",
-    "hit_at_k",
-    "reciprocal_rank",
-    "mrr",
-    "bootstrap_delta_ci",
-    "compute_retrieval_metrics",
-    "compute_faithfulness",
-    "compute_citation_accuracy",
-    "compute_refusal_matrix",
-    "compute_latency_stats",
+    "RetrievalMetricsResult",
     "_is_refusal",
+    "bootstrap_delta_ci",
+    "compute_citation_accuracy",
+    "compute_faithfulness",
+    "compute_latency_stats",
+    "compute_refusal_matrix",
+    "compute_retrieval_metrics",
+    "hit_at_k",
+    "mrr",
+    "reciprocal_rank",
+    "wilson_ci",
 ]
 
 
@@ -326,16 +325,15 @@ def compute_retrieval_metrics(
                 # Gold chunks attributed to this company in this record:
                 # derive by filtering gold_passage_ids that start with "{ticker}-"
                 company_golds = {
-                    cid for cid in rec.gold_passage_ids
-                    if cid.startswith(f"{company}-")
+                    cid for cid in rec.gold_passage_ids if cid.startswith(f"{company}-")
                 }
                 if not company_golds:
                     # Fallback: if chunk IDs don't follow ticker prefix convention,
                     # treat all golds as belonging to the first company in record.
                     # This is a best-effort; real data should use the prefix convention.
                     continue
-                company_gold_total[company] = (
-                    company_gold_total.get(company, 0) + len(company_golds)
+                company_gold_total[company] = company_gold_total.get(company, 0) + len(
+                    company_golds
                 )
                 hits = len(company_golds & top_k_set)
                 company_gold_hit[company] = company_gold_hit.get(company, 0) + hits
@@ -456,7 +454,7 @@ class LatencyResult(BaseModel):
 
 
 class RefusalMatrixResult(BaseModel):
-    """MET-04 refusal 2×2 confusion matrix (wave 09-03, D-04).
+    """MET-04 refusal 2x2 confusion matrix (wave 09-03, D-04).
 
     Computed over ALL 32 questions via ``compute_refusal_matrix``.
     Partitions questions into should-refuse (n=5) and answerable (n=27).
@@ -490,7 +488,7 @@ class RefusalMatrixResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _is_refusal(answer: "Answer") -> bool:
+def _is_refusal(answer: Answer) -> bool:
     """D-18 dual-signal refusal: BOTH Answer.refused==True AND exact REFUSAL_TEXT_SENTINEL.
 
     Pitfall 5 from RESEARCH: a single condition is insufficient.
@@ -517,8 +515,8 @@ _STUB_JUDGE_THRESHOLD = 0.5
 
 
 def compute_faithfulness(
-    answers: list["Answer"],
-    judge: "LLMJudge | None",
+    answers: list[Answer],
+    judge: LLMJudge | None,
     *,
     threshold: float = _STUB_JUDGE_THRESHOLD,
 ) -> FaithfulnessResult:
@@ -646,15 +644,15 @@ def compute_citation_accuracy(
 
 
 # ---------------------------------------------------------------------------
-# MET-04: Refusal 2×2 confusion matrix (wave 09-03, D-04)
+# MET-04: Refusal 2x2 confusion matrix (wave 09-03, D-04)
 # ---------------------------------------------------------------------------
 
 
 def compute_refusal_matrix(
     records: list[object],
-    answers: list["Answer"],
+    answers: list[Answer],
 ) -> RefusalMatrixResult:
-    """MET-04 D-04: refusal 2×2 confusion matrix over all 32 questions.
+    """MET-04 D-04: refusal 2x2 confusion matrix over all 32 questions.
 
     Partitions EvalRecord objects into:
     - should-refuse  (question_type == "refusal", n=5 in the corpus)
@@ -693,7 +691,7 @@ def compute_refusal_matrix(
     n_should_answer = 0
     false_refused = 0
 
-    for rec, ans in zip(records, answers):
+    for rec, ans in zip(records, answers, strict=False):
         question_type: str = rec.question_type  # type: ignore[attr-defined]
         refused = _is_refusal(ans)
 
