@@ -35,10 +35,10 @@ __all__ = ["render_markdown", "render_results_json"]
 
 def render_results_json(
     manifest: dict[str, Any],
-    retrieval: "RetrievalMetricsResult",
-    faithfulness: "FaithfulnessResult",
-    latency: "LatencyResult",
-    refusal_matrix: "RefusalMatrixResult",
+    retrieval: RetrievalMetricsResult,
+    faithfulness: FaithfulnessResult,
+    latency: LatencyResult,
+    refusal_matrix: RefusalMatrixResult,
     per_question: list[dict[str, Any]],
 ) -> str:
     """Render the Phase-11-consumable results.json sidecar. Pure function, no I/O.
@@ -112,13 +112,13 @@ def render_results_json(
 
 def render_markdown(
     manifest: dict[str, Any],
-    retrieval: "RetrievalMetricsResult",
-    faithfulness: "FaithfulnessResult",
+    retrieval: RetrievalMetricsResult,
+    faithfulness: FaithfulnessResult,
     citation_headline: float,
-    latency: "LatencyResult",
-    refusal_matrix: "RefusalMatrixResult",
+    latency: LatencyResult,
+    refusal_matrix: RefusalMatrixResult,
     per_type_rows: list[dict[str, Any]],
-    hero_record: "EvalRecord",
+    hero_record: EvalRecord,
     hero_answer: str,
     hero_ranking: list[str],
 ) -> str:
@@ -159,12 +159,9 @@ def render_markdown(
     provider: str = str(manifest.get("provider", ""))
     if provider == "stub":
         lines.append(
-            "> STUB RUN — latency & $/query are non-representative. "
-            "representative: false"
+            "> STUB RUN — latency & $/query are non-representative. " "representative: false"
         )
-        lines.append(
-            "> Run with DOCINTEL_LLM_PROVIDER=real for published numbers."
-        )
+        lines.append("> Run with DOCINTEL_LLM_PROVIDER=real for published numbers.")
         lines.append("")
 
     # -----------------------------------------------------------------------
@@ -178,9 +175,7 @@ def render_markdown(
     lines.append(f"| reranker | {manifest.get('reranker_name', '')} |")
     lines.append(f"| generator | {manifest.get('generator_name', '')} |")
     lines.append(f"| judge | {manifest.get('judge_name', '')} |")
-    lines.append(
-        f"| prompt_version_hash | {manifest.get('prompt_version_hash', '')} |"
-    )
+    lines.append(f"| prompt_version_hash | {manifest.get('prompt_version_hash', '')} |")
     lines.append(f"| git_sha | {manifest.get('git_sha', '')} |")
     lines.append(f"| timestamp | {manifest.get('run_timestamp_utc', '')} |")
     lines.append(f"| provider | {manifest.get('provider', '')} |")
@@ -206,22 +201,10 @@ def render_markdown(
     def _fmt_ci(ci: tuple[float, float]) -> str:
         return f"[{ci[0]:.3f}, {ci[1]:.3f}]"
 
-    lines.append(
-        f"| Hit@1 | {retrieval.hit_at_1:.3f} | "
-        f"{_fmt_ci(retrieval.hit_at_1_ci)} |"
-    )
-    lines.append(
-        f"| Hit@3 | {retrieval.hit_at_3:.3f} | "
-        f"{_fmt_ci(retrieval.hit_at_3_ci)} |"
-    )
-    lines.append(
-        f"| Hit@5 | {retrieval.hit_at_5:.3f} | "
-        f"{_fmt_ci(retrieval.hit_at_5_ci)} |"
-    )
-    lines.append(
-        f"| Hit@10 | {retrieval.hit_at_10:.3f} | "
-        f"{_fmt_ci(retrieval.hit_at_10_ci)} |"
-    )
+    lines.append(f"| Hit@1 | {retrieval.hit_at_1:.3f} | " f"{_fmt_ci(retrieval.hit_at_1_ci)} |")
+    lines.append(f"| Hit@3 | {retrieval.hit_at_3:.3f} | " f"{_fmt_ci(retrieval.hit_at_3_ci)} |")
+    lines.append(f"| Hit@5 | {retrieval.hit_at_5:.3f} | " f"{_fmt_ci(retrieval.hit_at_5_ci)} |")
+    lines.append(f"| Hit@10 | {retrieval.hit_at_10:.3f} | " f"{_fmt_ci(retrieval.hit_at_10_ci)} |")
     lines.append(f"| MRR | {retrieval.mrr:.3f} | — |")
     lines.append(
         f"| Faithfulness (n={faithfulness.n_answered}) | "
@@ -229,8 +212,7 @@ def render_markdown(
         f"{_fmt_ci(faithfulness.faithfulness_ci)} |"
     )
     lines.append(
-        f"| Citation Accuracy (n={faithfulness.n_answered}) | "
-        f"{citation_headline:.3f} | — |"
+        f"| Citation Accuracy (n={faithfulness.n_answered}) | " f"{citation_headline:.3f} | — |"
     )
     lines.append(
         f"| True Refusal Rate (n={refusal_matrix.n_should_refuse}) | "
@@ -255,9 +237,7 @@ def render_markdown(
     lines.append("## Latency & Cost")
     lines.append("")
     if not latency.representative:
-        lines.append(
-            "> Non-representative (stub mode). See manifest.representative."
-        )
+        lines.append("> Non-representative (stub mode). See manifest.representative.")
         lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|--------|-------|")
@@ -291,19 +271,15 @@ def render_markdown(
             hit5_val: float = float(row.get("hit5", 0.0))
             hit5_ci_raw: Any = row.get("hit5_ci", (0.0, 1.0))
             hit5_str = (
-                f"{hit5_val:.3f} "
-                f"[{float(hit5_ci_raw[0]):.3f}, {float(hit5_ci_raw[1]):.3f}]"
+                f"{hit5_val:.3f} " f"[{float(hit5_ci_raw[0]):.3f}, {float(hit5_ci_raw[1]):.3f}]"
             )
             faith_val: float = float(row.get("faithfulness_rate", 0.0))
             faith_ci_raw: Any = row.get("faithfulness_ci", (0.0, 1.0))
             faith_str = (
-                f"{faith_val:.3f} "
-                f"[{float(faith_ci_raw[0]):.3f}, {float(faith_ci_raw[1]):.3f}]"
+                f"{faith_val:.3f} " f"[{float(faith_ci_raw[0]):.3f}, {float(faith_ci_raw[1]):.3f}]"
             )
             false_ref_str = "—"
-        lines.append(
-            f"| {qtype} | {n_row} | {hit5_str} | {faith_str} | {false_ref_str} |"
-        )
+        lines.append(f"| {qtype} | {n_row} | {hit5_str} | {faith_str} | {false_ref_str} |")
     lines.append("")
 
     # -----------------------------------------------------------------------
@@ -319,12 +295,8 @@ def render_markdown(
     tn_count: int = n_sa - fp_count
     lines.append("| | Actually Refused | Actually Answered |")
     lines.append("|-|-----------------|-------------------|")
-    lines.append(
-        f"| Should Refuse (n={n_sr}) | {tp_count} (TP) | {fn_count} (FN) |"
-    )
-    lines.append(
-        f"| Should Answer (n={n_sa}) | {fp_count} (FP) | {tn_count} (TN) |"
-    )
+    lines.append(f"| Should Refuse (n={n_sr}) | {tp_count} (TP) | {fn_count} (FN) |")
+    lines.append(f"| Should Answer (n={n_sa}) | {fp_count} (FP) | {tn_count} (TN) |")
     lines.append("")
     lines.append(
         f"- True Refusal Rate: {refusal_matrix.true_refusal_rate:.3f} "
@@ -357,17 +329,13 @@ def render_markdown(
 
     # Per-component coverage (D-14 / D-06)
     lines.append("**Per-Component Coverage (D-14):**")
-    lines.append(
-        "| Company | Gold Chunks Required | Gold Chunks in Top-10 | Coverage |"
-    )
+    lines.append("| Company | Gold Chunks Required | Gold Chunks in Top-10 | Coverage |")
     lines.append("|---------|---------------------|----------------------|---------|")
     top10_set: set[str] = set(hero_ranking[:10])
     all_covered: bool = True
     for company in hero_record.companies:
         company_golds: list[str] = [
-            cid
-            for cid in hero_record.gold_passage_ids
-            if cid.startswith(f"{company}-")
+            cid for cid in hero_record.gold_passage_ids if cid.startswith(f"{company}-")
         ]
         if not company_golds:
             # Fallback: attribute all golds if prefix convention absent
@@ -379,9 +347,7 @@ def render_markdown(
         gold_str: str = ", ".join(company_golds)
         found_marker: str = "✓" if covered else "✗"
         coverage_str: str = f"{found_count}/{len(company_golds)}"
-        lines.append(
-            f"| {company} | {gold_str} | {found_marker} | {coverage_str} |"
-        )
+        lines.append(f"| {company} | {gold_str} | {found_marker} | {coverage_str} |")
     lines.append("")
     covered_note: str = (
         "all companies covered"

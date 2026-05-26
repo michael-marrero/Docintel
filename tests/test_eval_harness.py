@@ -122,10 +122,6 @@ def _make_valid_results(*, n_questions: int = 32) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_run_exits_zero_stub() -> None:
     """EVAL-01: docintel-eval run exits 0 in stub mode and writes report artifacts.
 
@@ -168,10 +164,6 @@ def test_run_exits_zero_stub() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_eval_cli_help_fast() -> None:
     """EVAL-01: docintel-eval --help cold-start stays under 5 seconds.
 
@@ -207,10 +199,6 @@ def test_eval_cli_help_fast() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_results_json_manifest_fields(tmp_path: Path) -> None:
     """EVAL-02: results.json manifest has all 13 required fields (D-07).
 
@@ -251,10 +239,6 @@ def test_results_json_manifest_fields(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_report_md_sections(tmp_path: Path) -> None:
     """EVAL-02: report.md contains all six D-05 section headers.
 
@@ -295,10 +279,6 @@ def test_report_md_sections(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_manifest_prompt_hash_not_hardcoded(tmp_path: Path) -> None:
     """EVAL-02: manifest prompt_version_hash matches runtime PROMPT_VERSION_HASH.
 
@@ -508,10 +488,6 @@ def test_validate_fails_wrong_n(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_rankings_use_k10(tmp_path: Path) -> None:
     """D-01: per_question rows carry hit_at_10 key (rankings depth >= 10).
 
@@ -556,10 +532,6 @@ def test_rankings_use_k10(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="run/validate CLI lands in Wave 1-2",
-)
 def test_stub_representative_false(tmp_path: Path) -> None:
     """D-08: stub-mode manifest has representative=False and report.md has STUB banner.
 
