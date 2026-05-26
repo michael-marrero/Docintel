@@ -363,6 +363,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write # CR-01: required for the "Commit report (D-10)" git push step
     env:
       DOCINTEL_LLM_PROVIDER: real
       # The python process runs on the runner host, NOT inside the docker
