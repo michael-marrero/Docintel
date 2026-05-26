@@ -338,8 +338,12 @@ def render_markdown(
             cid for cid in hero_record.gold_passage_ids if cid.startswith(f"{company}-")
         ]
         if not company_golds:
-            # Fallback: attribute all golds if prefix convention absent
-            company_golds = list(hero_record.gold_passage_ids)
+            # No prefix-matched golds for this company — skip rather than
+            # attributing the full gold list (which would produce misleading
+            # N/N coverage for every company in non-prefixed datasets).
+            lines.append(f"| {company} | (no prefix match) | — | — |")
+            all_covered = False
+            continue
         found_count: int = sum(1 for cid in company_golds if cid in top10_set)
         covered: bool = found_count == len(company_golds) and len(company_golds) > 0
         if not covered:
