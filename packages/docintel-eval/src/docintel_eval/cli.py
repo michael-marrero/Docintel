@@ -1,32 +1,94 @@
-"""Eval CLI scaffold for docintel.
+"""``docintel-eval`` argparse CLI — run + validate subcommands.
 
-Phase 1 deliberately ships a placeholder that exits 1 with a clear message --
-the Makefile target `make eval` (CONTEXT.md D-22) wraps this command and is
-expected to fail in Phase 1. The real CLI lands in Phases 9-11.
+EVAL-01 / D-01 / D-03: the ``[project.scripts]`` entrypoint
+``docintel-eval = "docintel_eval.cli:main"`` in ``pyproject.toml`` routes
+``uv run docintel-eval <subcommand>`` here.
 
-This module MUST NOT read env vars directly. When the real implementation
-arrives it will read configuration via docintel_core.config.Settings.
+FND-11 single-env-reader rule: ``Settings()`` is constructed exactly ONCE in
+``main()`` and passed (not re-read) to each subcommand handler.
+``cfg = Settings()  # the ONLY allowed env read site (FND-11)``
+is the canonical marker comment. No direct env-reading calls (os dot environ /
+os dot getenv) live anywhere else in this package — the grep gate at
+``tests/test_no_env_outside_config.py`` enforces this.
+
+Lazy-import dispatch (Pitfall 3 / D-01): subcommand implementations import
+heavyweight modules (torch, sentence-transformers, the full pipeline) — each
+costs several seconds cold-start. They MUST stay out of module-level imports.
+Each subcommand dispatch lazily imports its implementation INSIDE the
+``if args.cmd == ...`` branch so ``--help`` / ``--version`` stays fast (<5s).
+
+Subcommand handlers:
+  run      — executes the full eval pipeline + writes report.md + results.json.
+             Implemented in this wave (Wave 2 / Plan 10-02).
+  validate — EVAL-04 well-formedness gate. Handler lands in Wave 3 / Plan 10-03.
+             The subparser is registered here so validate is recognized by argparse
+             and the help text is correct.
 """
 
 from __future__ import annotations
 
-import sys
+import argparse
 
+import structlog
 from docintel_core import __version__
+from docintel_core.config import Settings
+from docintel_core.log import configure_logging
 
-_NOT_IMPLEMENTED_MESSAGE = (
-    f"docintel-eval v{__version__} -- eval CLI is not yet implemented.\n"
-    "Lands in Phase 9 (metrics) / Phase 10 (CI integration) / Phase 11 (ablation).\n"
-    "See .planning/REQUIREMENTS.md (EV2-*, EV3-*, EV4-*) and .planning/ROADMAP.md."
-)
+log = structlog.stdlib.get_logger(__name__)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Entry point referenced by packages/docintel-eval/pyproject.toml.
 
-    Returns 1 unconditionally in Phase 1. The Makefile relies on this exit code.
+    Returns a shell exit code:
+      * 0 — subcommand handler returned successfully.
+      * 1 — subcommand handler error or unreachable fallback.
+      * 2 — argparse error (e.g. no subcommand given).
     """
-    print(_NOT_IMPLEMENTED_MESSAGE, file=sys.stderr)
+    configure_logging()
+
+    parser = argparse.ArgumentParser(
+        prog="docintel-eval",
+        description="docintel eval CLI — run eval pipeline and validate reports.",
+    )
+    parser.add_argument("--version", action="version", version=__version__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    # run: execute eval pipeline and write report
+    sub.add_parser("run", help="execute eval pipeline and write report")
+
+    # validate: EVAL-04 well-formedness gate (handler lands in Plan 10-03)
+    validate_parser = sub.add_parser(
+        "validate",
+        help="EVAL-04 well-formedness gate for a report directory",
+    )
+    validate_parser.add_argument(
+        "report_dir",
+        type=str,
+        help="path to the report directory to validate",
+    )
+
+    args = parser.parse_args(argv)
+    cfg = Settings()  # the ONLY allowed env read site (FND-11)
+
+    # Lazy-import dispatch — each branch imports INSIDE the branch body so
+    # --help / --version never pays the torch / sentence-transformers cost.
+    if args.cmd == "run":
+        from docintel_eval.runner import run_eval
+
+        return run_eval(cfg)
+
+    if args.cmd == "validate":
+        from pathlib import Path
+
+        from docintel_eval.validate import (  # type: ignore[import-not-found]
+            cmd_validate,
+        )
+
+        return cmd_validate(Path(args.report_dir).resolve())  # type: ignore[no-any-return]
+
+    # argparse with required=True guarantees args.cmd is a registered subcommand,
+    # so this fallback is unreachable. Kept for defensive completeness.
     return 1
 
 
