@@ -38,7 +38,7 @@ import structlog
 
 log = structlog.stdlib.get_logger(__name__)
 
-__all__ = ["cmd_validate", "_has_nan_or_inf"]
+__all__ = ["_has_nan_or_inf", "cmd_validate"]
 
 # ---------------------------------------------------------------------------
 # Required manifest field names (D-07 thirteen-field contract)
