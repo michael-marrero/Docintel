@@ -22,8 +22,11 @@ import os
 import re
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 _XFAIL = pytest.mark.xfail(
     raises=(
@@ -83,6 +86,57 @@ def test_version_flag() -> None:
     assert re.search(
         r"\d+\.\d+\.\d+", result.stdout
     ), f"--version output lacks semver: {result.stdout!r}"
+
+
+def test_chunk_help_lists_target_tokens() -> None:
+    """``docintel-ingest chunk --help`` lists the Phase 11 --target-tokens flag (ABL-01)."""
+    result = subprocess.run(
+        ["uv", "run", "docintel-ingest", "chunk", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, f"chunk --help exited {result.returncode}: {result.stderr!r}"
+    assert "--target-tokens" in result.stdout, (
+        "chunk --help must list --target-tokens (Phase 11 chunk-size sweep, ABL-01)"
+    )
+
+
+def test_chunk_target_tokens_flag_threads(tmp_path: Path) -> None:
+    """``chunk --out-root X --target-tokens 300`` re-chunks the committed normalized JSON offline.
+
+    The flag must thread into chunk_all(..., target_tokens=300): the run exits 0
+    and produces JSONL under the override root (real ingest is offline-safe — it
+    re-chunks committed normalized JSON, no network). FND-11: a --target-tokens
+    flag, never an env var.
+    """
+    out_root = tmp_path / "chunks300"
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "docintel-ingest",
+            "chunk",
+            "--normalized-root",
+            "data/corpus/normalized",
+            "--out-root",
+            str(out_root),
+            "--target-tokens",
+            "300",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=_REPO_ROOT,
+        env={**os.environ, "HF_HUB_OFFLINE": "1", "DOCINTEL_LLM_PROVIDER": "stub"},
+    )
+    assert result.returncode == 0, (
+        f"chunk --target-tokens 300 exited {result.returncode}: stderr={result.stderr!r}"
+    )
+    produced = list(out_root.rglob("*.jsonl"))
+    assert produced, "chunk --out-root --target-tokens 300 produced no JSONL under the override root"
 
 
 def test_no_torch_import_on_help() -> None:
