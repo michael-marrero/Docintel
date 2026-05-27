@@ -165,6 +165,10 @@ def _cmd_all(cfg: Settings) -> int:
         return rc
     rc = chunk_all(cfg)
     if rc != 0:
+        # chunk_all is all-or-nothing: a non-zero rc means it wrote NOTHING
+        # (see chunk.py), so the on-disk corpus still matches its committed
+        # MANIFEST.json. Short-circuiting before write_manifest here therefore
+        # leaves a consistent corpus rather than a half-rewritten one.
         log.error("all_step_failed", step="chunk", rc=rc)
         return rc
     write_manifest(cfg)

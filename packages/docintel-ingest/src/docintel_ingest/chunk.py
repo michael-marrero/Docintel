@@ -738,10 +738,14 @@ def chunk_all(
     Returns:
         Shell exit code:
             * 0 — every normalized JSON either produced a chunks JSONL
-              or was empty (zero-byte JSONL written).
-            * 1 — at least one filing raised an unrecoverable error
-              (e.g. HARD_CAP loud-fail — surfaces as ``ValueError``
-              from ``_emit_chunk``).
+              or was empty (zero-byte JSONL written). All JSONL is flushed
+              to disk only after the full corpus chunked cleanly.
+            * 1 — at least one filing raised an unrecoverable ``ValueError``
+              (e.g. HARD_CAP loud-fail from ``_emit_chunk``). In this case
+              NOTHING is written: the rewrite is all-or-nothing so the
+              on-disk corpus is never left half-regenerated (inconsistent
+              with the committed ``MANIFEST.json``). Unexpected exception
+              types are NOT caught — they propagate and abort loudly.
     """
     if normalized_root is None:
         normalized_root = Path(cfg.data_dir) / "corpus" / "normalized"
@@ -761,13 +765,27 @@ def chunk_all(
     max_chunk_tokens = 0
     sum_chunk_tokens = 0
 
+    # Chunk every filing into an in-memory buffer FIRST; only flush to disk
+    # after the whole corpus chunked cleanly. This makes the rewrite
+    # all-or-nothing: a single HARD_CAP ValueError no longer leaves
+    # data/corpus/chunks/ half-rewritten (inconsistent with the un-regenerated
+    # committed MANIFEST.json), which would make the next verify/idempotency
+    # gate fail for a reason unrelated to the original error.
+    pending_writes: list[tuple[Path, str]] = []
+
     for normalized_path in sorted(normalized_root.rglob("*.json")):
         rel = normalized_path.relative_to(normalized_root)
         out_path = (out_root / rel).with_suffix(".jsonl")
 
         try:
             chunks = chunk_filing(normalized_path, target_tokens=target_tokens)
-        except Exception as exc:
+        except ValueError as exc:
+            # HARD_CAP loud-fail (_emit_chunk raises ValueError) is the ONLY
+            # expected per-filing failure. Narrow the caught type so unexpected
+            # programming errors (AttributeError, KeyError, ...) propagate and
+            # abort loudly rather than being silently logged as "filing chunk
+            # failed" — masking a real bug. On any expected failure we skip the
+            # disk flush entirely (below) so the corpus is never half-rewritten.
             n_failed += 1
             log.error(
                 "filing_chunk_failed",
@@ -777,7 +795,6 @@ def chunk_all(
             )
             continue
 
-        out_path.parent.mkdir(parents=True, exist_ok=True)
         # JSONL: one line per chunk. Empty filings write a zero-byte
         # file (no newline) — preserves the corpus layout for
         # MANIFEST.json hashing.
@@ -785,7 +802,7 @@ def chunk_all(
             payload = "\n".join(chunk.model_dump_json() for chunk in chunks) + "\n"
         else:
             payload = ""
-        out_path.write_text(payload, encoding="utf-8")
+        pending_writes.append((out_path, payload))
 
         n_filings += 1
         n_chunks_total += len(chunks)
@@ -793,6 +810,15 @@ def chunk_all(
             sum_chunk_tokens += c.n_tokens
             if c.n_tokens > max_chunk_tokens:
                 max_chunk_tokens = c.n_tokens
+
+    # All-or-nothing flush: only touch the corpus on a fully clean pass. On any
+    # per-filing failure, return 1 WITHOUT writing — the on-disk corpus stays
+    # consistent with its committed MANIFEST.json (the caller short-circuits
+    # write_manifest on this non-zero rc).
+    if n_failed == 0:
+        for out_path, payload in pending_writes:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(payload, encoding="utf-8")
 
     duration = time.perf_counter() - t_start
     mean_tokens = (sum_chunk_tokens / n_chunks_total) if n_chunks_total else 0.0
