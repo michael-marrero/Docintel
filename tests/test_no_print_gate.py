@@ -20,11 +20,11 @@ bash gate against:
   ``# noqa: no-print``. The gate's per-line ``sed | grep '# noqa: no-print'``
   check must silence it and the gate must exit 0.
 
-Wave-0 semantics (project xfail-first convention, Phases 6-11): every test is
-``@pytest.mark.xfail(strict=True, ...)``. At Wave 0 ``scripts/check_no_print.sh``
-does not exist yet (Plan 12-03 ships it), so each test fails as expected (the
-``_GATE_SCRIPT.is_file()`` assertion / the missing-script subprocess call is the
-strict-xfail trigger). Plan 12-05's xfail-removal sweep flips these to green.
+Lifecycle: these were scaffolded xfail-strict in Wave 0 (Plan 12-01, project
+xfail-first convention, Phases 6-11) while ``scripts/check_no_print.sh`` did not
+yet exist. Plan 12-03 ships the gate + rewords ``qdrant_dense.py:83``, so the
+xfail markers were removed in the same plan (a passing xfail-strict is an XPASS,
+which fails the suite). V-09..V-11 now assert green directly.
 
 Analogs:
 * ``tests/test_prompt_locality.py`` — the verbatim gate-test convention
@@ -40,15 +40,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _GATE_SCRIPT = _REPO_ROOT / "scripts" / "check_no_print.sh"
 _NEG_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "no_print_violations"
 _NOQA_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "no_print_violations_with_noqa"
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-03 ships scripts/check_no_print.sh + rewords qdrant_dense.py:83")
 def test_gate_fails_on_planted_print() -> None:
     """V-09 — gate exits non-zero against the planted bare ``print(`` (no escape).
 
@@ -70,7 +67,6 @@ def test_gate_fails_on_planted_print() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-03 ships scripts/check_no_print.sh + rewords qdrant_dense.py:83")
 def test_gate_passes_on_canonical_src() -> None:
     """V-10 — scanning ``packages/*/src`` (no SCAN_DIR arg) exits 0 once 12-03 lands.
 
@@ -93,7 +89,6 @@ def test_gate_passes_on_canonical_src() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-03 ships scripts/check_no_print.sh noqa handling")
 def test_gate_respects_noqa() -> None:
     """V-11 — D-07 per-line ``# noqa: no-print`` escape hatch.
 

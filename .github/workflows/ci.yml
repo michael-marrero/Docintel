@@ -160,6 +160,12 @@ jobs:
         # (Phase 6 D-04 structural enforcement of GEN-01).
         run: bash scripts/check_prompt_locality.sh
 
+      - name: Check no print (OBS-03)
+        # Production code must not use unstructured print(); logs are JSON via
+        # structlog (FND-02). Scans packages/*/src; per-line `# noqa: no-print`
+        # escape. Phase 12 D-06/D-07/D-08 structural enforcement of OBS-03.
+        run: bash scripts/check_no_print.sh
+
       - name: Chunk-idempotency gate (ING-04)
         # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
         # committed normalized JSON and asserts byte-identity vs. committed
