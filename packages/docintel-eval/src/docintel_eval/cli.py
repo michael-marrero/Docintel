@@ -23,9 +23,12 @@ Subcommand handlers:
   ablate   — runs baseline + ablation arms in one process and emits per-arm
              sidecars + a comparison table (ABL-01/ABL-02). Flag-free like run
              (D-03 — fixed arm set, no --arms knob). Phase 11 / Plan 11-02.
-  validate — EVAL-04 well-formedness gate. Handler lands in Wave 3 / Plan 10-03.
-             The subparser is registered here so validate is recognized by argparse
-             and the help text is correct.
+  validate — EVAL-04 well-formedness gate. Dispatches to cmd_validate for a
+             single-run report dir (under data/eval/reports/) or to
+             cmd_validate_ablation for an ablation dir (under
+             data/eval/ablations/, D-11). The arg is resolved + confined under
+             one of those two roots before dispatch (T-10-03 / T-11-05); paths
+             outside both are rejected.
 """
 
 from __future__ import annotations
@@ -96,20 +99,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "validate":
         from pathlib import Path
 
-        from docintel_eval.validate import cmd_validate
+        from docintel_eval.validate import cmd_validate, cmd_validate_ablation
 
         resolved = Path(args.report_dir).resolve()
-        # T-10-03 path traversal mitigation: confine report_dir under
-        # data/eval/reports/ before calling cmd_validate.
+        # Path traversal mitigation (T-10-03 / T-11-05): confine the arg under
+        # data/eval/reports/ (single-run) OR data/eval/ablations/ (ablation)
+        # before dispatching. Reject paths outside BOTH roots.
         reports_root = Path("data/eval/reports").resolve()
-        if resolved != reports_root and reports_root not in resolved.parents:
-            log.error(
-                "validate_path_outside_reports",
-                report_dir=str(resolved),
-                reports_root=str(reports_root),
-            )
-            return 1
-        return cmd_validate(resolved)
+        ablations_root = Path("data/eval/ablations").resolve()
+        is_under_reports = resolved == reports_root or reports_root in resolved.parents
+        is_under_ablations = resolved == ablations_root or ablations_root in resolved.parents
+        if is_under_ablations:
+            # Ablation gate (D-11) — confined under data/eval/ablations/ (T-11-05).
+            return cmd_validate_ablation(resolved)
+        if is_under_reports:
+            return cmd_validate(resolved)
+        log.error(
+            "validate_path_outside_roots",
+            report_dir=str(resolved),
+            reports_root=str(reports_root),
+            ablations_root=str(ablations_root),
+        )
+        return 1
 
     # argparse with required=True guarantees args.cmd is a registered subcommand,
     # so this fallback is unreachable. Kept for defensive completeness.

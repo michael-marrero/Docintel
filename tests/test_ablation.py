@@ -410,7 +410,6 @@ def test_output_location() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_VALIDATE)
 def test_validate_rejects_missing_arm(tmp_path: Path) -> None:
     """D-11: extended validate rejects an ablation dir missing a required arm (exit 1).
 
