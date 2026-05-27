@@ -291,7 +291,19 @@ def _read_per_question(arm_root: Path) -> dict[str, dict[str, Any]]:
     """
     payload = json.loads((arm_root / "results.json").read_text(encoding="utf-8"))
     rows: list[dict[str, Any]] = payload["per_question"]
-    return {str(row["id"]): row for row in rows}
+    by_id: dict[str, dict[str, Any]] = {str(row["id"]): row for row in rows}
+    # Assert id uniqueness. A duplicate id (corrupt/mis-generated ground truth)
+    # would silently collapse rows here; because every arm collapses identically
+    # the columns stay equal-length and bootstrap_delta_ci never raises — so the
+    # ablation would silently compute deltas over a SUBSET of questions. GT-02
+    # should prevent dup ids upstream, but eval-integrity infrastructure must not
+    # silently subset the comparison set.
+    if len(by_id) != len(rows):
+        raise ValueError(
+            f"duplicate question id in {arm_root / 'results.json'} "
+            f"({len(rows)} rows, {len(by_id)} unique)"
+        )
+    return by_id
 
 
 def _mean(values: list[float]) -> float:
