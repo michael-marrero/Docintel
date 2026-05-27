@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 from structlog.testing import capture_logs
 
@@ -58,7 +57,6 @@ def _downstream_trace_ids(records: list[dict]) -> list[str]:
     return [rec["trace_id"] for rec in records if "trace_id" in rec]
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-04 attaches TraceIdMiddleware to the FastAPI app")
 def test_trace_id_reaches_downstream_logs(client: TestClient) -> None:
     """V-01 — header trace_id appears on a downstream log event (merge_contextvars).
 
@@ -78,7 +76,6 @@ def test_trace_id_reaches_downstream_logs(client: TestClient) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-04 attaches TraceIdMiddleware to the FastAPI app")
 def test_generates_uuid_when_header_absent(client: TestClient) -> None:
     """V-02 — absent X-Trace-Id → a UUID4 is generated and bound.
 
@@ -95,7 +92,6 @@ def test_generates_uuid_when_header_absent(client: TestClient) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-04 UUID-validates the inbound X-Trace-Id (Security V5)")
 def test_rejects_non_uuid_header(client: TestClient) -> None:
     """V-03 — non-UUID X-Trace-Id → a fresh UUID4 (log-injection guard, Security V5).
 

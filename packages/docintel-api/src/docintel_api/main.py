@@ -14,11 +14,13 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Literal
 
+from docintel_api.middleware import TraceIdMiddleware
 from docintel_core import __version__
 from docintel_core.config import Settings
 from docintel_core.log import configure_logging
 from fastapi import FastAPI
 from pydantic import BaseModel
+from starlette.middleware import Middleware
 
 # ---------------------------------------------------------------------------
 # Configuration / app construction
@@ -48,6 +50,10 @@ app = FastAPI(
     description=(
         "Production-shaped RAG over SEC 10-K filings. " "Phase 1: scaffold + /health only."
     ),
+    # OBS-01 / D-01: pure-ASGI trace_id binding for every request. Reuses the
+    # existing _settings() accessor so config.py stays the only env reader
+    # (FND-11). NOT BaseHTTPMiddleware — see docintel_api.middleware docstring.
+    middleware=[Middleware(TraceIdMiddleware, settings=_settings())],
 )
 
 
