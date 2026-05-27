@@ -27,10 +27,11 @@ cmd_validate_ablation(ablation_dir) -> int:
     4. Baseline present (D-03).
     5. Deltas + CIs present + finite: each (delta, lo, hi) is three finite floats
        with lo <= hi (NOT lo <= delta <= hi — bootstrap CIs can sit one-sided).
-    6. Determinism recompute: for one non-baseline arm x one headline metric,
+    6. Determinism recompute: for EVERY non-baseline arm x EVERY headline metric,
        re-run bootstrap_delta_ci(seed=42) over the committed per_question[]
-       columns and assert it reproduces the committed (delta, lo, hi) bit-for-bit
-       (T-11-09 — a hand-edited delta fails this; the strongest D-11 check).
+       columns and assert it reproduces the committed (delta, lo, hi) within a
+       tight tolerance (T-11-09 — a hand-edited delta in ANY cell fails this; the
+       strongest D-11 check).
 
 Security note (T-10-03 / T-11-05 path traversal):
   Path confinement is enforced by the CLI caller (cli.py) before either
@@ -304,8 +305,9 @@ def cmd_validate_ablation(ablation_dir: Path) -> int:
       4. Baseline present (D-03).
       5. Each non-baseline arm x headline metric carries a finite (delta, lo, hi)
          triple with lo <= hi.
-      6. Determinism: recompute one arm x metric delta with seed=42 from the
-         committed per_question[] columns and assert a bit-for-bit match (T-11-09).
+      6. Determinism: recompute every non-baseline arm x headline metric delta
+         with seed=42 from the committed per_question[] columns and assert each
+         matches the committed triple within a tight tolerance (T-11-09).
 
     Args:
         ablation_dir: Path to the ablation run dir. The CLI caller (cli.py)
@@ -422,22 +424,23 @@ def cmd_validate_ablation(ablation_dir: Path) -> int:
                 return 1
 
     # --- Check 6: determinism recompute (T-11-09). Re-run bootstrap_delta_ci with
-    # the committed seed/n_boot over the committed per_question[] columns for ONE
-    # non-baseline arm x metric and assert a bit-for-bit match. A hand-edited
-    # delta fails here — the integrity gate the committed stub sample relies on.
+    # the committed seed/n_boot over the committed per_question[] columns for EVERY
+    # non-baseline arm x EVERY headline metric and assert each reproduces the
+    # committed (delta, lo, hi). A hand-edited delta anywhere fails here — the
+    # integrity gate the committed stub sample relies on. (WR-01: recomputing only
+    # one cell left the other five facing just the finite/lo<=hi checks, which a
+    # forged triple easily satisfies; at n=32 x 6 cells the full recompute is still
+    # sub-second.)
     if non_baseline:
         seed_obj: object = manifest.get("seed", 42)
         n_boot_obj: object = manifest.get("n_boot", 10_000)
         seed_i: int = int(seed_obj) if isinstance(seed_obj, int) else 42
         n_boot_i: int = int(n_boot_obj) if isinstance(n_boot_obj, int) else 10_000
-        recompute_arm = non_baseline[0]
-        recompute_metric = _ABLATION_HEADLINE_METRICS[0]
+
+        # Baseline columns are shared across every arm recompute — read once.
         try:
             base_rows = json.loads(
                 (ablation_dir / baseline_name / "results.json").read_text(encoding="utf-8")
-            )["per_question"]
-            arm_rows = json.loads(
-                (ablation_dir / recompute_arm / "results.json").read_text(encoding="utf-8")
             )["per_question"]
         except (json.JSONDecodeError, KeyError, OSError) as exc:
             log.error(
@@ -447,25 +450,70 @@ def cmd_validate_ablation(ablation_dir: Path) -> int:
             )
             return 1
         base_by_id = {str(r["id"]): r for r in base_rows}
-        arm_by_id = {str(r["id"]): r for r in arm_rows}
         ids = sorted(base_by_id)
-        arm_col: list[float] = [float(arm_by_id[i][recompute_metric]) for i in ids]
-        base_col: list[float] = [float(base_by_id[i][recompute_metric]) for i in ids]
-        recomputed = list(
-            bootstrap_delta_ci(arm_col, base_col, n_boot=n_boot_i, seed=seed_i)
-        )
-        committed_triple = _arm_deltas_from_manifest(manifest, recompute_arm)[recompute_metric]
-        committed = [float(x) for x in committed_triple]
-        if recomputed != committed:
-            log.error(
-                "validate_ablation_determinism_mismatch",
-                ablation_dir=str(ablation_dir),
-                arm=recompute_arm,
-                metric=recompute_metric,
-                committed=committed,
-                recomputed=recomputed,
-            )
-            return 1
+
+        for recompute_arm in non_baseline:
+            try:
+                arm_rows = json.loads(
+                    (ablation_dir / recompute_arm / "results.json").read_text(encoding="utf-8")
+                )["per_question"]
+            except (json.JSONDecodeError, KeyError, OSError) as exc:
+                log.error(
+                    "validate_ablation_recompute_read_error",
+                    ablation_dir=str(ablation_dir),
+                    arm=recompute_arm,
+                    error=str(exc),
+                )
+                return 1
+            arm_by_id = {str(r["id"]): r for r in arm_rows}
+
+            # WR-02: a sidecar row missing "id"/the metric key, or an arm missing
+            # an id present in the baseline (the L-03 alignment failure this gate
+            # exists to catch), must yield a clean exit 1 — not a raw KeyError.
+            if not set(ids) <= set(arm_by_id):
+                log.error(
+                    "validate_ablation_arm_id_mismatch",
+                    ablation_dir=str(ablation_dir),
+                    arm=recompute_arm,
+                )
+                return 1
+
+            arm_deltas = _arm_deltas_from_manifest(manifest, recompute_arm)
+            for recompute_metric in _ABLATION_HEADLINE_METRICS:
+                try:
+                    arm_col: list[float] = [float(arm_by_id[i][recompute_metric]) for i in ids]
+                    base_col: list[float] = [float(base_by_id[i][recompute_metric]) for i in ids]
+                    committed_triple = arm_deltas[recompute_metric]
+                    committed = [float(x) for x in committed_triple]
+                except (KeyError, ValueError, TypeError) as exc:
+                    log.error(
+                        "validate_ablation_recompute_row_error",
+                        ablation_dir=str(ablation_dir),
+                        arm=recompute_arm,
+                        metric=recompute_metric,
+                        error=str(exc),
+                    )
+                    return 1
+                recomputed = list(
+                    bootstrap_delta_ci(arm_col, base_col, n_boot=n_boot_i, seed=seed_i)
+                )
+                # WR-04: compare with a tight tolerance, NOT strict ==. In stub
+                # mode the values are exact dyadic rationals, but real-mode deltas
+                # plus a NumPy/BLAS/Python version change can perturb the last ULP;
+                # strict != would then fail the gate on a CORRECT recompute.
+                if len(recomputed) != len(committed) or not all(
+                    math.isclose(r, c, rel_tol=0.0, abs_tol=1e-12)
+                    for r, c in zip(recomputed, committed, strict=True)
+                ):
+                    log.error(
+                        "validate_ablation_determinism_mismatch",
+                        ablation_dir=str(ablation_dir),
+                        arm=recompute_arm,
+                        metric=recompute_metric,
+                        committed=committed,
+                        recomputed=recomputed,
+                    )
+                    return 1
 
     log.info(
         "validate_ablation_ok",
