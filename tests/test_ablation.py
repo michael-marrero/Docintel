@@ -1,18 +1,24 @@
 """Behavioral tests for the Phase 11 ablation harness (ABL-01, ABL-02, D-11).
 
-Wave-0 semantics (Plan 11-01): every behavioral test here is scaffolded as
-xfail(strict=True) against the not-yet-existing ``docintel_eval.ablate`` module
-and the not-yet-extended ``docintel_eval.validate`` ablation path. Each test
-DEFERS its imports into the test body so pytest collection never crashes — the
-``ImportError`` (or, for the CLI/output-location tests, the non-zero exit) IS the
-expected strict-xfail trigger until Waves 1-2 land ``ablate``/extended-``validate``.
-As each wave ships, its test flips from xfail to pass; a premature pass surfaces
-as an XPASS-strict error, forcing the stale ``xfail`` marker to be removed. This
-mirrors the project's established ``tests_before_code=true`` convention (Phases
-9/10 Wave 0).
+Phase-gate state (Plan 11-06): the Wave-0 strict-expected-failure scaffold has
+been fully removed. Plans 11-02/11-03 landed ``docintel_eval.ablate`` and the
+extended ``docintel_eval.validate`` ablation path, so every stub-track test that
+was originally scaffolded against those not-yet-existing seams now passes as a
+plain test (each wave removed its own marker as it turned green; this final sweep
+reconciled the file to zero stub-track markers — the Phase 9/10 end-of-phase
+sweep precedent). The behavioral tests still DEFER their imports into the test
+body (a harmless habit from the scaffold era; the imports now resolve).
 
-The SINGLE non-xfail test is the D-02 backward-compatibility reference
-(``test_run_eval_arm_injection_backward_compatible``): it asserts the EXISTING
+The SINGLE retained marker is the ``real`` pytest mark on
+``test_real_ablate_includes_chunk_sweep``: the chunk-size sweep re-chunks →
+re-embeds → re-indexes (real-pipeline cost), so it is ``workflow_dispatch``-only
+(D-04/D-05) and DESELECTED offline by ``-m "not real"`` — it is NOT an
+expected-failure (mirrors how Phases 4/5/6/10 retain the real marker without a
+strict-failure marker once the implementation exists; EMPIRICAL-PENDING the
+real run).
+
+The D-02 backward-compatibility reference
+(``test_run_eval_arm_injection_backward_compatible``) asserts the EXISTING
 ``run_eval`` already accepts ``output_dir`` (true today) so Plan 02's arm-injection
 refactor — which adds an optional ``generator`` kwarg — must not break the seven
 existing call-sites. It passes today and stays green; it is a true canary.
@@ -20,12 +26,12 @@ existing call-sites. It passes today and stays green; it is a true canary.
 Requirement coverage (VALIDATION.md Per-Task Verification Map):
   ABL-01 — test_stub_ablate_emits_three_component_arms, test_deltas_present_and_finite,
             test_arm_construction_uses_null_adapters, test_ablate_determinism,
-            test_real_ablate_includes_chunk_sweep (real + xfail)
+            test_real_ablate_includes_chunk_sweep (real-only, deselected offline)
   ABL-02 — test_report_table_shape, test_headline_sentence_per_ablation,
             test_output_location
   D-11   — test_validate_rejects_missing_arm, test_validate_nan_and_wellformed,
             test_validate_determinism_recompute
-  D-02   — test_run_eval_arm_injection_backward_compatible (non-xfail reference)
+  D-02   — test_run_eval_arm_injection_backward_compatible (canary reference)
 
 Locked contract this scaffold pins (CONTEXT.md D-01..D-11, L-01..L-04):
   - Stub ``ablate`` emits exactly three component arms: baseline / no-rerank /
@@ -69,15 +75,6 @@ _CHUNK_SWEEP_ARMS = ("chunk-300", "chunk-450", "chunk-600")
 _EXPECTED_N_QUESTIONS = 32
 
 # ---------------------------------------------------------------------------
-# Reusable xfail reason (the one implementation seam still pending: the
-# real-mode chunk-size sweep, which Plan 06 lands). The Plan 02/03 ablate /
-# report / validate seams have all shipped, so their xfail reasons were removed
-# along with their markers (mirrors Plan 02's _REASON_ARM_BUILDERS cleanup).
-# ---------------------------------------------------------------------------
-_REASON_REAL = "Real-mode chunk-size sweep ({300,450,600}) is workflow_dispatch-only (D-04); Plan 06"
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -88,7 +85,7 @@ def _run_ablate_into(tmp_path: Path) -> Path:
     Mirrors test_eval_harness.py:_run_eval_into. Calls ``run_ablations(cfg,
     output_dir=...)`` directly so the run writes under ``tmp_path`` instead of
     polluting the tracked ``data/eval/ablations/`` tree (T-11-01 mitigation).
-    The deferred import is the strict-xfail trigger until ``ablate`` lands.
+    The deferred import resolves now that ``ablate`` has landed (Plan 02).
     """
     from docintel_core.config import Settings  # type: ignore[import-not-found]
     from docintel_eval.ablate import run_ablations  # type: ignore[import-not-found]
@@ -276,22 +273,21 @@ def test_ablate_determinism(tmp_path: Path) -> None:
 
 # ---------------------------------------------------------------------------
 # ABL-01 (real): workflow_dispatch run includes the chunk-300/450/600 sweep rows.
-# Marked BOTH @pytest.mark.real (deselected offline by -m "not real") AND
-# @pytest.mark.xfail(strict=True). Plan 06 removes the xfail marker but KEEPS the
-# real marker (the EMPIRICAL-PENDING pattern: ci.yml:102 + Phase 5/6 precedent).
+# Marked with the `real` mark ONLY — deselected offline by -m "not real". The
+# real-mode chunk-size sweep is the one EMPIRICAL-PENDING seam (ci.yml real job +
+# Phase 5/6/10 precedent); it is NOT an expected failure now that ablate exists.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.real
-@pytest.mark.xfail(strict=True, reason=_REASON_REAL)
 def test_real_ablate_includes_chunk_sweep(tmp_path: Path) -> None:
     """ABL-01 (real): the real-mode ablation run includes chunk-300/450/600 rows.
 
     The chunk-size sweep re-chunks -> re-embeds -> re-indexes (real pipeline cost
     offline-first stub CI avoids), so it is workflow_dispatch-only (D-04/D-05). This
-    test is deselected offline by ``-m "not real"``; under a bare run the deferred
-    import still fails, so strict-xfail holds. Asserts each swept-size arm dir exists
-    and the comparison manifest carries each chunk-* arm.
+    test is deselected offline by ``-m "not real"`` and runs only under the real
+    workflow_dispatch ablation job. Asserts each swept-size arm dir exists and the
+    comparison manifest carries each chunk-* arm.
     """
     run_dir = _run_ablate_into(tmp_path)
     manifest = _load_ablation_manifest(run_dir)
@@ -448,9 +444,8 @@ def test_validate_nan_and_wellformed() -> None:
     since json.dumps serialises NaN as the 'NaN' token that the recursive _has_nan_or_inf
     scan catches); (2) a well-formed committed stub-sample ablation dir returns 0.
 
-    The well-formed leg validates the committed data/eval/ablations/stub-sample/ once it
-    exists (Plan 03). Until then this whole test is xfail (the import of
-    cmd_validate_ablation fails first).
+    The well-formed leg validates the committed data/eval/ablations/stub-sample/
+    (landed by Plan 03).
     """
     import json as _json
     import tempfile
@@ -497,8 +492,7 @@ def test_validate_determinism_recompute() -> None:
     per_question[] columns for at least one arm x metric and asserts it reproduces the
     committed (delta, lo, hi) exactly — catching any hand-edited / drifted committed
     sidecar (L-04, integrity). Asserts validate returns 0 on the committed
-    data/eval/ablations/stub-sample once it exists (Plan 03); until then the import of
-    cmd_validate_ablation fails first, so this stays xfail.
+    data/eval/ablations/stub-sample (landed by Plan 03).
     """
     from docintel_eval.validate import cmd_validate_ablation  # type: ignore[import-not-found]
 
@@ -511,8 +505,8 @@ def test_validate_determinism_recompute() -> None:
 
 # ---------------------------------------------------------------------------
 # D-02: the run_eval arm-injection refactor is backward-compatible.
-# This is the ONE non-xfail reference (a true canary): it passes today and must
-# stay green through Plan 02's refactor, which adds an optional `generator` kwarg.
+# This is the D-02 reference canary: it passed before Plan 02's refactor and must
+# stay green through it, since the refactor adds an optional `generator` kwarg.
 # ---------------------------------------------------------------------------
 
 
@@ -522,7 +516,7 @@ def test_run_eval_arm_injection_backward_compatible() -> None:
     The arm-injection mechanism (Plan 02) adds an optional ``generator`` kwarg to
     run_eval; this canary pins the EXISTING contract that the seven call-sites and the
     existing eval tests rely on — run_eval is importable and accepts ``output_dir`` as a
-    keyword. It passes TODAY (non-xfail) and must stay green after Plan 02's refactor.
+    keyword. It passed before AND after Plan 02's refactor (always a plain test).
     The full backward-compat regression guard is the existing
     tests/test_eval_harness.py + tests/test_eval_determinism.py suite.
     """
