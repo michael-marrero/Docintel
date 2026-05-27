@@ -69,11 +69,11 @@ _CHUNK_SWEEP_ARMS = ("chunk-300", "chunk-450", "chunk-600")
 _EXPECTED_N_QUESTIONS = 32
 
 # ---------------------------------------------------------------------------
-# Reusable xfail reasons (one per implementation seam still pending)
+# Reusable xfail reason (the one implementation seam still pending: the
+# real-mode chunk-size sweep, which Plan 06 lands). The Plan 02/03 ablate /
+# report / validate seams have all shipped, so their xfail reasons were removed
+# along with their markers (mirrors Plan 02's _REASON_ARM_BUILDERS cleanup).
 # ---------------------------------------------------------------------------
-_REASON_ABLATE = "Wave 1+: docintel_eval.ablate.run_ablations not yet implemented (Plan 02/03)"
-_REASON_REPORT = "Wave 2: render_ablation_markdown / ablation-report.md not yet implemented (Plan 03)"
-_REASON_VALIDATE = "Wave 2: extended ablation validate gate not yet implemented (Plan 03)"
 _REASON_REAL = "Real-mode chunk-size sweep ({300,450,600}) is workflow_dispatch-only (D-04); Plan 06"
 
 
@@ -440,7 +440,6 @@ def test_validate_rejects_missing_arm(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_VALIDATE)
 def test_validate_nan_and_wellformed() -> None:
     """D-11: extended validate rejects NaN/Inf deltas (exit 1), accepts well-formed (exit 0).
 
@@ -491,7 +490,6 @@ def test_validate_nan_and_wellformed() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_VALIDATE)
 def test_validate_determinism_recompute() -> None:
     """D-11: extended validate recomputes one arm x metric delta (seed=42) bit-for-bit.
 

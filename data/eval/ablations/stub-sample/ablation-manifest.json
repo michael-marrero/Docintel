@@ -1,0 +1,141 @@
+{
+  "arm_components": {
+    "baseline": {
+      "bm25": "bm25s",
+      "reranker": "stub-reranker"
+    },
+    "dense-only": {
+      "bm25": "null-bm25",
+      "reranker": "stub-reranker"
+    },
+    "no-rerank": {
+      "bm25": "bm25s",
+      "reranker": "null-reranker"
+    }
+  },
+  "arm_names": [
+    "baseline",
+    "no-rerank",
+    "dense-only"
+  ],
+  "arms": {
+    "baseline": {
+      "components": {
+        "bm25": "bm25s",
+        "reranker": "stub-reranker"
+      },
+      "deltas": {},
+      "metrics": {
+        "hit_at_3": 0.0,
+        "hit_at_5": 0.0,
+        "reciprocal_rank": 0.048003472222222225
+      }
+    },
+    "dense-only": {
+      "components": {
+        "bm25": "null-bm25",
+        "reranker": "stub-reranker"
+      },
+      "deltas": {
+        "hit_at_3": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "hit_at_5": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "reciprocal_rank": [
+          -0.013281250000000001,
+          -0.026562500000000003,
+          -0.0027777777777777783
+        ]
+      },
+      "metrics": {
+        "hit_at_3": 0.0,
+        "hit_at_5": 0.0,
+        "reciprocal_rank": 0.034722222222222224
+      }
+    },
+    "no-rerank": {
+      "components": {
+        "bm25": "bm25s",
+        "reranker": "null-reranker"
+      },
+      "deltas": {
+        "hit_at_3": [
+          0.15625,
+          0.03125,
+          0.28125
+        ],
+        "hit_at_5": [
+          0.1875,
+          0.0625,
+          0.34375
+        ],
+        "reciprocal_rank": [
+          0.1605406746031746,
+          0.056318204365079415,
+          0.28455078125000005
+        ]
+      },
+      "metrics": {
+        "hit_at_3": 0.15625,
+        "hit_at_5": 0.1875,
+        "reciprocal_rank": 0.20854414682539682
+      }
+    }
+  },
+  "baseline": "baseline",
+  "chunk_sizes": [],
+  "dataset_hash": "5d9f879207c6b8a0c363804eebb9add4babefaa63beadcea7dc80dbd8db88d82",
+  "deltas": {
+    "dense-only": {
+      "hit_at_3": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "hit_at_5": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "reciprocal_rank": [
+        -0.013281250000000001,
+        -0.026562500000000003,
+        -0.0027777777777777783
+      ]
+    },
+    "no-rerank": {
+      "hit_at_3": [
+        0.15625,
+        0.03125,
+        0.28125
+      ],
+      "hit_at_5": [
+        0.1875,
+        0.0625,
+        0.34375
+      ],
+      "reciprocal_rank": [
+        0.1605406746031746,
+        0.056318204365079415,
+        0.28455078125000005
+      ]
+    }
+  },
+  "git_sha": "08536910a721b0c3ecb8994404efeba3886a1b74-dirty",
+  "headline_metrics": [
+    "hit_at_5",
+    "hit_at_3",
+    "reciprocal_rank"
+  ],
+  "index_identity_hashes": {},
+  "n_boot": 10000,
+  "provider": "stub",
+  "representative": false,
+  "seed": 42
+}
