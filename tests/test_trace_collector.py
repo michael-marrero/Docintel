@@ -23,12 +23,13 @@ Covers 12-VALIDATION.md rows V-04..V-07 — the ``TraceSpanCollector`` +
   returns N dicts matching what was written; a missing dir returns ``[]``; a
   deliberately malformed final line is tolerated (skipped, never raises).
 
-Wave-0 semantics (project xfail-first convention, Phases 6-11): every test
-is ``@pytest.mark.xfail(strict=True, ...)``. ``docintel_core.trace`` does not
-exist until Plan 12-02 — the module-top import raises ImportError, which is
-the expected strict-xfail trigger at collection... so the import is deferred
-into each test body (so pytest collection never crashes before Wave 1 ships
-the implementation). Plan 12-05's xfail-removal sweep flips these to green.
+History (project xfail-first convention, Phases 6-11): Plan 12-01 (Wave 0)
+scaffolded every test below as ``@pytest.mark.xfail(strict=True, ...)`` while
+``docintel_core.trace`` did not yet exist. Plan 12-02 shipped the
+implementation and removed those markers in the same commit (an xfail-strict
+test that starts passing becomes an XPASS = suite failure), so these are now
+GREEN contract tests. The per-test ``trace`` import is kept inside each body
+(it predates the implementation); it is harmless now that the module exists.
 
 Analogs:
 * ``tests/test_generator_telemetry.py:1-52`` + ``tests/test_retriever_search.py:121-163``
@@ -45,11 +46,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 import structlog
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-02 implements docintel_core.trace.TraceSpanCollector")
 def test_contextvars_cleared_between_traces(tmp_path: Path) -> None:
     """V-04 — contextvars cleared between traces; no leakage (RESEARCH Pitfall 2).
 
@@ -78,7 +77,6 @@ def test_contextvars_cleared_between_traces(tmp_path: Path) -> None:
         assert id_b != id_a
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-02 implements docintel_core.trace.TraceSpanCollector")
 def test_writes_one_record_per_trace(tmp_path: Path) -> None:
     """V-05 — exactly one consolidated trace_completed JSON line per trace.
 
@@ -103,7 +101,6 @@ def test_writes_one_record_per_trace(tmp_path: Path) -> None:
     assert record["trace_id"] == tc.trace_id
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-02 implements docintel_core.trace.TraceSpanCollector")
 def test_record_schema_well_formed(tmp_path: Path) -> None:
     """V-06 — record is well-formed: trace_id, source, ordered spans[], token/cost.
 
@@ -154,7 +151,6 @@ def test_record_schema_well_formed(tmp_path: Path) -> None:
     assert [s["name"] for s in rec["spans"]] == ["retrieval", "generation"]
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12 12-02 implements docintel_core.trace.load_traces")
 def test_load_traces_roundtrip(tmp_path: Path) -> None:
     """V-07 — load_traces round-trips the writer; missing dir -> []; malformed line tolerated.
 
