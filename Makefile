@@ -16,7 +16,7 @@ SHELL := /usr/bin/env bash
 GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 .PHONY: help test lint format lock-check build build-api build-ui \
-        serve demo down fetch-corpus build-indices eval
+        serve demo down fetch-corpus build-indices ablate-chunk-sweep eval
 
 help: ## Show all targets with their current status
 	@echo "docintel — Makefile targets"
@@ -28,6 +28,7 @@ help: ## Show all targets with their current status
 	@echo "    lock-check     uv lock --check (lockfile in sync with pyprojects)"
 	@echo "    fetch-corpus   fetch + normalize + chunk SEC 10-K corpus (Phase 3)"
 	@echo "    build-indices  build dense + BM25 indices from the corpus (Phase 4)"
+	@echo "    ablate-chunk-sweep  Phase 11 ABL-01 chunk-size sweep {300,450,600} — REAL-mode only; alternate indices are gitignored"
 	@echo "    build          docker build both api and ui targets"
 	@echo "    build-api      docker build --target api"
 	@echo "    build-ui       docker build --target ui"
@@ -90,6 +91,56 @@ fetch-corpus: ## Phase 3: fetch + normalize + chunk + manifest SEC 10-K corpus.
 
 build-indices: ## Phase 4: build dense + BM25 indices from the committed corpus.
 	uv run docintel-index all
+
+# ---------------------------------------------------------------------------
+# Phase 11 (ABL-01 / D-04 / D-05): chunk-size sweep build target. REAL-mode ONLY
+# (invoked solely by the workflow_dispatch real job, Plan 05 — never on a PR;
+# re-chunk -> re-embed -> re-index x3 sizes is the real-pipeline cost offline-
+# first stub-CI avoids). For each size S in {300,450,600} it re-chunks the
+# committed normalized corpus at S and builds a size-specific index, by
+# OVERRIDING the EXISTING env-backed Settings fields DOCINTEL_DATA_DIR /
+# DOCINTEL_INDEX_DIR at invocation — NO new env var (FND-11). A1: only the
+# greedy split point is swept; overlap (50) + hard cap (500) stay fixed.
+#
+# Layout (per size S, all under data/indices/ so gitignored by the umbrella
+# rule at .gitignore:24 — A3): a per-size data root data/indices/chunk-S/data/
+# whose corpus/ reuses the production raw/normalized/snapshot (symlinked, never
+# rewritten — T-11-10) and holds the size-S chunks + a size-S corpus MANIFEST.
+# build_indices reads corpus_root=cfg.data_dir/corpus (chunks + MANIFEST.json
+# for the corpus identity hash) and writes index_root=cfg.index_dir, so pointing
+# DOCINTEL_DATA_DIR at the per-size data root and DOCINTEL_INDEX_DIR at
+# data/indices/chunk-S/index makes the size-S chunks discoverable and the index
+# land in the gitignored size root. The size-S corpus MANIFEST records
+# chunker.target_tokens=S (write_manifest threads it), so each size gets a
+# distinct corpus_manifest_sha256 -> distinct index identity for free (D-05).
+# The 450 arm reuses the production corpus/index as the baseline (no rebuild).
+# ---------------------------------------------------------------------------
+
+ablate-chunk-sweep: ## Phase 11 ABL-01 chunk-size sweep {300,450,600} — REAL-mode only; alternate indices are gitignored.
+	@for S in 300 450 600; do \
+	  if [ "$$S" = "450" ]; then \
+	    echo "ablate-chunk-sweep: size 450 reuses the production corpus/index (baseline) — no rebuild"; \
+	    continue; \
+	  fi; \
+	  ROOT="data/indices/chunk-$$S"; \
+	  DATA="$$ROOT/data"; \
+	  CORPUS="$$DATA/corpus"; \
+	  echo "ablate-chunk-sweep: building size-$$S index under $$ROOT (gitignored)"; \
+	  rm -rf "$$ROOT"; \
+	  mkdir -p "$$CORPUS/chunks" "$$ROOT/index"; \
+	  ln -s "$(CURDIR)/data/corpus/raw" "$$CORPUS/raw"; \
+	  ln -s "$(CURDIR)/data/corpus/normalized" "$$CORPUS/normalized"; \
+	  ln -s "$(CURDIR)/data/corpus/companies.snapshot.csv" "$$CORPUS/companies.snapshot.csv"; \
+	  uv run docintel-ingest chunk \
+	    --normalized-root "$$CORPUS/normalized" \
+	    --out-root "$$CORPUS/chunks" \
+	    --target-tokens "$$S"; \
+	  DOCINTEL_DATA_DIR="$$DATA" \
+	    uv run python -c "from docintel_core.config import Settings; from docintel_ingest.manifest import write_manifest; write_manifest(Settings(), target_tokens=$$S)"; \
+	  DOCINTEL_DATA_DIR="$$DATA" DOCINTEL_INDEX_DIR="$$ROOT/index" \
+	    uv run docintel-index all; \
+	done
+	@echo "ablate-chunk-sweep: complete — size-300/600 indices built under data/indices/chunk-{300,600}/index (gitignored); 450 = production baseline"
 
 # ---------------------------------------------------------------------------
 # Pending targets — print the future-phase pointer and exit 1.
