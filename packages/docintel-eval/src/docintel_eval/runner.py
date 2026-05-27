@@ -60,6 +60,20 @@ __all__ = ["run_eval"]
 # ---------------------------------------------------------------------------
 
 
+# Deterministic stub-mode provenance sentinels (D-08 / D-11 / D-12). In stub mode
+# the run is non-representative and the committed stub-sample artifacts must be
+# byte-reproducible: a live git SHA (which carries "-dirty" on any working-tree
+# change AND changes on every commit) and a wall-clock timestamp / duration are
+# run-dependent, so two stub runs would not be byte-identical and the committed
+# sample would attest to an untracked source commit. These sentinels are zeroed
+# the same way total_ms is zeroed in stub mode (runner Step 4) so two stub runs
+# produce identical manifest bytes end-to-end. Real mode records the true SHA /
+# timestamp / wall-clock as before.
+_STUB_GIT_SHA: str = "stub-deterministic"
+_STUB_RUN_TIMESTAMP_UTC: str = "1970-01-01T00:00:00Z"
+_STUB_WALL_CLOCK_SECONDS: float = 0.0
+
+
 def _git_sha() -> str:
     """Return HEAD SHA with -dirty suffix if working tree has uncommitted changes."""
     sha_result = subprocess.run(
@@ -285,7 +299,16 @@ def run_eval(
     # ------------------------------------------------------------------
     # Step 7: assemble the 13-field manifest (D-07)
     # ------------------------------------------------------------------
-    wall_clock_seconds: float = time.perf_counter() - wall_start
+    # D-08 / D-11 / D-12: in stub mode the git SHA, run timestamp and wall-clock
+    # duration are run-dependent (the SHA additionally carries "-dirty" on any
+    # working-tree change), so they are replaced with fixed sentinels — exactly
+    # how total_ms is zeroed in stub mode (Step 4) — making two stub runs
+    # byte-identical and the committed stub-sample artifact reproducible. Real
+    # mode records the true values.
+    is_stub: bool = str(cfg.llm_provider) == "stub"
+    wall_clock_seconds: float = (
+        _STUB_WALL_CLOCK_SECONDS if is_stub else time.perf_counter() - wall_start
+    )
     total_cost_usd: float = sum(t.cost_usd for t in timings)
     is_representative: bool = any(t.cost_usd > 0.0 for t in timings)
 
@@ -295,8 +318,10 @@ def run_eval(
         "generator_name": generator._bundle.llm.name,
         "judge_name": generator._bundle.judge.name,
         "prompt_version_hash": PROMPT_VERSION_HASH,
-        "git_sha": _git_sha(),
-        "run_timestamp_utc": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "git_sha": _STUB_GIT_SHA if is_stub else _git_sha(),
+        "run_timestamp_utc": (
+            _STUB_RUN_TIMESTAMP_UTC if is_stub else ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+        ),
         "provider": str(cfg.llm_provider),
         "n_questions": len(records),
         "dataset_hash": _dataset_hash(questions_path),

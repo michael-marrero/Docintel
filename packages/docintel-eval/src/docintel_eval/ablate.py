@@ -60,7 +60,7 @@ from docintel_retrieve.retriever import Retriever
 
 from docintel_eval.metrics import bootstrap_delta_ci
 from docintel_eval.report import render_ablation_markdown
-from docintel_eval.runner import _dataset_hash, _git_sha, run_eval
+from docintel_eval.runner import _STUB_GIT_SHA, _dataset_hash, _git_sha, run_eval
 
 log = structlog.stdlib.get_logger(__name__)
 
@@ -450,10 +450,14 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
     # rows). Shared git_sha + dataset_hash + seed (D-01 single-process identity;
     # reuse runner._git_sha / runner._dataset_hash). representative derived like
     # runner.py: stub arms have no cost, so stub is non-representative (L-04).
+    # D-11: in stub mode the git SHA is replaced with the deterministic sentinel
+    # (same one the per-arm sidecars use) so the top-level manifest is
+    # byte-reproducible and never attests to a dirty/untracked source commit —
+    # mirrors how run_eval normalizes stub-mode provenance.
     provider: str = str(cfg.llm_provider)
     representative: bool = provider != "stub"
     manifest: dict[str, Any] = {
-        "git_sha": _git_sha(),
+        "git_sha": _STUB_GIT_SHA if provider == "stub" else _git_sha(),
         "dataset_hash": _dataset_hash(_QUESTIONS_PATH),
         "seed": _SEED,
         "n_boot": _N_BOOT,

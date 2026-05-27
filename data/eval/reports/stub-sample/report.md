@@ -12,13 +12,13 @@
 | generator | stub-llm |
 | judge | stub-judge |
 | prompt_version_hash | 65da07f1ba3e |
-| git_sha | 93f07ee95c2a12458cbb7cca6978ba13057ea3fb-dirty |
-| timestamp | 2026-05-26T00:31:27Z |
+| git_sha | stub-deterministic |
+| timestamp | 1970-01-01T00:00:00Z |
 | provider | stub |
 | n_questions | 32 |
 | dataset_hash | sha256:5d9f879207c6b8a0c363804eebb9add4babefaa63beadcea7dc80dbd8db88d82 |
 | total_cost_usd | $0.000000 |
-| wall_clock_s | 0.25 |
+| wall_clock_s | 0.00 |
 | representative | false |
 
 ## Headline Results
