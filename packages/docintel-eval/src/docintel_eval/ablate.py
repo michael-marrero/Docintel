@@ -15,12 +15,25 @@ run_ablations(cfg, *, output_dir=None) -> int:
     the dense-only arm swaps NullBM25Store into the IndexStoreBundle; both then
     construct the Retriever directly (the CD-08 seam) instead of via the factory
     helper. The Retriever hot path stays branch-free — "the swap IS the artifact".
-  - L-04: stub deltas are honest (≈0; stubs are component-insensitive). This
-    module computes NO deltas — that is Plan 03 reading these per-arm sidecars.
+  - L-04: stub deltas are honest (≈0; stubs are component-insensitive). The
+    deltas are computed from real per-arm sidecars, never fabricated; the stub
+    combined manifest carries representative:false.
 
-Delta computation, the comparison table, and the extended validate gate are
-Plan 03; this module stops at producing per-arm results.json/report.md sidecars
-under data/eval/ablations/<one-shared-ts>/<arm>/.
+After the per-arm run_eval loop (Plan 02 spine), this module (Plan 03):
+  - L-02/L-03: aligns each non-baseline arm's per_question[] to the baseline by
+    id and calls the frozen bootstrap_delta_ci(arm, baseline, n_boot=10_000,
+    seed=42) per headline metric (hit_at_5, hit_at_3, reciprocal_rank). NO new
+    metric math — the bootstrap is reused verbatim.
+  - D-08: writes ONE top-level ablation-manifest.json (shared git_sha /
+    dataset_hash / seed, arm list, an arm_components provenance map, and the
+    deltas dict) serialized with sort_keys=True + trailing newline so two stub
+    runs are byte-identical (the D-11 determinism gate).
+  - D-06/D-07: calls the pure render_ablation_markdown and writes the top-level
+    ablation-report.md comparison table.
+
+The per-arm results.json sidecars stay EXACTLY as render_results_json wrote them
+(unchanged Phase-10 schema — L-03 composability; the arm_components provenance
+lives ONLY in the top-level ablation manifest, never forked into a sidecar; W#2).
 
 Pitfall 2: each arm builds its generator ONCE and run_eval reuses
 generator._retriever — the factory retriever helper is never called per question.
@@ -28,8 +41,10 @@ generator._retriever — the factory retriever helper is never called per questi
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import structlog
 from docintel_core.adapters.factory import (
@@ -43,11 +58,27 @@ from docintel_generate.generator import Generator
 from docintel_retrieve.null_adapters import NullBM25Store, NullReranker
 from docintel_retrieve.retriever import Retriever
 
-from docintel_eval.runner import run_eval
+from docintel_eval.metrics import bootstrap_delta_ci
+from docintel_eval.report import render_ablation_markdown
+from docintel_eval.runner import _dataset_hash, _git_sha, run_eval
 
 log = structlog.stdlib.get_logger(__name__)
 
 __all__ = ["run_ablations"]
+
+# Headline retrieval metrics that carry a paired-bootstrap (delta, lo, hi) per
+# non-baseline arm (D-06). Hit@3 ties the no-rerank arm to Phase 5's reranker
+# canary. These three are computed from rankings and are honest (≈0) in stub.
+_HEADLINE_METRICS: tuple[str, ...] = ("hit_at_5", "hit_at_3", "reciprocal_rank")
+
+# Locked paired-bootstrap parameters (L-02). seed=42 is the determinism contract
+# the D-11 validate recompute depends on.
+_N_BOOT: int = 10_000
+_SEED: int = 42
+
+# Ground-truth questions file — the shared dataset whose sha256 stamps every arm
+# (D-01 single-process identity; reuse runner._dataset_hash).
+_QUESTIONS_PATH: Path = Path("data/eval/ground_truth/questions.jsonl")
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +130,50 @@ def _build_dense_only_generator(cfg: Settings) -> Generator:
 
 
 # ---------------------------------------------------------------------------
+# Delta extraction + provenance helpers (L-02 / L-03 / W#2)
+# ---------------------------------------------------------------------------
+
+
+def _arm_component_identity(gen: Generator) -> dict[str, str]:
+    """Read an arm's swapped-component identity from its generator (W#2).
+
+    The degradation provenance is recorded as DATA — the reranker + bm25 adapter
+    names read off the bundle/stores at arm-construction time — so the dense-only
+    arm records bm25="null-bm25" and the no-rerank arm records
+    reranker="null-reranker" without the validate/reader inferring it from the
+    dir name. This lives ONLY in the top-level ablation manifest; the per-arm
+    Phase-10 results.json sidecar is NOT forked to carry it (D-02 / L-03).
+    """
+    return {
+        "reranker": gen._bundle.reranker.name,
+        "bm25": gen._retriever._stores.bm25.name,
+    }
+
+
+def _read_per_question(arm_root: Path) -> dict[str, dict[str, Any]]:
+    """Read an arm's results.json per_question[] and index it by id (L-03).
+
+    Returns {id -> row}. The caller iterates a SINGLE sorted id order taken from
+    the baseline arm so every arm's metric column is equal-length and aligned by
+    id (Pitfall 5 — bootstrap_delta_ci raises on unequal-length arms).
+    """
+    payload = json.loads((arm_root / "results.json").read_text(encoding="utf-8"))
+    rows: list[dict[str, Any]] = payload["per_question"]
+    return {str(row["id"]): row for row in rows}
+
+
+def _mean(values: list[float]) -> float:
+    """Arithmetic mean of a non-empty column (the table value cell, not new math).
+
+    This is the value column the comparison table renders for each headline
+    metric; it equals mean(arm) so value_arm - value_baseline == observed_delta
+    (bootstrap_delta_ci returns mean(a) - mean(b)). No metric is recomputed —
+    Hit@K / MRR are already in per_question[]; this only averages that column.
+    """
+    return sum(values) / len(values)
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator (D-01 / D-02 / D-03)
 # ---------------------------------------------------------------------------
 
@@ -142,6 +217,13 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
     # Plan 04 extends: real-mode chunk-300/450/600 arms appended when
     # cfg.llm_provider == real (re-chunk -> re-embed -> re-index; D-04/D-05).
 
+    # Capture the per-arm swapped-component identity as DATA at construction time
+    # (W#2 — read off the bundle/stores, NOT inferred from the dir name). This is
+    # the degradation provenance recorded ONLY in the top-level manifest.
+    arm_components: dict[str, dict[str, str]] = {
+        name: _arm_component_identity(gen) for name, gen in arm_generators.items()
+    }
+
     # (c) Run the identical Phase-10 path once per arm (D-02). run_eval reuses
     # each arm's warm generator._retriever (Pitfall 2 — no per-question rebuild).
     arm_names: list[str] = list(arm_generators)
@@ -157,12 +239,90 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
             )
             return 1
 
-    # (d) Structured completion log. Delta computation + comparison table +
-    # top-level manifest are Plan 03.
+    # (d) Paired deltas (L-02 / L-03). Read each arm's per_question[] sidecar,
+    # build ONE sorted id order from the baseline arm, and index every arm by it
+    # so the metric columns are equal-length and id-aligned (Pitfall 5). For each
+    # non-baseline arm x headline metric call the frozen bootstrap_delta_ci with
+    # the locked (n_boot=10_000, seed=42) contract — convention delta = arm -
+    # baseline. NO new metric math: Hit@K / MRR already live in per_question[].
+    baseline_name: str = arm_names[0]
+    arm_rows: dict[str, dict[str, dict[str, Any]]] = {
+        name: _read_per_question(root / name) for name in arm_names
+    }
+    ids: list[str] = sorted(arm_rows[baseline_name])
+
+    arm_metrics: dict[str, dict[str, float]] = {}
+    for name in arm_names:
+        rows_by_id = arm_rows[name]
+        arm_metrics[name] = {
+            metric: _mean([float(rows_by_id[i][metric]) for i in ids])
+            for metric in _HEADLINE_METRICS
+        }
+
+    deltas: dict[str, dict[str, list[float]]] = {}
+    for name in arm_names:
+        if name == baseline_name:
+            continue
+        arm_by_id = arm_rows[name]
+        deltas[name] = {}
+        for metric in _HEADLINE_METRICS:
+            arm_col: list[float] = [float(arm_by_id[i][metric]) for i in ids]
+            base_col: list[float] = [float(arm_rows[baseline_name][i][metric]) for i in ids]
+            observed_delta, ci_low, ci_high = bootstrap_delta_ci(
+                arm_col, base_col, n_boot=_N_BOOT, seed=_SEED
+            )
+            deltas[name][metric] = [observed_delta, ci_low, ci_high]
+
+    # (e) Top-level combined ablation manifest (D-08 — one manifest, arms as
+    # rows). Shared git_sha + dataset_hash + seed (D-01 single-process identity;
+    # reuse runner._git_sha / runner._dataset_hash). representative derived like
+    # runner.py: stub arms have no cost, so stub is non-representative (L-04).
+    provider: str = str(cfg.llm_provider)
+    representative: bool = provider != "stub"
+    manifest: dict[str, Any] = {
+        "git_sha": _git_sha(),
+        "dataset_hash": _dataset_hash(_QUESTIONS_PATH),
+        "seed": _SEED,
+        "n_boot": _N_BOOT,
+        "provider": provider,
+        "representative": representative,
+        "baseline": baseline_name,
+        "arm_names": arm_names,
+        "headline_metrics": list(_HEADLINE_METRICS),
+        "arm_components": arm_components,
+        "arms": {
+            name: {
+                "components": arm_components[name],
+                "metrics": arm_metrics[name],
+                "deltas": deltas.get(name, {}),
+            }
+            for name in arm_names
+        },
+        "deltas": deltas,
+        # Real-mode (Plan 04) fills these; absent/empty in stub.
+        "chunk_sizes": [],
+        "index_identity_hashes": {},
+    }
+    # Deterministic serialization: sort_keys + trailing newline so two stub runs
+    # are byte-identical (the D-11 determinism gate).
+    (root / "ablation-manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+    # (f) Comparison table (D-06 / D-07). render_ablation_markdown is pure — it
+    # only formats the (delta, lo, hi) tuples computed above (no bootstrap call
+    # in report.py).
+    report_md: str = render_ablation_markdown(
+        arm_names, arm_metrics, deltas, provider=provider
+    )
+    (root / "ablation-report.md").write_text(report_md + "\n", encoding="utf-8")
+
+    # (g) Structured completion log.
     log.info(
         "ablate_arms_completed",
         arms=arm_names,
         root=str(root),
-        provider=str(cfg.llm_provider),
+        provider=provider,
+        representative=representative,
     )
     return 0

@@ -6,6 +6,7 @@ The caller (runner.py) passes in all computed values.
 
 render_markdown  -> D-05 six-section markdown string.
 render_results_json -> Phase-11-consumable results.json string.
+render_ablation_markdown -> ABL-02 comparison-table markdown string (Phase 11).
 """
 
 from __future__ import annotations
@@ -26,7 +27,28 @@ if TYPE_CHECKING:
 
 log = structlog.stdlib.get_logger(__name__)
 
-__all__ = ["render_markdown", "render_results_json"]
+__all__ = ["render_ablation_markdown", "render_markdown", "render_results_json"]
+
+# ---------------------------------------------------------------------------
+# ABL-02 ablation comparison-table renderer (Phase 11 — D-06 / D-07)
+# ---------------------------------------------------------------------------
+
+# Headline retrieval metrics that ALWAYS render (stub + real); honest ≈0 in stub
+# (D-06). Hit@3 ties the no-rerank arm to Phase 5's reranker canary.
+_ABLATION_HEADLINE_METRICS: tuple[tuple[str, str], ...] = (
+    ("hit_at_5", "Hit@5"),
+    ("hit_at_3", "Hit@3"),
+    ("reciprocal_rank", "MRR"),
+)
+
+# Human-readable "what does this arm degrade" labels for the headline sentence
+# (D-07 recruiter payload). The component each arm removes is what the sentence
+# credits: the no-rerank arm quantifies reranking's contribution; dense-only
+# quantifies BM25's contribution.
+_ABLATION_COMPONENT_LABELS: dict[str, str] = {
+    "no-rerank": "Reranking",
+    "dense-only": "BM25",
+}
 
 # ---------------------------------------------------------------------------
 # results.json schema (D-07 / Phase-11-consumable)
@@ -365,5 +387,132 @@ def render_markdown(
         else "stub retriever cannot find multi-hop golds — expected in stub mode"
     )
     lines.append(f"**Coverage Flag:** {all_covered} ({covered_note})")
+
+    return "\n".join(lines)
+
+
+def render_ablation_markdown(
+    arm_names: list[str],
+    arm_metrics: dict[str, dict[str, float]],
+    deltas: dict[str, dict[str, list[float]]],
+    *,
+    provider: str,
+) -> str:
+    """Render the ABL-02 comparison table + per-ablation headline sentences. Pure.
+
+    Purity contract (mirrors render_markdown / render_results_json): NO I/O, NO
+    Settings, NO clock. The caller (ablate.py) computes every value — this fn
+    only formats the (delta, lo, hi) tuples it receives and joins a lines list.
+    There is no metric math here (D-02 — bootstrap_delta_ci is called in
+    ablate.py, never here).
+
+    Sign convention (A4): each table cell shows ``Δ = arm - baseline`` (the raw
+    bootstrap convention, ``bootstrap_delta_ci(arm, baseline)``). The headline
+    sentence INVERTS to the component-contribution framing — "Reranking adds
+    +X Hit@3 [95% CI lo, hi]" is ``baseline - arm = -Δ`` with the CI flipped to
+    ``[-hi, -lo]`` — so a positive headline number means the removed component
+    helps.
+
+    Args:
+        arm_names:   Ordered arm list; arm_names[0] is the baseline reference row.
+        arm_metrics: arm -> {metric_key -> value} for the headline metrics
+                     (hit_at_5, hit_at_3, reciprocal_rank). The baseline row's
+                     values render with "—" for Δ (it is the reference).
+        deltas:      arm -> {metric_key -> [delta, lo, hi]} for every NON-baseline
+                     arm (delta = arm - baseline). Empty/absent for the baseline.
+        provider:    "stub" emits the non-representative STUB banner (L-04); any
+                     other value omits it. Faithfulness/citation/latency/$ delta
+                     columns render real-mode only (provider != "stub", D-06) —
+                     for v1 those columns are headline-set only, so stub and real
+                     share the three retrieval columns.
+
+    Returns:
+        Markdown string (no trailing newline; the caller adds one when writing).
+    """
+    baseline = arm_names[0] if arm_names else "baseline"
+    lines: list[str] = []
+
+    # Title
+    lines.append("# docintel Ablation Report")
+    lines.append("")
+
+    # STUB banner — mirror render_markdown's banner (report.py STUB block); the
+    # stub ablation's ≈0 deltas are honest and non-representative (L-04).
+    if provider == "stub":
+        lines.append(
+            "> STUB RUN — component-insensitive stub adapters yield ≈0 deltas; "
+            "non-representative. representative: false"
+        )
+        lines.append("> Run with DOCINTEL_LLM_PROVIDER=real for published deltas.")
+        lines.append("")
+
+    def _fmt_ci(lo: float, hi: float) -> str:
+        # 3-decimal bracketed CI — the render_markdown _fmt_ci precedent.
+        return f"[{lo:.3f}, {hi:.3f}]"
+
+    # -----------------------------------------------------------------------
+    # Per-ablation headline-finding sentences (D-07 recruiter payload).
+    # MUST sit ABOVE the comparison table. Each non-baseline arm gets a one-line
+    # sentence crediting the component it removes, framed on Hit@3 (the
+    # reranker-canary metric) so the no-rerank line ties to Phase 5.
+    # -----------------------------------------------------------------------
+    for arm in arm_names:
+        if arm == baseline:
+            continue
+        label = _ABLATION_COMPONENT_LABELS.get(arm, arm)
+        lines.append(f"## Ablation: {label} ({arm} arm)")
+        arm_deltas = deltas.get(arm, {})
+        triple = arm_deltas.get("hit_at_3")
+        if triple is not None and len(triple) == 3:
+            delta, lo, hi = float(triple[0]), float(triple[1]), float(triple[2])
+            # Invert to component-contribution framing (A4): baseline - arm = -delta,
+            # CI flips to [-hi, -lo].
+            contrib = -delta
+            c_lo, c_hi = -hi, -lo
+            lines.append(
+                f"{label} adds {contrib:+.3f} Hit@3 [95% CI {c_lo:.3f}, {c_hi:.3f}]."
+            )
+        else:
+            lines.append(f"{label}: no Hit@3 delta available.")
+        lines.append("")
+
+    # -----------------------------------------------------------------------
+    # Comparison Table (D-07 engineer payload — the single ABL-02 table).
+    # One row per arm; baseline first as the reference row (Δ shown as —).
+    # Each non-baseline cell = value + Δ + [95% CI].
+    # -----------------------------------------------------------------------
+    lines.append("## Comparison Table")
+    lines.append("")
+    headers = ["Arm"] + [f"{label} (Δ [95% CI])" for _key, label in _ABLATION_HEADLINE_METRICS]
+    lines.append("| " + " | ".join(headers) + " |")
+    lines.append("|" + "|".join(["---"] * len(headers)) + "|")
+
+    for arm in arm_names:
+        cells: list[str] = [arm]
+        arm_vals = arm_metrics.get(arm, {})
+        arm_deltas = deltas.get(arm, {})
+        for key, _label in _ABLATION_HEADLINE_METRICS:
+            value = float(arm_vals.get(key, 0.0))
+            if arm == baseline:
+                # Baseline is the reference row — raw value, em-dash for Δ (D-07).
+                cells.append(f"{value:.3f} (—)")
+            else:
+                triple = arm_deltas.get(key)
+                if triple is not None and len(triple) == 3:
+                    delta, lo, hi = float(triple[0]), float(triple[1]), float(triple[2])
+                    cells.append(f"{value:.3f} ({delta:+.3f} {_fmt_ci(lo, hi)})")
+                else:
+                    cells.append(f"{value:.3f} (—)")
+        lines.append("| " + " | ".join(cells) + " |")
+    lines.append("")
+
+    # Real-mode-only note (D-06): faithfulness / citation / latency / $ deltas
+    # are non-representative in stub and omitted; surfaced in real mode via the
+    # per-arm sidecars. Mirror render_markdown's non-representative note.
+    if provider == "stub":
+        lines.append(
+            "> Faithfulness, citation, latency & $/query deltas are real-mode only "
+            "(non-representative in stub). See per-arm results.json."
+        )
 
     return "\n".join(lines)

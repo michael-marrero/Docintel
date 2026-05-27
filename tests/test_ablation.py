@@ -171,7 +171,6 @@ def test_stub_ablate_emits_three_component_arms(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_ABLATE)
 def test_deltas_present_and_finite(tmp_path: Path) -> None:
     """ABL-01: each non-baseline arm has a finite (delta, lo, hi) per headline metric.
 
@@ -243,7 +242,6 @@ def test_arm_construction_uses_null_adapters() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_ABLATE)
 def test_ablate_determinism(tmp_path: Path) -> None:
     """ABL-01/D-11: two stub ablate runs produce byte-identical deltas (seed=42).
 
@@ -315,7 +313,6 @@ def test_real_ablate_includes_chunk_sweep(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_REPORT)
 def test_report_table_shape(tmp_path: Path) -> None:
     """ABL-02: ablation-report.md renders one row per arm with value + delta + [CI].
 
@@ -347,7 +344,6 @@ def test_report_table_shape(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_REPORT)
 def test_headline_sentence_per_ablation(tmp_path: Path) -> None:
     """ABL-02: a one-line headline-finding sentence appears above the comparison table.
 
