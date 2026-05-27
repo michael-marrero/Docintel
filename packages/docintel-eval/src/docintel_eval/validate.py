@@ -386,7 +386,21 @@ def cmd_validate_ablation(ablation_dir: Path) -> int:
                     got=triple,
                 )
                 return 1
-            delta_f, lo_f, hi_f = (float(triple[0]), float(triple[1]), float(triple[2]))
+            # A corrupt committed manifest whose triple holds a non-numeric
+            # value (["x", 0.0, 0.1] or [null, 0, 0] -> float(None)) must yield
+            # a clean exit 1, not a ValueError/TypeError traceback (a
+            # well-formedness gate rejects bad input rather than crashing).
+            try:
+                delta_f, lo_f, hi_f = (float(triple[0]), float(triple[1]), float(triple[2]))
+            except (TypeError, ValueError):
+                log.error(
+                    "validate_ablation_delta_not_numeric",
+                    ablation_dir=str(ablation_dir),
+                    arm=arm,
+                    metric=metric,
+                    got=triple,
+                )
+                return 1
             if not (math.isfinite(delta_f) and math.isfinite(lo_f) and math.isfinite(hi_f)):
                 log.error(
                     "validate_ablation_delta_not_finite",
