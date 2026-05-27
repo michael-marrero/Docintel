@@ -304,6 +304,130 @@ def test_real_ablate_includes_chunk_sweep(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# ABL-01 (WIRING — stub-runnable): the real-mode chunk-arm append seam is
+# exercised OFFLINE without real embeddings. This is the every-PR CI gate of the
+# run_ablations chunk-arm wiring (the gap the verifier flagged); the real run
+# above stays @pytest.mark.real (EMPIRICAL-PENDING the true re-chunk->re-embed->
+# re-index numbers). The seam is forced by (1) flipping the real-mode predicate
+# `provider_is_real` to True and (2) stubbing the per-size index-backed generator
+# construction with the deterministic stub generator so no real index is read —
+# leaving the APPEND LOGIC, the size/identity provenance, and the manifest
+# population (chunk_sizes + index_identity_hashes) as the code-under-test.
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_arm_wiring_appends_three_arms_in_real_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ABL-01 (wiring): forcing real mode appends chunk-300/450/600 + fills manifest.
+
+    Exercises the run_ablations real-mode branch OFFLINE: monkeypatch
+    `provider_is_real` -> True (so the branch runs in stub mode) and
+    `_build_chunk_arm_generator` -> a stub-backed generator (so no size-specific
+    real index is read), and point `_chunk_arm_index_dir` at a tmp dir holding a
+    fake size-index MANIFEST.json (so the real `_chunk_index_identity` read path
+    is exercised end-to-end). Asserts: (a) all three chunk arm dirs + manifest
+    arms appear; (b) manifest chunk_sizes == [300, 450, 600] with per-arm
+    index_identity_hashes recorded.
+    """
+    from docintel_core.config import Settings  # type: ignore[import-not-found]
+    from docintel_eval import ablate  # type: ignore[import-not-found]
+    from docintel_core.adapters.factory import make_generator  # type: ignore[import-not-found]
+
+    cfg = Settings()
+
+    # (1) Force the real-mode gate so the chunk-arm branch executes offline.
+    monkeypatch.setattr(ablate, "provider_is_real", lambda _cfg: True)
+
+    # (2) Point each size index dir at a tmp root carrying a fake MANIFEST.json
+    # with a deterministic, size-distinct corpus_manifest_sha256 — so the real
+    # _chunk_index_identity + _require_chunk_index read paths run (not stubbed).
+    def _fake_index_dir(_cfg: Settings, size: int) -> Path:
+        d = tmp_path / "size-indices" / f"chunk-{size}" / "index"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "MANIFEST.json").write_text(
+            json.dumps({"corpus_manifest_sha256": f"sha-for-{size}"}) + "\n",
+            encoding="utf-8",
+        )
+        return d
+
+    monkeypatch.setattr(ablate, "_chunk_arm_index_dir", _fake_index_dir)
+
+    # (3) Stub the size-index-backed generator with the deterministic stub
+    # generator (no real embeddings / no real index read) — the WIRING, not the
+    # real retrieval, is under test. _require_chunk_index still runs via the
+    # patched dir above (the fake MANIFEST.json satisfies the loud-fail guard).
+    def _fake_chunk_gen(c: Settings, size: int) -> object:
+        ablate._require_chunk_index(ablate._chunk_arm_index_dir(c, size), size)
+        return make_generator(c)
+
+    monkeypatch.setattr(ablate, "_build_chunk_arm_generator", _fake_chunk_gen)
+
+    run_dir = tmp_path / "ablations"
+    exit_code = ablate.run_ablations(cfg, output_dir=run_dir)
+    assert exit_code == 0, f"wiring run must exit 0; got {exit_code}"
+
+    manifest = _load_ablation_manifest(run_dir)
+
+    # (a) all three chunk arm dirs + manifest arms present.
+    manifest_arms = set(manifest.get("arms", {}))
+    for arm in _CHUNK_SWEEP_ARMS:
+        assert (run_dir / arm).is_dir(), (
+            f"ABL-01 (wiring): real-mode branch must create a sidecar dir for {arm!r}"
+        )
+        assert arm in manifest_arms, (
+            f"ABL-01 (wiring): manifest must carry the {arm!r} arm in real mode"
+        )
+    assert arm in manifest.get("arm_names", []), "arm_names must list the chunk arms"
+
+    # (b) chunk_sizes == [300, 450, 600] + per-arm index identity hashes recorded.
+    assert manifest["chunk_sizes"] == [300, 450, 600], (
+        f"ABL-01/D-05 (wiring): manifest chunk_sizes must be [300, 450, 600]; "
+        f"got {manifest.get('chunk_sizes')!r}"
+    )
+    identity_hashes = manifest["index_identity_hashes"]
+    for arm, size in zip(_CHUNK_SWEEP_ARMS, (300, 450, 600), strict=True):
+        assert identity_hashes.get(arm) == f"sha-for-{size}", (
+            f"ABL-01/D-05 (wiring): {arm!r} must record its size-index identity hash; "
+            f"got {identity_hashes.get(arm)!r}"
+        )
+
+
+def test_chunk_arms_absent_in_stub_mode(tmp_path: Path) -> None:
+    """ABL-01 (wiring): stub mode appends NO chunk arms and chunk_sizes == [].
+
+    The negative half of the wiring gate (the committed stub sample's contract):
+    a plain stub run (provider_is_real is False — NOT monkeypatched) must produce
+    exactly the three component arms, NO chunk-* dirs, and an empty `chunk_sizes`
+    / `index_identity_hashes`. This pins D-04 (sweep is real-only) so the stub
+    track — and the byte-committed stub sample — never grows chunk rows.
+    """
+    run_dir = _run_ablate_into(tmp_path)
+    manifest = _load_ablation_manifest(run_dir)
+
+    manifest_arms = set(manifest.get("arms", {}))
+    assert manifest_arms == set(_COMPONENT_ARMS), (
+        f"ABL-01 (wiring): stub mode must produce exactly {_COMPONENT_ARMS}; "
+        f"got {sorted(manifest_arms)}"
+    )
+    for arm in _CHUNK_SWEEP_ARMS:
+        assert not (run_dir / arm).exists(), (
+            f"ABL-01/D-04 (wiring): stub mode must NOT create the {arm!r} dir "
+            f"(chunk sweep is real-only)"
+        )
+        assert arm not in manifest_arms, (
+            f"ABL-01/D-04 (wiring): stub manifest must NOT carry the {arm!r} arm"
+        )
+    assert manifest["chunk_sizes"] == [], (
+        f"ABL-01/D-04 (wiring): stub chunk_sizes must be []; got {manifest.get('chunk_sizes')!r}"
+    )
+    assert manifest["index_identity_hashes"] == {}, (
+        f"ABL-01/D-04 (wiring): stub index_identity_hashes must be empty; "
+        f"got {manifest.get('index_identity_hashes')!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # ABL-02: ablation-report.md has one row per arm; each cell = value + delta + [CI];
 # baseline is the reference row (delta shown as an em-dash)
 # ---------------------------------------------------------------------------
