@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, cast
 import structlog
 from docintel_core.adapters.factory import make_generator
 from docintel_core.config import Settings
+from docintel_core.trace import TraceSpanCollector
 
 if TYPE_CHECKING:
     # Phase 11 arm injection (D-02): the optional `generator` parameter is typed
@@ -188,92 +189,117 @@ def run_eval(
     per_question_rows: list[dict[str, Any]] = []
 
     for record in records:
-        # D-01: call retriever.search separately at k>=10 for ranking metrics
-        retrieved_for_metrics = retriever.search(record.question, k=k)
-        rankings[record.id] = [c.chunk_id for c in retrieved_for_metrics]
+        # D-02 + A3: bind a per-question trace_id (fresh UUID4) and write ONE
+        # consolidated trace_completed record per question to cfg.trace_dir. This
+        # is the only path exercising retriever+generator pre-Phase-13, so the
+        # existing retriever_search_completed / generator_completed lines carry a
+        # trace_id (via merge_contextvars), and the Phase 13 Traces tab gets real
+        # stub-mode demo data before POST /query exists. The collector is purely
+        # additive — every existing measurement (perf_counter, QueryTimingRecord,
+        # the metric accumulators) is unchanged, so eval reports stay byte-identical.
+        with TraceSpanCollector(cfg.trace_dir, source="eval") as tc:
+            # D-01: call retriever.search separately at k>=10 for ranking metrics
+            with tc.span("retrieval"):
+                retrieved_for_metrics = retriever.search(record.question, k=k)
+            rankings[record.id] = [c.chunk_id for c in retrieved_for_metrics]
 
-        # Wrap generator.generate() in perf_counter (Option A — RESEARCH verdict)
-        t0: float = time.perf_counter()
-        result = generator.generate(record.question, k=k_gen)
-        _elapsed_ms: float = (time.perf_counter() - t0) * 1000
-        # D-08 / D-12: stub-mode latency is non-representative and
-        # non-deterministic (wall clock varies per run). Zero it out in stub
-        # mode so two successive stub runs produce bit-exact per_question rows.
-        total_ms: float = 0.0 if str(cfg.llm_provider) == "stub" else _elapsed_ms
+            # Wrap generator.generate() in perf_counter (Option A — RESEARCH verdict)
+            t0: float = time.perf_counter()
+            with tc.span("generation"):
+                result = generator.generate(record.question, k=k_gen)
+            _elapsed_ms: float = (time.perf_counter() - t0) * 1000
+            # D-08 / D-12: stub-mode latency is non-representative and
+            # non-deterministic (wall clock varies per run). Zero it out in stub
+            # mode so two successive stub runs produce bit-exact per_question rows.
+            total_ms: float = 0.0 if str(cfg.llm_provider) == "stub" else _elapsed_ms
 
-        answer = Answer.from_generation_result(result)
-        answers.append(answer)
+            answer = Answer.from_generation_result(result)
+            answers.append(answer)
 
-        cost_usd_val: float = result.completion.cost_usd if result.completion is not None else 0.0
-        model_name: str = (
-            result.completion.model if result.completion is not None else "stub-refusal"
-        )
+            cost_usd_val: float = (
+                result.completion.cost_usd if result.completion is not None else 0.0
+            )
+            model_name: str = (
+                result.completion.model if result.completion is not None else "stub-refusal"
+            )
 
-        # D-18 dual-signal refusal: consistent with compute_refusal_matrix
-        refused_flag: bool = _is_refusal(answer)
+            # D-18 dual-signal refusal: consistent with compute_refusal_matrix
+            refused_flag: bool = _is_refusal(answer)
 
-        timings.append(
-            QueryTimingRecord(
+            # A3 / T-12-07: attach metadata-only top-level fields to the trace
+            # record — REUSE the values already computed above (never re-derive
+            # the answer, never re-measure, never the completion object itself).
+            tc.add_fields(
                 question_id=record.id,
-                total_ms=total_ms,
                 cost_usd=cost_usd_val,
                 model=model_name,
                 refused=refused_flag,
-                retrieval_ms=None,  # Phase 12 wires sub-stage resolution
-                generation_ms=None,
             )
-        )
 
-        # Stash hero (GT-comparative-001) for Section 6 spotlight
-        if record.id == "GT-comparative-001":
-            hero_record = record
-            hero_result_text = answer.text
-            hero_ranking = rankings[record.id]
-
-        # Per-question citation accuracy (Pitfall 5 — call per question)
-        gold_set: set[str] = set(record.gold_passage_ids)
-        if not refused_flag:
-            cited_ids: list[str] = [cit.chunk_id for cit in answer.citations]
-            cit_result = compute_citation_accuracy(cited_ids, set(record.expected_citation_ids))
-            citation_hits_total += sum(
-                1 for cid in cited_ids if cid in set(record.expected_citation_ids)
+            timings.append(
+                QueryTimingRecord(
+                    question_id=record.id,
+                    total_ms=total_ms,
+                    cost_usd=cost_usd_val,
+                    model=model_name,
+                    refused=refused_flag,
+                    retrieval_ms=None,  # Phase 12 wires sub-stage resolution
+                    generation_ms=None,
+                )
             )
-            citation_n_total += len(cited_ids)
-            per_citation_precision: float = cit_result.precision
-            per_n_citations: int = cit_result.n_citations
-        else:
-            per_citation_precision = 0.0
-            per_n_citations = 0
 
-        # Per-question hit@k values (from the k=10 ranking)
-        ranked = rankings[record.id]
-        if gold_set:
-            q_hit1: int = hit_at_k(ranked, gold_set, 1)
-            q_hit3: int = hit_at_k(ranked, gold_set, 3)
-            q_hit5: int = hit_at_k(ranked, gold_set, 5)
-            q_hit10: int = hit_at_k(ranked, gold_set, 10)
-            q_rr: float = reciprocal_rank(ranked, gold_set)
-        else:
-            # Refusal records have no gold — report 0 for all
-            q_hit1 = q_hit3 = q_hit5 = q_hit10 = 0
-            q_rr = 0.0
+            # Stash hero (GT-comparative-001) for Section 6 spotlight
+            if record.id == "GT-comparative-001":
+                hero_record = record
+                hero_result_text = answer.text
+                hero_ranking = rankings[record.id]
 
-        per_question_rows.append(
-            {
-                "id": record.id,
-                "question_type": record.question_type,
-                "refused": refused_flag,
-                "hit_at_1": q_hit1,
-                "hit_at_3": q_hit3,
-                "hit_at_5": q_hit5,
-                "hit_at_10": q_hit10,
-                "reciprocal_rank": q_rr,
-                "citation_precision": per_citation_precision,
-                "n_citations": per_n_citations,
-                "total_ms": total_ms,
-                "cost_usd": cost_usd_val,
-            }
-        )
+            # Per-question citation accuracy (Pitfall 5 — call per question)
+            gold_set: set[str] = set(record.gold_passage_ids)
+            if not refused_flag:
+                cited_ids: list[str] = [cit.chunk_id for cit in answer.citations]
+                cit_result = compute_citation_accuracy(
+                    cited_ids, set(record.expected_citation_ids)
+                )
+                citation_hits_total += sum(
+                    1 for cid in cited_ids if cid in set(record.expected_citation_ids)
+                )
+                citation_n_total += len(cited_ids)
+                per_citation_precision: float = cit_result.precision
+                per_n_citations: int = cit_result.n_citations
+            else:
+                per_citation_precision = 0.0
+                per_n_citations = 0
+
+            # Per-question hit@k values (from the k=10 ranking)
+            ranked = rankings[record.id]
+            if gold_set:
+                q_hit1: int = hit_at_k(ranked, gold_set, 1)
+                q_hit3: int = hit_at_k(ranked, gold_set, 3)
+                q_hit5: int = hit_at_k(ranked, gold_set, 5)
+                q_hit10: int = hit_at_k(ranked, gold_set, 10)
+                q_rr: float = reciprocal_rank(ranked, gold_set)
+            else:
+                # Refusal records have no gold — report 0 for all
+                q_hit1 = q_hit3 = q_hit5 = q_hit10 = 0
+                q_rr = 0.0
+
+            per_question_rows.append(
+                {
+                    "id": record.id,
+                    "question_type": record.question_type,
+                    "refused": refused_flag,
+                    "hit_at_1": q_hit1,
+                    "hit_at_3": q_hit3,
+                    "hit_at_5": q_hit5,
+                    "hit_at_10": q_hit10,
+                    "reciprocal_rank": q_rr,
+                    "citation_precision": per_citation_precision,
+                    "n_citations": per_n_citations,
+                    "total_ms": total_ms,
+                    "cost_usd": cost_usd_val,
+                }
+            )
 
     # ------------------------------------------------------------------
     # Step 5: compute aggregate metrics

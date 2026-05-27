@@ -41,7 +41,6 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 12: Settings.trace_dir (12-02) + eval per-question TraceSpanCollector (D-02/A3) not yet wired")
 def test_eval_run_writes_traces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """V-08 (A3) — an eval run populates trace_dir with one record per question.
 
