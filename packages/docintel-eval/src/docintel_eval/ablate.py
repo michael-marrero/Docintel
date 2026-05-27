@@ -64,7 +64,7 @@ from docintel_eval.runner import _dataset_hash, _git_sha, run_eval
 
 log = structlog.stdlib.get_logger(__name__)
 
-__all__ = ["run_ablations"]
+__all__ = ["provider_is_real", "run_ablations"]
 
 # Headline retrieval metrics that carry a paired-bootstrap (delta, lo, hi) per
 # non-baseline arm (D-06). Hit@3 ties the no-rerank arm to Phase 5's reranker
@@ -79,6 +79,36 @@ _SEED: int = 42
 # Ground-truth questions file — the shared dataset whose sha256 stamps every arm
 # (D-01 single-process identity; reuse runner._dataset_hash).
 _QUESTIONS_PATH: Path = Path("data/eval/ground_truth/questions.jsonl")
+
+# ---------------------------------------------------------------------------
+# Chunk-size sweep (D-04 / D-05) — the third ABL-01 ablation. Unlike no-rerank /
+# dense-only there is NO adapter to swap: a smaller/larger chunk size forces a
+# re-chunk -> re-embed -> re-index, so each swept size has its OWN pre-built
+# index. `make ablate-chunk-sweep` builds those size-specific indices under
+# data/indices/chunk-<S>/ (gitignored, A3) BEFORE the real ablation run; this
+# module only CONSUMES them (it never re-chunks/re-indexes itself). The sweep is
+# real-mode / workflow_dispatch-ONLY (D-04): in stub mode no chunk arms are
+# appended and `chunk_sizes` stays empty (the committed stub sample is the
+# 3-arm baseline+no-rerank+dense-only set, unchanged).
+# ---------------------------------------------------------------------------
+
+# Swept greedy-split sizes (D-05; ±~33% around the production 450). 450 is the
+# production baseline and reuses the production corpus/index (the Makefile's
+# `ablate-chunk-sweep` short-circuits 450 — no rebuild), so its arm points at the
+# unmodified cfg roots. 300/600 point at their size-specific build roots.
+_CHUNK_SWEEP_SIZES: tuple[int, ...] = (300, 450, 600)
+
+# The production greedy-split size (docintel_ingest.chunk.TARGET_TOKENS). The 450
+# chunk arm reuses the production corpus/index rather than a size-specific root.
+_PRODUCTION_TARGET_TOKENS: int = 450
+
+# Per-size build root produced by `make ablate-chunk-sweep` (Makefile:125-141).
+# The size data root holds corpus/chunks + a size-S corpus MANIFEST; the size
+# index root holds dense/bm25 + MANIFEST.json. The Retriever reads cfg.data_dir
+# (corpus/chunks + chunk map) and cfg.index_dir (MANIFEST.json + stores), so a
+# chunk arm is simply make_generator() against a Settings whose two path fields
+# point at this size root.
+_CHUNK_INDEX_ROOT: Path = Path("data/indices")
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +157,108 @@ def _build_dense_only_generator(cfg: Settings) -> Generator:
     stores = IndexStoreBundle(dense=base_stores.dense, bm25=NullBM25Store())
     retriever = Retriever(bundle=bundle, stores=stores, cfg=cfg)
     return Generator(bundle=bundle, retriever=retriever)
+
+
+# ---------------------------------------------------------------------------
+# Chunk-size sweep arm builders (D-04 / D-05) — NOT an adapter swap; each arm
+# points at a DISTINCT pre-built size-specific index.
+# ---------------------------------------------------------------------------
+
+
+def provider_is_real(cfg: Settings) -> bool:
+    """True iff the chunk-size sweep arms must be appended (real mode, D-04).
+
+    The sweep is real-mode / workflow_dispatch-ONLY: in stub mode the arm set
+    stays baseline+no-rerank+dense-only and `chunk_sizes` stays empty (stubs are
+    chunk-insensitive, so a sweep would be a non-representative no-op — the same
+    real-only stance D-04 takes on latency/$). Centralised so the real-mode gate
+    is a single named predicate the wiring test can force.
+    """
+    return str(cfg.llm_provider) != "stub"
+
+
+def _chunk_arm_data_dir(cfg: Settings, size: int) -> Path:
+    """Return the data root a chunk arm reads (corpus/chunks + corpus MANIFEST).
+
+    The production size (450) reuses the production corpus (cfg.data_dir) — the
+    Makefile sweep target short-circuits 450 and never builds a chunk-450 root.
+    Other sizes read the size-specific root `data/indices/chunk-<S>/data` that
+    `make ablate-chunk-sweep` writes (re-chunked at <S>, symlinked raw/normalized).
+    """
+    if size == _PRODUCTION_TARGET_TOKENS:
+        return Path(cfg.data_dir)
+    return _CHUNK_INDEX_ROOT / f"chunk-{size}" / "data"
+
+
+def _chunk_arm_index_dir(cfg: Settings, size: int) -> Path:
+    """Return the index root a chunk arm reads (MANIFEST.json + dense/bm25 stores).
+
+    The production size (450) reuses the production index (cfg.index_dir). Other
+    sizes read `data/indices/chunk-<S>/index` (built by `make ablate-chunk-sweep`).
+    """
+    if size == _PRODUCTION_TARGET_TOKENS:
+        return Path(cfg.index_dir)
+    return _CHUNK_INDEX_ROOT / f"chunk-{size}" / "index"
+
+
+def _require_chunk_index(index_dir: Path, size: int) -> Path:
+    """Assert a size-specific index exists; fail LOUDLY otherwise (no silent skip).
+
+    A missing size index almost always means `make ablate-chunk-sweep` was not
+    run before `docintel-eval ablate` (the workflow_dispatch real-ablation job
+    runs them in that order). Silently dropping the arm would re-introduce the
+    exact masked gap the verifier flagged (a real run that quietly produces a
+    chunk-less report), so this raises with the missing dir + the build step.
+
+    Returns:
+        The index MANIFEST.json path (existence-checked) for identity hashing.
+
+    Raises:
+        FileNotFoundError: the size index dir or its MANIFEST.json is absent.
+    """
+    manifest_path = index_dir / "MANIFEST.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"chunk-{size} ablation arm requires a pre-built size-specific index at "
+            f"{index_dir} (MANIFEST.json missing). Run `make ablate-chunk-sweep` "
+            f"(real-mode only) to re-chunk -> re-embed -> re-index at "
+            f"{_CHUNK_SWEEP_SIZES} BEFORE `docintel-eval ablate`. The chunk-size "
+            f"sweep is workflow_dispatch-only (D-04); it is never built on a PR."
+        )
+    return manifest_path
+
+
+def _chunk_index_identity(manifest_path: Path) -> str:
+    """Read a size index's corpus-identity hash from its MANIFEST.json (D-05).
+
+    Each swept size has a distinct `chunker.target_tokens` in its corpus
+    MANIFEST -> a distinct `corpus_manifest_sha256` recorded in its index
+    MANIFEST.json (docintel_index.build writes it). Recording that hash per
+    chunk arm is the per-index provenance the ablation manifest carries so a real
+    run is reproducible (mirrors how arm_components records the swapped-adapter
+    identity for the no-rerank/dense-only arms — provenance as DATA, W#2).
+    """
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    identity = payload.get("corpus_manifest_sha256")
+    return str(identity) if identity is not None else ""
+
+
+def _build_chunk_arm_generator(cfg: Settings, size: int) -> Generator:
+    """Build a chunk-size arm generator pointed at that size's pre-built index.
+
+    No adapter is swapped — the ablation IS the alternate chunking, so the arm is
+    just ``make_generator`` against a Settings whose ``data_dir`` / ``index_dir``
+    point at the size-specific build root (``model_copy`` keeps every other field
+    — provider, keys, qdrant — identical so the ONLY difference vs baseline is the
+    chunk size). The arm flows through the IDENTICAL run_eval path (D-02); its
+    generator._retriever is reused per question (Pitfall 2), exactly like the
+    component arms. For the production size (450) this reuses ``cfg`` unchanged.
+    """
+    data_dir = _chunk_arm_data_dir(cfg, size)
+    index_dir = _chunk_arm_index_dir(cfg, size)
+    _require_chunk_index(index_dir, size)
+    arm_cfg = cfg.model_copy(update={"data_dir": str(data_dir), "index_dir": str(index_dir)})
+    return make_generator(arm_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +346,6 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
         "no-rerank": _build_no_rerank_generator(cfg),
         "dense-only": _build_dense_only_generator(cfg),
     }
-    # Plan 04 extends: real-mode chunk-300/450/600 arms appended when
-    # cfg.llm_provider == real (re-chunk -> re-embed -> re-index; D-04/D-05).
 
     # Capture the per-arm swapped-component identity as DATA at construction time
     # (W#2 — read off the bundle/stores, NOT inferred from the dir name). This is
@@ -223,6 +353,37 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
     arm_components: dict[str, dict[str, str]] = {
         name: _arm_component_identity(gen) for name, gen in arm_generators.items()
     }
+
+    # (b2) Chunk-size sweep arms (D-04 / D-05) — REAL-MODE ONLY. The chunk sweep
+    # has no adapter seam (a smaller chunk size forces a re-chunk -> re-embed ->
+    # re-index), so each swept size is built ahead of time by
+    # `make ablate-chunk-sweep` (workflow_dispatch-only) and CONSUMED here. In
+    # stub mode this branch is skipped entirely: the arm set stays the three
+    # component arms and `chunk_sizes` stays empty (the committed stub sample is
+    # the 3-arm set, unchanged — stubs are chunk-insensitive so a chunk sweep
+    # would be a non-representative no-op, mirroring D-04's real-only stance on
+    # latency/$). Each chunk arm flows through the IDENTICAL run_eval path (D-02);
+    # the only difference vs baseline is which size-specific index it reads.
+    chunk_sizes: list[int] = []
+    chunk_index_identity_hashes: dict[str, str] = {}
+    if provider_is_real(cfg):
+        for size in _CHUNK_SWEEP_SIZES:
+            arm_name = f"chunk-{size}"
+            gen = _build_chunk_arm_generator(cfg, size)
+            arm_generators[arm_name] = gen
+            chunk_sizes.append(size)
+            # Per-index provenance (D-05): record the size + its corpus-identity
+            # hash (read from the size index's MANIFEST.json). For the production
+            # 450 arm this is the production index's hash; for 300/600 it is the
+            # size-specific build's distinct hash.
+            identity = _chunk_index_identity(_chunk_arm_index_dir(cfg, size) / "MANIFEST.json")
+            chunk_index_identity_hashes[arm_name] = identity
+            # The chunk arm's provenance IS its chunk size + index identity (no
+            # adapter swap), recorded as DATA alongside the component arms (W#2).
+            arm_components[arm_name] = {
+                "target_tokens": str(size),
+                "index_identity": identity,
+            }
 
     # (c) Run the identical Phase-10 path once per arm (D-02). run_eval reuses
     # each arm's warm generator._retriever (Pitfall 2 — no per-question rebuild).
@@ -299,9 +460,13 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
             for name in arm_names
         },
         "deltas": deltas,
-        # Real-mode (Plan 04) fills these; absent/empty in stub.
-        "chunk_sizes": [],
-        "index_identity_hashes": {},
+        # Chunk-size sweep provenance (D-05). Real-mode only: `chunk_sizes` is the
+        # list of swept greedy-split sizes actually run (e.g. [300, 450, 600]) and
+        # `index_identity_hashes` maps each chunk arm to its size index's
+        # corpus-identity hash. In stub mode both stay empty (no chunk arms — the
+        # sweep is workflow_dispatch-only, D-04).
+        "chunk_sizes": chunk_sizes,
+        "index_identity_hashes": chunk_index_identity_hashes,
     }
     # Deterministic serialization: sort_keys + trailing newline so two stub runs
     # are byte-identical (the D-11 determinism gate).
