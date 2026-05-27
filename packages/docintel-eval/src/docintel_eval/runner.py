@@ -22,11 +22,20 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 from docintel_core.adapters.factory import make_generator
 from docintel_core.config import Settings
+
+if TYPE_CHECKING:
+    # Phase 11 arm injection (D-02): the optional `generator` parameter is typed
+    # via this TYPE_CHECKING-only import so no heavy docintel-generate import is
+    # hoisted to module top (mirrors the lazy-import discipline already used for
+    # PROMPT_VERSION_HASH + render functions inside run_eval). At runtime the
+    # injected generator is built by the caller (ablate.py); when absent, run_eval
+    # builds its own via make_generator(cfg) exactly as before.
+    from docintel_generate.generator import Generator
 
 from docintel_eval.dataset import EvalRecord, load_questions
 from docintel_eval.metrics import (
@@ -87,6 +96,7 @@ def run_eval(
     k: int = 10,
     k_gen: int = 5,
     output_dir: Path | None = None,
+    generator: Generator | None = None,
 ) -> int:
     """Execute the full eval pipeline over all 32 ground-truth questions.
 
@@ -100,6 +110,14 @@ def run_eval(
         k_gen:      Generation context window — chunks passed to LLM (default 5).
         output_dir: Override output directory. When None, uses
                     data/eval/reports/<YYYYMMDD_HHMMSSZ>/ (timestamped).
+        generator:  Optional pre-built Generator (Phase 11 arm injection, D-02).
+                    When None (the default / every Phase 10 call-site), run_eval
+                    builds its own via make_generator(cfg) exactly as before.
+                    When provided — the ablation arms inject a generator whose
+                    bundle/stores carry a swapped null adapter — run_eval reuses
+                    it (and its warm generator._retriever, Pitfall 2) so the
+                    measurement path is byte-identical across arms; the only
+                    difference between arms is the injected component.
 
     Returns:
         0 on success.
@@ -118,8 +136,15 @@ def run_eval(
     # ------------------------------------------------------------------
     # Step 2: build generator once; reuse _retriever (Pitfall 2)
     # ------------------------------------------------------------------
-    generator = make_generator(cfg)
-    retriever = generator._retriever  # reuse warm retriever
+    # D-02 arm injection: when no generator was injected (every Phase 10
+    # call-site), build one here exactly as before. When an arm generator IS
+    # injected (Phase 11 ablate), skip construction and reuse it — the
+    # downstream loop, the six metric calls, the manifest assembly that reads
+    # generator._bundle.*.name, and the artifact write are then automatically
+    # identical per arm.
+    if generator is None:
+        generator = make_generator(cfg)
+    retriever = generator._retriever  # reuse warm retriever (Pitfall 2 — never make_retriever again)
 
     # ------------------------------------------------------------------
     # Step 3: load ground-truth questions
