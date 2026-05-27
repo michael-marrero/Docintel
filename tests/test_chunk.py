@@ -20,13 +20,16 @@ project convention.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 from itertools import pairwise
 from pathlib import Path
 
 import pytest
 
 _SAMPLE_DIR = Path(__file__).resolve().parent / "fixtures" / "sample_10k"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_chunk_schema() -> None:
@@ -174,3 +177,130 @@ def test_hard_cap_assertion_raises_on_oversize() -> None:
     assert emit is not None, "chunk module must expose _emit_chunk for canary testing"
     with pytest.raises(ValueError, match=r"exceeds"):
         emit(oversize_text)
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 ABL-01 (D-05): chunk-size sweep — chunk_all accepts a target_tokens
+# parameter so the {300,450,600} sweep can re-chunk; the production default
+# stays 450 (byte-identical default path is asserted by
+# tests/test_chunk_idempotency.py). A1 LOCKED: OVERLAP_TOKENS=50 and
+# HARD_CAP_TOKENS=500 stay FIXED across every swept size (target_tokens is the
+# single swept knob; the hard cap is tied to BGE's 512 limit + the Phase 5
+# truncation canary and is NEVER scaled down for the 300 arm).
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_all_target_tokens_300_smaller_split(tmp_path: Path) -> None:
+    """ABL-01 (D-05): re-chunking the fixture at target_tokens=300 lowers the greedy split.
+
+    A 300-token greedy split point yields chunks whose mean token count is
+    strictly below the production-450 mean (more, smaller chunks), and the
+    HARD_CAP_TOKENS=500 raise still guards every emitted chunk (A1 — the cap
+    is constant). The default-450 run is the comparison baseline; the swept
+    run must differ, proving target_tokens actually parameterises the splitter
+    (not a no-op that ignores the param).
+    """
+    from docintel_core.config import Settings
+    from docintel_core.types import Chunk
+    from docintel_ingest.chunk import chunk_all
+
+    cfg = Settings()
+
+    def _mean_tokens(out_root: Path) -> float:
+        toks: list[int] = []
+        for jsonl in sorted(out_root.rglob("*.jsonl")):
+            for line in jsonl.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    toks.append(Chunk.model_validate_json(line).n_tokens)
+        assert toks, f"no chunks emitted under {out_root}"
+        for t in toks:
+            assert t <= 500, f"A1 violation: chunk exceeds HARD_CAP_TOKENS=500 ({t})"
+        return sum(toks) / len(toks)
+
+    out_default = tmp_path / "chunks_default"
+    out_300 = tmp_path / "chunks_300"
+    rc_default = chunk_all(cfg, normalized_root=_SAMPLE_DIR, out_root=out_default)
+    rc_300 = chunk_all(cfg, normalized_root=_SAMPLE_DIR, out_root=out_300, target_tokens=300)
+    assert rc_default == 0 and rc_300 == 0, "chunk_all must exit 0 on the sample fixture"
+
+    mean_default = _mean_tokens(out_default)
+    mean_300 = _mean_tokens(out_300)
+    assert mean_300 < mean_default, (
+        "ABL-01 (D-05): target_tokens=300 must lower the greedy split point "
+        f"(mean tokens {mean_300:.1f} should be < default-450 mean {mean_default:.1f}); "
+        "if equal the param is being ignored"
+    )
+
+
+def test_chunk_all_default_target_tokens_unchanged(tmp_path: Path) -> None:
+    """ABL-01 (ING-04): chunk_all with no target_tokens arg equals an explicit 450.
+
+    The new keyword's default IS the production TARGET_TOKENS, so omitting it
+    and passing it explicitly produce byte-identical JSONL — the default path
+    is byte-identical to today (the corpus-wide ING-04 gate is
+    tests/test_chunk_idempotency.py; this is the fixture-level twin).
+    """
+    from docintel_core.config import Settings
+    from docintel_ingest.chunk import TARGET_TOKENS, chunk_all
+
+    cfg = Settings()
+    out_implicit = tmp_path / "implicit"
+    out_explicit = tmp_path / "explicit"
+    assert chunk_all(cfg, normalized_root=_SAMPLE_DIR, out_root=out_implicit) == 0
+    assert (
+        chunk_all(
+            cfg,
+            normalized_root=_SAMPLE_DIR,
+            out_root=out_explicit,
+            target_tokens=TARGET_TOKENS,
+        )
+        == 0
+    )
+    implicit_files = sorted(out_implicit.rglob("*.jsonl"))
+    assert implicit_files, "fixture must produce at least one JSONL"
+    for impl in implicit_files:
+        rel = impl.relative_to(out_implicit)
+        expl = out_explicit / rel
+        assert impl.read_bytes() == expl.read_bytes(), (
+            f"default target_tokens must equal explicit {TARGET_TOKENS} at {rel} "
+            "(byte-identity — ING-04)"
+        )
+
+
+def test_swept_manifest_records_target_tokens(tmp_path: Path) -> None:
+    """ABL-01 (D-05 provenance): a swept write_manifest records chunker.target_tokens.
+
+    write_manifest threads target_tokens into the MANIFEST.json chunker block
+    so each swept index's corpus manifest carries its size (per-index identity
+    for free). The default (flag absent) records the production 450 — the
+    committed corpus MANIFEST.json stays byte-reproducible. Runs against a copy
+    of the committed corpus in tmp_path so the tracked manifest is never
+    clobbered.
+    """
+    from docintel_core.config import Settings
+    from docintel_ingest.manifest import write_manifest
+
+    src_corpus = _REPO_ROOT / "data" / "corpus"
+    if not (src_corpus / "MANIFEST.json").is_file():
+        pytest.skip("committed corpus not present in this checkout")
+    dst_data = tmp_path / "data"
+    shutil.copytree(src_corpus, dst_data / "corpus")
+
+    cfg = Settings(data_dir=str(dst_data))
+    # Swept run records the swept size.
+    manifest_path = write_manifest(cfg, target_tokens=300)
+    swept = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert swept["chunker"]["target_tokens"] == 300, (
+        "ABL-01 (D-05): swept write_manifest(target_tokens=300) must record "
+        f"chunker.target_tokens == 300; got {swept['chunker']['target_tokens']}"
+    )
+    # A1: overlap + hard cap stay fixed regardless of the swept size.
+    assert swept["chunker"]["overlap_tokens"] == 50, "A1: overlap must stay 50"
+    assert swept["chunker"]["hard_cap_tokens"] == 500, "A1: hard cap must stay 500"
+
+    # Default (flag absent) records the production 450 — byte-reproducible.
+    default_path = write_manifest(cfg)
+    default = json.loads(default_path.read_text(encoding="utf-8"))
+    assert default["chunker"]["target_tokens"] == 450, (
+        "ABL-01 (ING-04): default write_manifest must record the production 450"
+    )

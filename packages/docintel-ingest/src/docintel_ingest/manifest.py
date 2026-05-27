@@ -187,7 +187,7 @@ def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int) -> dict[str, Any
     }
 
 
-def write_manifest(cfg: Settings) -> Path:
+def write_manifest(cfg: Settings, *, target_tokens: int = TARGET_TOKENS) -> Path:
     """Compose ``data/corpus/MANIFEST.json`` from committed corpus files.
 
     Iterates the committed snapshot deterministically, builds one entry per
@@ -209,6 +209,17 @@ def write_manifest(cfg: Settings) -> Path:
             paths. Stub-mode CI uses the default ``"data"`` so the
             manifest's repo-root-relative string fields coincide with the
             on-disk read locations.
+        target_tokens: The greedy split point recorded in the manifest's
+            ``chunker.target_tokens`` field. Defaults to the production
+            ``TARGET_TOKENS`` (450) so the committed corpus manifest stays
+            byte-reproducible. The Phase 11 chunk-size sweep (ABL-01 / D-05)
+            passes the swept size {300,450,600} so each alternate-size
+            corpus manifest records its own size — this is the per-index
+            identity hash provenance D-05 requires (each swept corpus
+            manifest then propagates a distinct ``corpus_manifest_sha256``
+            into its index manifest). A1: ``overlap_tokens`` /
+            ``hard_cap_tokens`` are NOT parameterised — they stay the fixed
+            module constants for every arm.
 
     Returns:
         Path to the written manifest (``Path(cfg.data_dir) /
@@ -246,14 +257,17 @@ def write_manifest(cfg: Settings) -> Path:
         "tokenizer_class": "BertTokenizer",
     }
 
-    # Chunker block matches the constants in docintel_ingest.chunk — the
-    # plain integers are imported from the module so a future tweak to
-    # TARGET_TOKENS / OVERLAP_TOKENS / HARD_CAP_TOKENS automatically
-    # surfaces in MANIFEST.json. The string-valued fields capture the
-    # exact algorithmic choices (NFC normalization, paragraph split on
-    # \n\n, sentence split regex from CD-06).
+    # Chunker block matches the constants in docintel_ingest.chunk. The
+    # ``target_tokens`` value is THREADED (default = the module constant
+    # TARGET_TOKENS=450) so the Phase 11 chunk-size sweep (ABL-01 / D-05)
+    # records the swept size {300,450,600} per alternate-size corpus
+    # manifest — giving each swept index a distinct identity for free. A1:
+    # OVERLAP_TOKENS / HARD_CAP_TOKENS are NOT swept — they stay the fixed
+    # module constants (imported so a future tweak still surfaces here). The
+    # string-valued fields capture the exact algorithmic choices (NFC
+    # normalization, paragraph split on \n\n, sentence split regex CD-06).
     chunker_block = {
-        "target_tokens": TARGET_TOKENS,
+        "target_tokens": target_tokens,
         "overlap_tokens": OVERLAP_TOKENS,
         "hard_cap_tokens": HARD_CAP_TOKENS,
         "unicode_normalization": "NFC",

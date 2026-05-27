@@ -423,14 +423,22 @@ def _chunk_section(
     ticker: str,
     fiscal_year: int,
     accession: str,
+    target_tokens: int = TARGET_TOKENS,
 ) -> list[Chunk]:
     """Paragraph-greedy splitter for one Item's section text (D-13).
 
     Walks paragraphs (``\\n\\n``-split) in document order, greedily
     accumulating until the next paragraph would push the running token
-    total past ``TARGET_TOKENS``; then closes the chunk via
+    total past ``target_tokens``; then closes the chunk via
     ``_emit_chunk()``, retains a ~50-token overlap (the trailing
     paragraphs of the just-closed chunk), and continues.
+
+    A1 LOCKED (Phase 11 ABL-01 / D-05): overlap (``OVERLAP_TOKENS``=50) +
+    hard cap (``HARD_CAP_TOKENS``=500) stay FIXED across the {300,450,600}
+    sweep; ``target_tokens`` is the single swept knob; the hard cap is tied
+    to BGE's 512 limit + the Phase 5 truncation canary — never scale it for
+    the smaller arms. ``target_tokens`` defaults to the production
+    ``TARGET_TOKENS`` (450) so the default path is byte-identical (ING-04).
 
     Outlier paragraphs (> ``HARD_CAP_TOKENS``) are pre-split via
     ``_split_outlier_paragraph()`` — sentence regex first, then
@@ -452,6 +460,10 @@ def _chunk_section(
         item_title: Human-readable title (``"Risk Factors"``).
         section_text: Full ``NormalizedFiling.sections[item_code]`` text.
         ticker / fiscal_year / accession: Stamped on every emitted Chunk.
+        target_tokens: Greedy split point in BGE tokens (default 450). The
+            single swept knob for the Phase 11 chunk-size ablation (D-05);
+            ``OVERLAP_TOKENS`` / ``HARD_CAP_TOKENS`` stay fixed module
+            constants (A1).
 
     Returns:
         List of ``Chunk`` instances in document order. ``prev_chunk_id``
@@ -491,17 +503,19 @@ def _chunk_section(
         # one true gate, and we want it firing at emit time so the
         # diagnostic message includes the chunk_id.
 
-        # Rule 1 (auto-fix bug) flush condition: TARGET_TOKENS gates the
+        # Rule 1 (auto-fix bug) flush condition: ``target_tokens`` gates the
         # USUAL split, but HARD_CAP_TOKENS gates EVERY split. Even when
-        # we're under TARGET, if adding the next paragraph would push us
+        # we're under target, if adding the next paragraph would push us
         # over HARD_CAP, we MUST flush first. Empirically this matters
         # because overlap can leave cur_tokens at ~OVERLAP_TOKENS (50)
-        # but the next paragraph might be ~480 tokens — under TARGET we'd
+        # but the next paragraph might be ~480 tokens — under target we'd
         # combine to 530+ and violate HARD_CAP at emit time. The fix is
-        # this explicit HARD_CAP guard.
+        # this explicit HARD_CAP guard. A1: HARD_CAP_TOKENS stays the FIXED
+        # module constant (500) across the sweep; only ``target_tokens``
+        # (the swept knob) gates the usual split.
         if cur and cur_tokens + para_tok > HARD_CAP_TOKENS:
             flush_now = True
-        elif cur and cur_tokens + para_tok > TARGET_TOKENS:
+        elif cur and cur_tokens + para_tok > target_tokens:
             flush_now = True
         else:
             flush_now = False
@@ -616,7 +630,7 @@ def _wire_neighbors(chunks: list[Chunk]) -> list[Chunk]:
     ]
 
 
-def chunk_filing(normalized_path: Path) -> list[Chunk]:
+def chunk_filing(normalized_path: Path, *, target_tokens: int = TARGET_TOKENS) -> list[Chunk]:
     """Read one ``NormalizedFiling`` JSON; return its chunks in document order (D-12).
 
     Pipeline:
@@ -634,6 +648,11 @@ def chunk_filing(normalized_path: Path) -> list[Chunk]:
     Args:
         normalized_path: Absolute or repo-relative path to one
             ``data/corpus/normalized/{ticker}/FY{year}.json`` file.
+        target_tokens: Greedy split point in BGE tokens (Phase 11 ABL-01
+            chunk-size sweep, D-05). Threaded into ``_chunk_section``.
+            A1 LOCKED — overlap (50) + hard cap (500) stay fixed; only
+            this knob varies across {300,450,600}. Defaults to the
+            production ``TARGET_TOKENS`` (450) — byte-identical default.
 
     Returns:
         ``list[Chunk]`` in document order. Empty if the input has no
@@ -656,6 +675,7 @@ def chunk_filing(normalized_path: Path) -> list[Chunk]:
             ticker=nf.ticker,
             fiscal_year=nf.fiscal_year,
             accession=nf.accession,
+            target_tokens=target_tokens,
         )
         chunks.extend(item_chunks)
 
@@ -676,6 +696,8 @@ def chunk_all(
     cfg: Settings,
     normalized_root: Path | None = None,
     out_root: Path | None = None,
+    *,
+    target_tokens: int = TARGET_TOKENS,
 ) -> int:
     """Iterate every committed normalized JSON; write chunks JSONL under ``data/corpus/chunks``.
 
@@ -705,6 +727,13 @@ def chunk_all(
         out_root: Override for the chunks JSONL output root. Tests use
             this for idempotency comparison; production callers leave
             it ``None``.
+        target_tokens: A1 LOCKED — overlap (50) + hard-cap (500) stay
+            fixed across the {300,450,600} sweep; target_tokens is the
+            single swept knob; hard cap is tied to BGE 512 + the Phase 5
+            canary — never scale it. The greedy split point in BGE tokens
+            (Phase 11 ABL-01 chunk-size sweep, D-05). Defaults to the
+            production ``TARGET_TOKENS`` (450) so every existing call site
+            is byte-identical (ING-04 idempotency preserved).
 
     Returns:
         Shell exit code:
@@ -737,7 +766,7 @@ def chunk_all(
         out_path = (out_root / rel).with_suffix(".jsonl")
 
         try:
-            chunks = chunk_filing(normalized_path)
+            chunks = chunk_filing(normalized_path, target_tokens=target_tokens)
         except Exception as exc:
             n_failed += 1
             log.error(
