@@ -20,6 +20,9 @@ Each subcommand dispatch lazily imports its implementation INSIDE the
 Subcommand handlers:
   run      — executes the full eval pipeline + writes report.md + results.json.
              Implemented in this wave (Wave 2 / Plan 10-02).
+  ablate   — runs baseline + ablation arms in one process and emits per-arm
+             sidecars + a comparison table (ABL-01/ABL-02). Flag-free like run
+             (D-03 — fixed arm set, no --arms knob). Phase 11 / Plan 11-02.
   validate — EVAL-04 well-formedness gate. Handler lands in Wave 3 / Plan 10-03.
              The subparser is registered here so validate is recognized by argparse
              and the help text is correct.
@@ -57,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
     # run: execute eval pipeline and write report
     sub.add_parser("run", help="execute eval pipeline and write report")
 
+    # ablate: run baseline + ablation arms; emit comparison table (flag-free, D-03)
+    sub.add_parser(
+        "ablate",
+        help="run baseline + ablation arms; emit comparison table (ABL-01/ABL-02)",
+    )
+
     # validate: EVAL-04 well-formedness gate (handler lands in Plan 10-03)
     validate_parser = sub.add_parser(
         "validate",
@@ -77,6 +86,12 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_eval.runner import run_eval
 
         return run_eval(cfg)
+
+    if args.cmd == "ablate":
+        # Lazy import INSIDE the branch (keeps --help < 5s; test_eval_cli_help_fast).
+        from docintel_eval.ablate import run_ablations
+
+        return run_ablations(cfg)
 
     if args.cmd == "validate":
         from pathlib import Path
