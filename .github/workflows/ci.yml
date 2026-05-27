@@ -95,6 +95,32 @@ jobs:
         # before they break the real-mode committed reports.
         run: uv run docintel-eval validate data/eval/reports/stub-sample
 
+      - name: Ablation run (stub-mode, component arms only) (ABL-01/ABL-02)
+        # Phase 11 D-10: every-PR stub smoke over the component arms (baseline +
+        # no-rerank + dense-only) — generate + validate, NO commit (a committed stub
+        # ablation per PR bloats git; stub deltas are non-representative, L-04).
+        # ~3 arms x ~0.25s, trivial. The re-chunk/re-index size arms are REAL-mode only
+        # (D-04) and are absent from this track — they run solely in the real-ablation job.
+        # Must run AFTER "Build indices (stub)" above — each arm's Retriever warms its
+        # stores from data/indices/ (Pitfall 6: make_index_stores loads data/indices/).
+        run: uv run docintel-eval ablate
+
+      - name: Ablation validate (EVAL-04 extended, D-11)
+        # D-11: run the extended ablation gate (all arms present, baseline present, n=32
+        # per arm, finite deltas + CIs, seed=42 determinism recompute) on the freshly
+        # produced ablation dir. The timestamped run dirs are named YYYYMMDD_* so the
+        # `20*/` glob selects only the new run and never the committed stub-sample/ dir
+        # (mtime-independent; safer than a bare `*/` glob).
+        run: |
+          latest=$(ls -1td data/eval/ablations/20*/ | head -1)
+          uv run docintel-eval validate "$latest"
+
+      - name: Ablation stub-sample drift gate (D-11)
+        # Mirrors the "Eval stub-sample drift gate" above: re-validate the canonical
+        # committed sample so a renderer/schema change is caught in the PR diff before it
+        # breaks the real-mode committed ablation reports.
+        run: uv run docintel-eval validate data/eval/ablations/stub-sample
+
       - name: pytest
         # Deselect real-mode tests (-m "not real") — they require
         # API keys + qdrant service + HF model download. Real-mode runs
