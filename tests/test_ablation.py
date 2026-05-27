@@ -72,9 +72,6 @@ _EXPECTED_N_QUESTIONS = 32
 # Reusable xfail reasons (one per implementation seam still pending)
 # ---------------------------------------------------------------------------
 _REASON_ABLATE = "Wave 1+: docintel_eval.ablate.run_ablations not yet implemented (Plan 02/03)"
-_REASON_ARM_BUILDERS = (
-    "Wave 1: docintel_eval.ablate arm-builder helpers (null-adapter swap) not yet implemented (Plan 02)"
-)
 _REASON_REPORT = "Wave 2: render_ablation_markdown / ablation-report.md not yet implemented (Plan 03)"
 _REASON_VALIDATE = "Wave 2: extended ablation validate gate not yet implemented (Plan 03)"
 _REASON_REAL = "Real-mode chunk-size sweep ({300,450,600}) is workflow_dispatch-only (D-04); Plan 06"
@@ -146,7 +143,6 @@ def _arm_deltas(manifest: dict, arm: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_ABLATE)
 def test_stub_ablate_emits_three_component_arms(tmp_path: Path) -> None:
     """ABL-01: stub ablate emits exactly the three component arms as valid sidecars.
 
@@ -212,7 +208,6 @@ def test_deltas_present_and_finite(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_ARM_BUILDERS)
 def test_arm_construction_uses_null_adapters() -> None:
     """ABL-01: arm builders swap the null adapters and construct Retriever directly.
 
@@ -381,7 +376,6 @@ def test_headline_sentence_per_ablation(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_ABLATE)
 def test_output_location() -> None:
     """ABL-02: default output lands under data/eval/ablations/<ts>/ (D-08).
 
