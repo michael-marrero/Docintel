@@ -84,5 +84,14 @@ class TraceIdMiddleware:
         # The collector binds trace_id on enter, writes one consolidated
         # trace_completed record on exit, and clears contextvars in a finally
         # (D-01 leak guard) — even if the downstream app raises.
-        with TraceSpanCollector(self._settings.trace_dir, trace_id=trace_id, source="api"):
+        #
+        # Phase 13 (Plan 13-02, RESEARCH Pitfall 3): thread the LIVE collector
+        # onto ``scope["state"]["trace_collector"]`` so the POST /query handler
+        # reuses it via ``request.state.trace_collector`` and records its
+        # ``pipeline`` span on the SAME collector — avoiding the double-write
+        # that would happen if the handler opened a second collector with the
+        # same trace_id (two ``trace_completed`` records for one request).
+        with TraceSpanCollector(self._settings.trace_dir, trace_id=trace_id, source="api") as tc:
+            scope.setdefault("state", {})
+            scope["state"]["trace_collector"] = tc
             await self.app(scope, receive, send)
