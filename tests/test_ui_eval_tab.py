@@ -1,11 +1,9 @@
-"""Plan 13-01 Wave-0 xfail-strict scaffold for the Eval-Results tab auto-detect (UI-04; D-12/13).
+"""Eval-Results tab auto-detect contract tests (UI-04; D-12/13).
 
-Locks the eval-report auto-detection contract BEFORE 13-04 implements
-``_find_eval_report``. Strict-xfail: ``docintel_ui.eval_view`` does not exist
-yet, so the in-body import raises at call time and xfail-strict absorbs it
-(collection still succeeds — the import is inside the test). 13-04 ships
-``_find_eval_report(data_dir) -> (Path | None, is_representative)`` +
-``representative_banner(is_representative)`` and removes these markers.
+De-xfailed from Plan 13-01 (Wave-0 xfail-strict scaffold) once Plan 13-04
+shipped ``docintel_ui.eval_view._find_eval_report`` +
+``representative_banner``. The bodies are unchanged from the scaffold — they
+now run green against the pure helpers.
 
 Node ids bound by ``13-VALIDATION.md``: ``test_eval_tab_detects_stub_sample``,
 ``test_eval_tab_stub_banner``.
@@ -15,10 +13,6 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-
-import pytest
-
-_XFAIL_REASON = "Implemented in 13-04 (eval_view._find_eval_report + representative_banner)"
 
 # Committed stub-sample results.json — its manifest.representative is False.
 _STUB_RESULTS = (
@@ -39,7 +33,6 @@ def _make_stub_data_dir(tmp_path: Path) -> Path:
     return tmp_path / "data"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_eval_tab_detects_stub_sample(tmp_path: Path) -> None:
     """D-13 — with no real-mode report present, auto-detect falls back to stub-sample (is_representative False)."""
     from docintel_ui.eval_view import _find_eval_report
@@ -51,7 +44,6 @@ def test_eval_tab_detects_stub_sample(tmp_path: Path) -> None:
     assert is_representative is False
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_eval_tab_stub_banner(tmp_path: Path) -> None:
     """D-13 — stub mode (is_representative False) surfaces a 'representative: false' banner."""
     from docintel_ui.eval_view import _find_eval_report, representative_banner
