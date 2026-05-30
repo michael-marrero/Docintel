@@ -65,20 +65,36 @@ COPY packages/ packages/
 FROM base AS api
 
 # Install api package + its deps (FastAPI, uvicorn, sentence-transformers).
+# Also sync docintel-index — the Phase 13 entrypoint (docker/entrypoint-api.sh,
+# UI-06 / D-18) invokes `docintel-index build` at container startup to
+# bootstrap the stub/NumPy index on a fresh clone (data/indices/ is gitignored).
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --package docintel-api
+    uv sync --frozen --no-dev --package docintel-api --package docintel-index
 
 # Pre-warm bge-reranker-base into HF_HOME=/opt/hf-cache so /health on a
 # no-network reviewer machine works on the first call.
 # (Phase 5 will actually invoke the reranker; Phase 1 just bakes the layer.)
 RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('BAAI/bge-reranker-base')"
 
+# Phase 13 UI-06 entrypoint: builds the stub index + seeds traces, then exec
+# uvicorn (PID 1 for correct SIGTERM handling — see docker/entrypoint-api.sh).
+# Replaces the pre-Phase-13 CMD ["uvicorn", ...]; the entrypoint exec's
+# uvicorn directly so there is no separate CMD.
+COPY docker/entrypoint-api.sh /entrypoint-api.sh
+RUN chmod +x /entrypoint-api.sh
+
 EXPOSE 8000
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+# start-period raised 10s -> 30s to cover first-run `docintel-index build`
+# inside the entrypoint (Assumption A4): the stub/NumPy build is fast but
+# Python import + uv environment cold-start can take a few seconds on first
+# container boot. Subsequent starts hit the idempotent MANIFEST.json skip
+# path (~ms). retries=3 × interval=10s remains a hard 30s ceiling after
+# start-period for catching genuinely broken containers.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
     CMD curl -fsS http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "docintel_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/entrypoint-api.sh"]
 
 
 # ============================================================================
