@@ -30,14 +30,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DOCINTEL_LLM_PROVIDER=stub \
     DOCINTEL_GIT_SHA=${GIT_SHA}
 
-# System dependencies required by the unstructured / OCR / table parsers.
-# (Tesseract MUST be on PATH — never hardcode the binary path. PITFALLS.md #27.)
+# System dependencies required by the unstructured / OCR / table parsers
+# (Tesseract MUST be on PATH — never hardcode the binary path. PITFALLS.md #27)
+# AND build tools required to compile the `pystemmer` sdist (no wheels on
+# PyPI as of v3.0.0; transitively pulled by `docintel-index` via bm25s).
+# `build-essential` is gcc + g++ + make + libc6-dev (~260 MB) — needed only at
+# image-build time, but kept in the base layer because both api and ui stages
+# inherit `base` and removing them in a later layer wouldn't shrink the
+# resulting image (Docker layers are union-mount, not differential). If the
+# image-size cap (< 3 GiB, per Dockerfile preamble) is breached, refactor to
+# a dedicated builder stage that compiles wheels then copies them to a clean
+# runtime stage. For the stub-mode demo image this is acceptable headroom.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libmagic1 \
         poppler-utils \
         tesseract-ocr \
         ca-certificates \
         curl \
+        build-essential \
+        python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (single static binary, ~15 MB).
@@ -68,8 +79,20 @@ FROM base AS api
 # Also sync docintel-index — the Phase 13 entrypoint (docker/entrypoint-api.sh,
 # UI-06 / D-18) invokes `docintel-index build` at container startup to
 # bootstrap the stub/NumPy index on a fresh clone (data/indices/ is gitignored).
+# Phase 13 gap closure 13-08: ALSO sync docintel-generate + docintel-retrieve.
+# `docintel-index build` instantiates the stub LLM adapter via
+# `docintel_core.adapters.factory.make_adapters`, which at module-load time
+# imports `docintel_generate.parse._CHUNK_RE` (stub LLM emits chunk-id-
+# delimited synthetic answers — see Plan 06-05). docintel-retrieve is the
+# other half of the Generator the api uses for POST /query. Without these
+# the entrypoint exits 1 before uvicorn starts, masquerading as a CR-01-
+# style "demo doesn't work on fresh clone" failure.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --package docintel-api --package docintel-index
+    uv sync --frozen --no-dev \
+        --package docintel-api \
+        --package docintel-index \
+        --package docintel-generate \
+        --package docintel-retrieve
 
 # Pre-warm bge-reranker-base into HF_HOME=/opt/hf-cache so /health on a
 # no-network reviewer machine works on the first call.
