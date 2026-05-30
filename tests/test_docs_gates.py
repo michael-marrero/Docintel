@@ -1,9 +1,8 @@
-"""Plan 13-01 Wave-0 xfail-strict scaffold for the DECISIONS.md ADR gate (UI-05; D-16).
+"""Docs gate for the repo-root ``DECISIONS.md`` ADR count (UI-05 / D-16).
 
-Locks the "DECISIONS.md exists with >= 8 ADRs" gate BEFORE 13-06 writes it.
-Strict-xfail: ``DECISIONS.md`` does not exist yet, so the assertion fails and the
-xfail holds. 13-06 ships 8-12 ADRs (``## ADR-NNN`` headings) and removes this
-marker; 13-07 confirms none survive.
+De-xfailed in Plan 13-06 once ``DECISIONS.md`` was authored with 10 ADRs.
+The xfail-strict marker was removed in-wave per project convention (a passing
+strict-xfail is an XPASS that fails the suite).
 
 Node id bound by ``13-VALIDATION.md``: ``test_decisions_md_has_eight_adrs``.
 """
@@ -12,10 +11,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-
-import pytest
-
-_XFAIL_REASON = "Implemented in 13-06 (DECISIONS.md with 8-12 ADRs)"
 
 
 def _repo_root() -> Path:
@@ -31,7 +26,6 @@ def _repo_root() -> Path:
     return here.parents[1]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_decisions_md_has_eight_adrs() -> None:
     """UI-05 / D-16 — repo-root ``DECISIONS.md`` exists with >= 8 ``## ADR-`` headings."""
     decisions = _repo_root() / "DECISIONS.md"
