@@ -83,6 +83,20 @@ RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('BAA
 COPY docker/entrypoint-api.sh /entrypoint-api.sh
 RUN chmod +x /entrypoint-api.sh
 
+# Phase 13 gap closure 13-08 (CR-01): the entrypoint runs `docintel-index build`,
+# which reads `/app/data/corpus/MANIFEST.json`. `data/indices/` is gitignored
+# so a fresh clone has no index; without the corpus baked into the image the
+# entrypoint raises FileNotFoundError and `set -eu` aborts before uvicorn
+# starts. Selective COPY (NOT wholesale `COPY data/`) keeps the image
+# deterministic — it pulls only tracked subdirs, never the gitignored runtime
+# trees `data/indices/`, `data/traces/`, `data/eval/cache/` that would leak
+# host-developer state. Placed AFTER the uv sync layers so changes under
+# `data/eval/reports/<timestamp>/` (which the user pastes real-mode numbers
+# into per `docs/REAL-RUN-CHECKLIST.md`) only bust this cheap data layer,
+# never the expensive base-layer / uv-sync layers.
+COPY data/corpus/ /app/data/corpus/
+COPY data/eval/traces-seed.jsonl /app/data/eval/traces-seed.jsonl
+
 EXPOSE 8000
 
 # start-period raised 10s -> 30s to cover first-run `docintel-index build`
@@ -106,6 +120,16 @@ FROM base AS ui
 # in the ui image — keeps it well under 1 GiB.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package docintel-ui
+
+# Phase 13 gap closure 13-08 (CR-01): the Eval-Results tab's
+# `_find_eval_report(settings.data_dir)` reads `/app/data/eval/reports/...`;
+# without these baked in the tab renders "No eval report found" on a fresh
+# clone. Selective COPY — NOT the 55M corpus that the ui doesn't need;
+# this keeps the ui image lean. No `traces-seed.jsonl` either — the ui
+# fetches traces from the api over HTTP, never reads the seed directly.
+COPY data/eval/reports/stub-sample/    /app/data/eval/reports/stub-sample/
+COPY data/eval/ablations/stub-sample/  /app/data/eval/ablations/stub-sample/
+COPY data/eval/ground_truth/           /app/data/eval/ground_truth/
 
 EXPOSE 8501
 
