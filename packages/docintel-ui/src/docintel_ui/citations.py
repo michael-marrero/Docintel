@@ -149,17 +149,40 @@ def render_citation_badges(answer: Answer) -> str:
         for index, citation in enumerate(answer.citations, start=1)
     ]
 
+    # Two-pass placeholder substitution (closes CR-02 from 13-REVIEW.md):
+    # a citation excerpt can legitimately contain a later citation's marker
+    # token (e.g. citation 1's excerpt says "see [2]"). With single-pass
+    # ``str.replace``, replacing "[2]" then re-enters the already-rendered
+    # badge HTML of citation 1 (the excerpt now lives inside ``<abbr
+    # title="..."``), corrupting it. The pass-1 substitution swaps markers
+    # for NUL-bracketed placeholders that ``html.escape`` leaves untouched
+    # and that cannot legally appear in SEC 10-K prose; pass-2 swaps each
+    # placeholder for its rendered badge. Because pass-2 inserts the badge
+    # HTML only AFTER all marker tokens have been replaced with safe
+    # placeholders, no badge's HTML can ever overlap a later citation's
+    # marker. NUL (0x00) is not escaped by ``html.escape`` (it is preserved
+    # verbatim), so the placeholder boundaries survive escaping unchanged.
     rendered = answer.text
     any_marker_replaced = False
+    placeholders: list[tuple[str, str]] = []
     for index, chunk_id, badge in badges:
         chunk_id_token = f"[{chunk_id}]"
         numeric_token = f"[{index}]"
+        placeholder = f"\x00CITE-{index}\x00"
         if chunk_id_token in rendered:
-            rendered = rendered.replace(chunk_id_token, badge)
+            rendered = rendered.replace(chunk_id_token, placeholder)
+            placeholders.append((placeholder, badge))
             any_marker_replaced = True
         elif numeric_token in rendered:
-            rendered = rendered.replace(numeric_token, badge)
+            rendered = rendered.replace(numeric_token, placeholder)
+            placeholders.append((placeholder, badge))
             any_marker_replaced = True
+
+    # Pass 2: placeholders → badge HTML. Order doesn't matter because each
+    # placeholder is unique (CITE-{index}) and contains the NUL byte, which
+    # cannot collide with any badge HTML emitted by ``_badge_html``.
+    for placeholder, badge in placeholders:
+        rendered = rendered.replace(placeholder, badge)
 
     if not any_marker_replaced:
         # No markers in text — append badges so the inline hover affordance
