@@ -32,7 +32,7 @@ server (the Wave 0 contract from Plan 13-01).
 Security (T-13-07 — path traversal in eval-report scan): every path is
 confined inside ``Path(data_dir) / "eval"``; only known subdirectory names
 (``reports/``, ``ablations/``, ``stub-sample/``) are iterated. No user input
-ever feeds the path; no hardcoded ``/app/data`` (Pitfall 9). The
+ever feeds the path; no hardcoded container data root (Pitfall 9). The
 ``data_dir`` arrives from ``Settings.data_dir`` (the single env reader,
 FND-11), so the boundary is enforced by configuration, not by ad-hoc string
 manipulation.
@@ -112,7 +112,7 @@ def _find_eval_report(data_dir: str) -> tuple[Path | None, bool]:
 
     Args:
         data_dir: the ``Settings.data_dir`` value — the project's data root
-            (e.g. ``"data"`` or ``"/app/data"`` in the container). The
+            (e.g. ``"data"`` locally or the configured container data root). The
             ``eval/`` subtree is rooted under this.
 
     Returns:

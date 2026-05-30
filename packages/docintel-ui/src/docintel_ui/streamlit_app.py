@@ -4,13 +4,29 @@ Phase 1 (D-16): three skeletal tabs Query / Traces / Eval-Results — labels
 LOCKED across all later phases. Health probe at the top proves docker-compose
 plumbing + X-Trace-Id propagation.
 
-Phase 13 (Plan 13-03): the Query tab is now real — a free-text question
-(D-05) → ``POST /query`` over HTTP with an ``X-Trace-Id`` header (D-01) →
-answer card with inline hoverable numbered citation badges + confidence badge
-+ a cost/latency meter from the response trace block (D-03); refusals render
-as a distinct amber card (D-04); a Sources list renders below the answer
-(D-09). Traces + Eval-Results tabs stay as Plan 1 placeholders — Plan 13-04
-owns them in the next wave.
+Phase 13 (Plan 13-03): the Query tab is real — free-text question (D-05) →
+``POST /query`` over HTTP with an ``X-Trace-Id`` header (D-01) → answer card
+with inline hoverable numbered citation badges + confidence badge + a
+cost/latency meter from the response trace block (D-03); refusals render as
+a distinct amber card (D-04); a Sources list renders below the answer (D-09).
+
+Phase 13 (Plan 13-04): the Traces and Eval-Results tabs are real:
+
+* Traces tab fetches ``GET /traces`` over HTTP (D-10 — the UI never reads the
+  trace_dir directly; the API owns the JSONL files), renders a newest-first
+  recent-queries table (``st.dataframe`` with row-selection), and on
+  row-select renders per-stage horizontal timing bars via Altair
+  ``mark_bar`` + ``x``/``x2`` cumulative-start waterfall (D-11). Stub-mode
+  ``duration_ms == 0`` is labelled honestly so the recruiter GIF reads as
+  non-representative.
+* Eval-Results tab uses the pure helpers in ``docintel_ui.eval_view`` to
+  auto-detect the newest real report under ``data/eval/reports/`` else the
+  committed ``stub-sample`` (D-13), surfaces the ``representative: false``
+  warning banner above the headline tables when in stub mode, and renders
+  the native Streamlit headline tables for retrieval (Hit@5/Hit@3/MRR +
+  Wilson CIs) + faithfulness + ablation arm deltas (bootstrap CIs from
+  ``ablation-manifest.json``), plus an ``st.expander`` carrying the full
+  committed ``report.md`` / ``ablation-report.md`` (D-12).
 
 This module MUST NOT read env vars directly — read everything via Settings.
 """
@@ -18,15 +34,27 @@ This module MUST NOT read env vars directly — read everything via Settings.
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
+import altair as alt
 import httpx
+import pandas as pd
 import streamlit as st
 from docintel_core import __version__
 from docintel_core.config import Settings
 from docintel_core.types import REFUSAL_TEXT_SENTINEL, Answer
 
 from docintel_ui.citations import build_sources_list, render_citation_badges
+from docintel_ui.eval_view import (
+    _find_eval_report,
+    load_ablation_manifest,
+    load_results,
+    parse_ablation_rows,
+    parse_faithfulness_row,
+    parse_retrieval_rows,
+    representative_banner,
+)
 
 # ---------------------------------------------------------------------------
 # Settings & helpers
@@ -93,6 +121,235 @@ def _call_query(api_url: str, question: str) -> tuple[bool, dict[str, Any] | str
         return False, f"{type(exc).__name__}: {exc}"
     except ValueError as exc:  # JSON decode failure
         return False, f"Invalid JSON from {api_url}/query: {exc}"
+
+
+def _fetch_traces(api_url: str) -> tuple[bool, list[dict[str, Any]] | str]:
+    """Call GET {api_url}/traces (D-10).
+
+    Mirrors ``_probe_health`` exactly: sync ``httpx.get``, fresh UUID4 in the
+    ``X-Trace-Id`` header (the API echoes it; the middleware binds it for the
+    /traces request itself), short 3s timeout (the API just reads a few JSONL
+    files), never-raises ``(ok, payload)`` return.
+
+    Returns ``(True, traces_list)`` on success where ``traces_list`` is the
+    response JSON (newest-first per the API; Plan 13-02 reverses
+    ``load_traces`` output before returning). On failure returns
+    ``(False, error_string)``.
+    """
+    trace_id = str(uuid.uuid4())
+    try:
+        resp = httpx.get(
+            f"{api_url}/traces",
+            headers={"X-Trace-Id": trace_id},
+            timeout=3.0,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        if not isinstance(body, list):
+            return False, f"Unexpected /traces payload (not a list): {type(body).__name__}"
+        return True, body
+    except httpx.HTTPError as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    except ValueError as exc:  # JSON decode failure
+        return False, f"Invalid JSON from {api_url}/traces: {exc}"
+
+
+def _render_stage_bars(trace: dict[str, Any]) -> None:
+    """Render per-stage horizontal timing bars for a single trace (D-11).
+
+    Builds a cumulative-start waterfall from the trace's ``spans`` list
+    (each span carries ``name`` + ``duration_ms``) and renders an Altair
+    ``mark_bar`` with ``x`` = ``start_ms``, ``x2`` = ``end_ms``, ``y`` =
+    ``stage``. This is the canonical Altair Gantt-chart primitive
+    (RESEARCH Focus Area 2; ``st.bar_chart`` cannot render horizontal
+    range-encoded bars).
+
+    Stub-mode traces carry ``duration_ms == 0.0`` on every span (the stub
+    LLM is instant) — the chart still renders (zero-width bars) and the
+    caption labels the situation honestly so the recruiter GIF reads as
+    non-representative.
+    """
+    spans = trace.get("spans", [])
+    if not spans:
+        st.info("No span data in this trace.")
+        return
+
+    cumulative_start = 0.0
+    rows: list[dict[str, Any]] = []
+    for span in spans:
+        duration = float(span.get("duration_ms", 0.0))
+        rows.append(
+            {
+                "stage": str(span.get("name", "unknown")),
+                "start_ms": cumulative_start,
+                "end_ms": cumulative_start + duration,
+                "duration_ms": duration,
+            }
+        )
+        cumulative_start += duration
+
+    df = pd.DataFrame(rows)
+
+    chart = (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(
+            x=alt.X("start_ms:Q", title="Time (ms)"),
+            x2=alt.X2("end_ms:Q"),
+            y=alt.Y("stage:N", title="Stage", sort=None),
+            color=alt.Color("stage:N", legend=None),
+            tooltip=[
+                alt.Tooltip("stage:N", title="Stage"),
+                alt.Tooltip("duration_ms:Q", title="Duration (ms)", format=".1f"),
+                alt.Tooltip("start_ms:Q", title="Start (ms)", format=".1f"),
+            ],
+        )
+        .properties(height=150, title="Per-stage timing (waterfall)")
+    )
+
+    st.altair_chart(chart, use_container_width=True)
+
+    total_ms = float(trace.get("total_ms", 0.0))
+    cost_usd = float(trace.get("cost_usd", 0.0))
+    stub_note = (
+        " · stub mode — all durations are 0 ms (non-representative)"
+        if total_ms == 0.0
+        else ""
+    )
+    st.caption(
+        f"Total: {total_ms:.1f} ms · Cost: ${cost_usd:.6f}{stub_note}"
+    )
+
+
+def _render_traces_tab(settings: Settings) -> None:
+    """Render the Traces tab body — recent-queries table + selected timing bars.
+
+    Fetches over HTTP from ``GET /traces`` (D-10 — never reads ``trace_dir``
+    directly). The API already returns newest-first (Plan 13-02 reverses
+    ``load_traces`` output, RESEARCH Pitfall 8); we slice the first 50 for
+    the table. ``st.dataframe`` with ``selection_mode="single-row"`` +
+    ``on_select="rerun"`` is the Streamlit 1.56 row-selection API
+    (RESEARCH Focus Area 2 / Pitfall 5).
+    """
+    ok, body = _fetch_traces(settings.api_url)
+    if not ok:
+        st.error(f"Could not fetch traces from {settings.api_url}/traces: {body}")
+        return
+
+    assert isinstance(body, list)
+    if not body:
+        st.info(
+            "No traces yet. Run a query from the Query tab to populate this view."
+        )
+        return
+
+    # Defensive newest-first slice — the API reverses load_traces, but we
+    # apply ``list(...)[:50]`` here so the row indices used by the dataframe
+    # selection map 1:1 onto the displayed rows even if the API ever changes
+    # its ordering convention (Pitfall 8 defense-in-depth).
+    display_traces: list[dict[str, Any]] = list(body)[:50]
+
+    summary_rows: list[dict[str, Any]] = []
+    for record in display_traces:
+        trace_id_short = str(record.get("trace_id", ""))[:8]
+        summary_rows.append(
+            {
+                "trace_id": f"{trace_id_short}…",
+                "total_ms": float(record.get("total_ms", 0.0)),
+                "cost_usd": float(record.get("cost_usd", 0.0)),
+                "refused": bool(record.get("refused", False)),
+                "source": str(record.get("source", "")),
+            }
+        )
+
+    selected = st.dataframe(
+        summary_rows,
+        selection_mode="single-row",
+        on_select="rerun",
+        use_container_width=True,
+        hide_index=False,
+    )
+
+    selection_rows = getattr(getattr(selected, "selection", None), "rows", []) or []
+    if selection_rows:
+        idx = int(selection_rows[0])
+        if 0 <= idx < len(display_traces):
+            _render_stage_bars(display_traces[idx])
+    else:
+        st.caption("Select a row above to see per-stage timing bars.")
+
+
+def _render_eval_tab(settings: Settings) -> None:
+    """Render the Eval-Results tab body — auto-detect, banner, native tables, expander.
+
+    Calls ``_find_eval_report(settings.data_dir)`` for the report dir +
+    representative flag (D-13 auto-detect; T-13-07 path-confined). Renders:
+
+    1. The ``representative: false`` warning banner above the headline tables
+       in stub mode (D-13 honest-stub labelling).
+    2. Native ``st.table`` for the retrieval headline rows (Hit@5/Hit@3/MRR +
+       Wilson CIs) and a faithfulness pass-rate row (D-12).
+    3. Native ``st.table`` for the ablation arms (deltas + bootstrap CIs)
+       sourced from the matching ablation manifest if present.
+    4. An ``st.expander`` carrying the full committed ``report.md`` +
+       ``ablation-report.md`` for depth (D-12 — recruiters skim the tables;
+       engineers read the markdown).
+
+    All file paths are confined to ``Path(settings.data_dir) / "eval" / ...``
+    (Pitfall 9 / FND-11 — never hardcode the container data root).
+    """
+    report_dir, is_representative = _find_eval_report(settings.data_dir)
+
+    if report_dir is None:
+        st.warning(
+            "No eval report found under "
+            f"`{Path(settings.data_dir) / 'eval' / 'reports'}`. "
+            "Run `docintel-eval run` to generate one."
+        )
+        return
+
+    banner = representative_banner(is_representative)
+    if banner is not None:
+        st.warning(banner)
+
+    results = load_results(report_dir)
+    st.subheader("Retrieval metrics")
+    st.table(parse_retrieval_rows(results))
+
+    st.subheader("Faithfulness")
+    st.table([parse_faithfulness_row(results)])
+
+    # Ablation manifest — mirror the report-dir auto-detect convention.
+    # When we resolved a real timestamped report, look for an
+    # identically-named ablation sibling; otherwise fall back to stub-sample.
+    ablations_base = Path(settings.data_dir) / "eval" / "ablations"
+    if is_representative:
+        ablations_dir = ablations_base / report_dir.name
+        if not ablations_dir.is_dir():
+            ablations_dir = ablations_base / "stub-sample"
+    else:
+        ablations_dir = ablations_base / "stub-sample"
+    manifest = load_ablation_manifest(ablations_dir)
+    if manifest is not None:
+        st.subheader("Ablation deltas")
+        st.caption(
+            f"Baseline = `{manifest.get('baseline', '?')}` · "
+            f"Δ = bootstrap mean change vs baseline · "
+            f"`[lo, hi]` = 95% bootstrap CI · "
+            f"n_boot = {manifest.get('n_boot', '?')}"
+        )
+        st.table(parse_ablation_rows(manifest))
+
+    # Full-report expander (D-12 — depth on demand).
+    report_md = report_dir / "report.md"
+    if report_md.is_file():
+        with st.expander("Full eval report (markdown)"):
+            st.markdown(report_md.read_text())
+
+    ablation_md = ablations_dir / "ablation-report.md"
+    if ablation_md.is_file():
+        with st.expander("Full ablation report (markdown)"):
+            st.markdown(ablation_md.read_text())
 
 
 def _confidence_badge(confidence: str) -> str:
@@ -238,19 +495,22 @@ def main() -> None:
 
     with tab_traces:
         st.header("Traces")
-        st.info(
-            "Coming in Phase 13 (depends on Phase 12 trace plumbing). This tab "
-            "will render a flame-chart-ish view of recent queries from the JSONL "
-            "trace log (API-04)."
+        st.caption(
+            "Recent queries with per-stage timing. Select a row to see "
+            "horizontal timing bars (waterfall) for that trace. Stub mode "
+            "shows zero-width bars — durations are 0 ms by construction."
         )
+        _render_traces_tab(settings)
 
     with tab_eval:
         st.header("Eval-Results")
-        st.info(
-            "Coming in Phase 13 (depends on Phase 11 ablation). This tab will "
-            "show the latest baseline + ablation tables with Wilson confidence "
-            "intervals (API-05)."
+        st.caption(
+            "Headline retrieval + ablation metrics from the most recent eval "
+            "run (auto-detected). If no real run is on disk this falls back "
+            "to the committed stub-sample and surfaces a "
+            "`representative: false` banner."
         )
+        _render_eval_tab(settings)
 
 
 main()
