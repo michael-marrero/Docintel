@@ -30,12 +30,12 @@
 # do NOT hardcode /app/data. Defaults to `data` so the script also works
 # when invoked from a host shell at the repo root for debugging.
 
-set -e
+set -eu
 
 DATA_DIR="${DOCINTEL_DATA_DIR:-data}"
 INDEX_MANIFEST="${DATA_DIR}/indices/MANIFEST.json"
 TRACE_DIR="${DATA_DIR}/traces"
-TRACE_SEED="data/eval/traces-seed.jsonl"
+TRACE_SEED="${DATA_DIR}/eval/traces-seed.jsonl"
 
 echo "[entrypoint] DOCINTEL_DATA_DIR=${DATA_DIR}"
 
