@@ -1,12 +1,10 @@
-"""Plan 13-01 Wave-0 xfail-strict scaffold for citation-badge rendering (UI-02; D-06/07/08).
+"""Plan 13-03 (de-xfailed from Plan 13-01 Wave-0 scaffold) — citation-badge rendering (UI-02; D-06/07/08).
 
 Locks the citation-badge HTML contract AND the V5 output-encoding (HTML-escaping)
-security control BEFORE 13-03 implements ``render_citation_badges``. Strict-xfail:
-``docintel_ui.citations`` does not exist yet, so the in-body import raises
-``ModuleNotFoundError`` at call time (NOT collection — the import is inside the
-test, so collection still succeeds) and xfail-strict absorbs it. 13-03 ships the
-pure ``render_citation_badges(answer) -> str`` helper (testable without a running
-Streamlit server) and removes these markers.
+security control. 13-03 shipped ``packages/docintel-ui/src/docintel_ui/citations.py``
+with the pure ``render_citation_badges(answer) -> str`` helper (testable without a
+running Streamlit server); the xfail-strict markers were swept in-wave when the
+helper went green (a passing xfail-strict is an XPASS that fails the suite).
 
 Node ids bound by ``13-VALIDATION.md``: ``test_citation_badge_html``,
 ``test_citation_html_escaping``.
@@ -14,11 +12,7 @@ Node ids bound by ``13-VALIDATION.md``: ``test_citation_badge_html``,
 
 from __future__ import annotations
 
-import pytest
-
 from docintel_core.types import Answer, Citation
-
-_XFAIL_REASON = "Implemented in 13-03 (render_citation_badges helper)"
 
 
 def _answer_with_citation(text: str, excerpt: str) -> Answer:
@@ -42,7 +36,6 @@ def _answer_with_citation(text: str, excerpt: str) -> Answer:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_citation_badge_html() -> None:
     """D-06/07/08 — each citation renders as a numbered ``<abbr title="...">[N]</abbr>`` badge."""
     from docintel_ui.citations import render_citation_badges
@@ -54,7 +47,6 @@ def test_citation_badge_html() -> None:
     assert "[1]" in html, f"badge must be the numbered marker [1]: {html!r}"
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_citation_html_escaping() -> None:
     """Security V5 (T-13-01) — dangerous chars in the excerpt are HTML-escaped in the title.
 
