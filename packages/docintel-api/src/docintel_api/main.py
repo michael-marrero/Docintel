@@ -17,8 +17,9 @@ from typing import Any, Literal
 from docintel_core import __version__
 from docintel_core.config import Settings
 from docintel_core.log import configure_logging
+from docintel_core.trace import load_traces
 from docintel_core.types import Answer
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -237,6 +238,60 @@ def query(req: QueryRequest, request: Request) -> QueryResponse:
             cost_usd=cost_usd,
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /traces + GET /trace/{id} — UI-01 traces tab; D-10
+# ---------------------------------------------------------------------------
+
+
+def _is_valid_uuid(raw: str) -> bool:
+    """True iff ``raw`` parses as a UUID — mirrors ``middleware._validate_trace_id``
+    semantics (Security V5 / T-13-03 path-traversal guard).
+
+    The ``{trace_id}`` path parameter is untrusted. A non-UUID string must
+    never reach a filesystem path; ``load_traces`` is already path-confined to
+    ``trace_dir`` (Phase 12 V12) but defense-in-depth: reject at the route
+    boundary so attacker input cannot drive a wasted full-scan of the sink.
+    """
+    import uuid as _uuid
+
+    try:
+        _uuid.UUID(raw)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
+@app.get("/traces", tags=["traces"])
+def list_traces(limit: int = 50) -> list[dict[str, Any]]:
+    """Return the most recent ``trace_completed`` records, newest-FIRST (D-10).
+
+    ``load_traces`` returns newest-LAST (file-sorted + append-order; RESEARCH
+    Pitfall 8); the UI Traces tab wants newest-first for the recent-queries
+    table, so we ``reversed`` it here at the boundary. ``limit`` caps the
+    response at a sane portfolio-scale default (50); pagination not required
+    (CONTEXT "Claude's Discretion").
+    """
+    return list(reversed(load_traces(_settings().trace_dir, limit=limit)))
+
+
+@app.get("/trace/{trace_id}", tags=["traces"])
+def get_trace(trace_id: str) -> dict[str, Any]:
+    """Return the single ``trace_completed`` record matching ``trace_id`` (D-10).
+
+    UUID-validate ``trace_id`` BEFORE any filesystem read (T-13-03). On
+    invalid OR unknown id: 404 — never 500, never a path read with attacker
+    input. ``load_traces`` is path-confined to ``trace_dir`` (Phase 12 V12);
+    this route is additionally guarded by the UUID check so a non-UUID id is
+    rejected at the route boundary, not the helper.
+    """
+    if not _is_valid_uuid(trace_id):
+        raise HTTPException(status_code=404, detail="trace not found")
+    for record in load_traces(_settings().trace_dir):
+        if record.get("trace_id") == trace_id:
+            return record
+    raise HTTPException(status_code=404, detail="trace not found")
 
 
 # ---------------------------------------------------------------------------

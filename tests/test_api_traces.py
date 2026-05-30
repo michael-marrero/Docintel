@@ -1,10 +1,8 @@
-"""Plan 13-01 Wave-0 xfail-strict scaffold for ``GET /traces`` + ``GET /trace/{id}`` (UI-01; D-10).
+"""Plan 13-02 ``GET /traces`` + ``GET /trace/{id}`` contract tests (UI-01; D-10).
 
-Locks the trace read-endpoint contract BEFORE 13-02 implements it. Every test is
-strict-xfail: the endpoints do not exist yet (404), so the assertions fail and
-the xfail holds. 13-02 adds the endpoints (reading via
-``docintel_core.trace.load_traces`` over ``settings.trace_dir``) and removes
-these markers; 13-07 confirms none survive.
+Wave 0 (Plan 13-01) scaffolded these tests as strict-xfail; Plan 13-02 added
+the endpoints and removed the xfail markers in-wave (a passing strict-xfail is
+an XPASS that fails the suite); 13-07 confirms none survive across the phase.
 
 The tests seed a tmp ``trace_dir`` with records in the consolidated
 ``trace_completed`` shape produced by ``docintel_core.trace.TraceSpanCollector``,
@@ -20,11 +18,8 @@ import uuid
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from docintel_core.trace import load_traces
-
-_XFAIL_REASON = "Implemented in 13-02 (GET /traces + GET /trace/{id})"
+from fastapi.testclient import TestClient
 
 
 def _seed_trace_dir(trace_dir: Path, *trace_ids: str) -> None:
@@ -58,7 +53,6 @@ def _point_settings_at(monkeypatch: pytest.MonkeyPatch, trace_dir: Path) -> None
     reset_settings_cache()
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_get_traces_returns_list(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -78,7 +72,6 @@ def test_get_traces_returns_list(
         assert "trace_id" in rec and "total_ms" in rec
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_get_trace_by_id(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -93,7 +86,6 @@ def test_get_trace_by_id(
     assert resp.json()["trace_id"] == known
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL_REASON)
 def test_get_trace_unknown_returns_404(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
