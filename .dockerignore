@@ -12,7 +12,18 @@
 !.env.example
 *.key
 *.pem
+
+# Build context: exclude `data/` wholesale, then re-include the tracked subdirs
+# the Dockerfile selectively COPYs into the images (Phase 13 plan 13-08; see
+# `docker/Dockerfile` comments). The negation overrides keep the gitignored
+# runtime trees (`data/indices/`, `data/traces/`, `data/eval/cache/`) out of
+# the build context while letting `COPY data/corpus/`, `COPY data/eval/...`
+# resolve. Without these negations, COPY fails at build time with
+# `"/data/...": not found` and the entrypoint never runs.
 data/
+!data/corpus/
+!data/eval/
+data/eval/cache/
 
 # Python build / cache artifacts
 __pycache__/
