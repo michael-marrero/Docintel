@@ -164,8 +164,8 @@ def run_eval(
     # ------------------------------------------------------------------
     # Step 3: load ground-truth questions
     # ------------------------------------------------------------------
-    questions_path = Path("data/eval/ground_truth/questions.jsonl")
-    records: list[EvalRecord] = load_questions(questions_path)
+    eval_set_path = Path("data/eval/ground_truth/eval_set.jsonl")
+    records: list[EvalRecord] = load_questions(eval_set_path)
 
     # ------------------------------------------------------------------
     # Step 4: per-question loop
@@ -350,7 +350,7 @@ def run_eval(
         ),
         "provider": str(cfg.llm_provider),
         "n_questions": len(records),
-        "dataset_hash": _dataset_hash(questions_path),
+        "dataset_hash": _dataset_hash(eval_set_path),
         "total_cost_usd": total_cost_usd,
         "wall_clock_seconds": wall_clock_seconds,
         "representative": is_representative,
@@ -361,7 +361,7 @@ def run_eval(
     # ------------------------------------------------------------------
     if hero_record is None:
         if not records:
-            log.error("eval_run_no_questions", questions_path=str(questions_path))
+            log.error("eval_run_no_questions", eval_set_path=str(eval_set_path))
             return 1
         hero_record = records[0]
         hero_result_text = answers[0].text if answers else ""

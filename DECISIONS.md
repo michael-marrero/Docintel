@@ -472,4 +472,74 @@ first-boot Python cold-start + index build.
 
 ---
 
-*Last updated: 2026-05-30, Phase 13 plan 13-06.*
+## ADR-013: Eval-set mutation policy (Phase 14 D-03)
+
+**Status:** Accepted
+
+**Context:**
+The v1.0 retro's #1 unwritten lesson — "stub geometry must mirror real-mode
+geometry for canaries to be meaningful" — has an eval-set analog: paired-
+bootstrap deltas mean nothing if the underlying questions or golds drift
+mid-experiment. Phase 14 froze the ground-truth eval set at
+`data/eval/ground_truth/eval_set.jsonl` (renamed from `questions.jsonl` per
+D-01) and pinned its byte-identity via a 64-char hex SHA256 constant in
+`tests/test_eval_set_frozen.py::EVAL_SET_SHA256`. Any future change to the
+eval set — adding a question, fixing a typo'd gold ID, rewriting a refusal
+prompt — silently invalidates every committed report and every
+Phase 17 paired-bootstrap delta unless the change is paired with a
+re-baseline cycle. Without a written protocol the natural pattern would be
+"edit the JSONL, bump the SHA256 constant, push" — which is exactly the
+silent-invalidation failure mode this ADR exists to prevent.
+
+**Decision:**
+Any mutation of `data/eval/ground_truth/eval_set.jsonl` after the Phase 14
+freeze MUST execute all four steps below, in order, in the same PR:
+
+1. **Write a new ADR in `DECISIONS.md`** documenting the change, the
+   reviewer-visible reason it could not wait for v2.0, and the previous
+   baseline being superseded (the "supersedes baseline `<ts>`" field).
+2. **Update `EVAL_SET_SHA256`** in `tests/test_eval_set_frozen.py` to the
+   fresh `sha256(open(eval_set.jsonl,"rb").read()).hexdigest()` of the
+   mutated file. The xfail-strict marker is permanently removed (Plan
+   14-02); the only path back to green is a matching constant.
+3. **Re-run real-eval** via `gh workflow run real-eval` to produce a
+   fresh `representative: true` report under `data/eval/reports/<ts>/`.
+   The report's `manifest.dataset_hash` MUST match the new
+   `EVAL_SET_SHA256` (the existing validate gate at `validate.py:248-259`
+   asserts this on every committed report dir).
+4. **Update `data/eval/baseline.json`** per D-07 to point at the new
+   report dir + its `eval_set_sha256`. Phase 17 plans MUST validate
+   against the baseline they declare (the schema mismatch surfaces as
+   `"baseline invalidated; re-baseline per ADR-013"` at delta-compute
+   time, not as a silently misrouted comparison against a stale baseline).
+
+**Consequences:**
+
+- + Paired-bootstrap deltas remain interpretable across phases. A Phase 17
+  delta against the locked v1.0 baseline is structurally guaranteed to
+  compare like-against-like; mutations require an explicit re-baseline that
+  every downstream consumer sees in the git history.
+- + CI catches accidental mutations loudly. A one-character typo in
+  `eval_set.jsonl` flips `test_eval_set_sha256_matches_frozen_constant`
+  from green to red with a stderr pointer at this ADR; the developer cannot
+  bypass it by editing the constant without also touching DECISIONS.md and
+  re-running real-eval (the validate gate fails on `dataset_hash` mismatch
+  if they try).
+- + The `data/eval/baseline.json` pointer mechanism (D-07) makes the
+  cross-check declarative: Phase 17 reads the baseline's
+  `eval_set_sha256` and asserts the current file matches it before
+  computing any delta. The mismatch error message names this ADR.
+- - Any legitimate eval-set fix — e.g. a typo'd gold chunk_id that
+  resolves to the wrong company, or a refusal flavor that drifted out of
+  the controlled vocabulary — requires the full 4-step cycle, not a
+  one-line patch. The cost is real: a real-eval run costs API budget and
+  ~15 min of wall-clock.
+- - Phase 17 mid-development runs that touch the eval set (e.g. expanding
+  the multi-hop set to stress the new chunker) must explicitly land a
+  baseline-supersession ADR before merging. The ADR-014/015 slots are not
+  reserved for this — every supersession allocates its own number from
+  whatever the running count is at PR time.
+
+---
+
+*Last updated: 2026-05-31, Phase 14 plan 14-02.*

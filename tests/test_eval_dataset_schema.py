@@ -1,7 +1,7 @@
 """Well-formedness + resolution gate for the Phase 8 ground-truth eval set.
 
 Tests the EvalRecord Pydantic v2 model (D-02/D-03) and the committed
-questions.jsonl dataset against a 12-function well-formedness suite.
+eval_set.jsonl dataset against a 12-function well-formedness suite.
 
 Wave-0 semantics (Plan 01): the schema + gold-ID-resolution gates run green
 against the single-record seed. Curation-volume gates (test_record_count,
@@ -29,7 +29,7 @@ from docintel_core.types import REFUSAL_TEXT_SENTINEL
 # Module-level path anchor (canary test pattern — test_reranker_canary.py:100)
 # ---------------------------------------------------------------------------
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_QUESTIONS_PATH = _REPO_ROOT / "data" / "eval" / "ground_truth" / "questions.jsonl"
+_EVAL_SET_PATH = _REPO_ROOT / "data" / "eval" / "ground_truth" / "eval_set.jsonl"
 
 # ---------------------------------------------------------------------------
 # Dataset volume floors (D-06 — curation gates; markers removed by Plan 05)
@@ -70,10 +70,10 @@ _REFUSAL_FLAVOR_TAGS: frozenset[str] = frozenset(
 
 @pytest.fixture(scope="session")
 def questions_file() -> Path:
-    """Return the path to questions.jsonl, asserting it exists (GT-03)."""
-    p = _QUESTIONS_PATH
+    """Return the path to eval_set.jsonl, asserting it exists (GT-03)."""
+    p = _EVAL_SET_PATH
     assert p.exists(), (
-        f"GT-03: questions.jsonl must exist at {p}. "
+        f"GT-03: eval_set.jsonl must exist at {p}. "
         "Run Plan 01 (Wave 0) to create the seed file."
     )
     return p
@@ -81,7 +81,7 @@ def questions_file() -> Path:
 
 @pytest.fixture(scope="session")
 def all_records(questions_file: Path) -> list[object]:
-    """Load and validate all EvalRecord objects from questions.jsonl.
+    """Load and validate all EvalRecord objects from eval_set.jsonl.
 
     Triggers Pydantic validation for every record at fixture-setup time;
     any schema violation surfaces here, not inside individual test bodies.
@@ -137,9 +137,9 @@ def corpus_chunk_tokens() -> dict[str, int]:
 
 
 def test_file_exists() -> None:
-    """GT-03: questions.jsonl must exist at the committed path."""
-    assert _QUESTIONS_PATH.exists(), (
-        f"GT-03: questions.jsonl not found at {_QUESTIONS_PATH}. "
+    """GT-03: eval_set.jsonl must exist at the committed path."""
+    assert _EVAL_SET_PATH.exists(), (
+        f"GT-03: eval_set.jsonl not found at {_EVAL_SET_PATH}. "
         "Run Plan 01 (Wave 0) to create the seed file."
     )
 
@@ -152,7 +152,7 @@ def test_all_records_parse(all_records: list[object]) -> None:
     this test body is just the green-confirmation that the fixture loaded.
     """
     assert len(all_records) >= 1, (
-        "GT-02: questions.jsonl must contain at least 1 valid EvalRecord. "
+        "GT-02: eval_set.jsonl must contain at least 1 valid EvalRecord. "
         "Check that the seed record was written correctly."
     )
 
@@ -163,7 +163,7 @@ def test_all_records_parse(all_records: list[object]) -> None:
 def test_record_count(all_records: list[object]) -> None:
     """GT-01: dataset must contain at least 30 records (D-06 floor)."""
     assert len(all_records) >= _MIN_RECORDS, (
-        f"GT-01: questions.jsonl has {len(all_records)} records; "
+        f"GT-01: eval_set.jsonl has {len(all_records)} records; "
         f"need >= {_MIN_RECORDS}. Curation populates this in Plans 02-04."
     )
 

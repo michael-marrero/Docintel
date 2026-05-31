@@ -60,7 +60,7 @@ def test_eval_run_writes_traces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     # (the strict-xfail trigger). Keep eval report output inside tmp_path too.
     cfg = Settings(llm_provider="stub", trace_dir=str(tmp_path / "traces"))
 
-    n_questions = len(load_questions(Path("data/eval/ground_truth/questions.jsonl")))
+    n_questions = len(load_questions(Path("data/eval/ground_truth/eval_set.jsonl")))
 
     rc = run_eval(cfg, output_dir=tmp_path / "reports")
     assert rc == 0
