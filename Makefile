@@ -208,6 +208,27 @@ baseline-lock: ## Phase 14 EMP-01 / D-08: lock v1.0 baseline from a representati
 	  echo "OK: locked baseline @ $$REPORT_DIR"
 
 # ---------------------------------------------------------------------------
+# Phase 14 EMP-02 / D-10: paste real numbers from baseline.json into the
+# README.md PASTE-REAL-NUMBERS anchor block. Delegates to the Python helper
+# scripts/readme_paste.py (Pitfall 4: sed across multi-line HTML comments is
+# fragile; the helper uses re.sub flags=re.DOTALL count=1 — auditable +
+# defensive single-replacement). Pre-condition: data/eval/baseline.json must
+# exist (the user runs `make baseline-lock TS=<ts>` first per D-08).
+#
+# Per Pitfall 5, this target does NOT touch packages/docintel-ui/ — the
+# Streamlit Eval-Results tab auto-flips on disk-read once a representative
+# real-eval report directory is present (see ADR-013).
+# ---------------------------------------------------------------------------
+
+readme-paste: ## Phase 14 EMP-02 / D-10: paste real numbers from baseline.json into README.md PASTE-REAL-NUMBERS block
+	@if [ ! -f data/eval/baseline.json ]; then \
+	  echo "FAIL: data/eval/baseline.json not found — run 'make baseline-lock TS=<ts>' first per D-08" >&2; \
+	  exit 1; \
+	fi
+	uv run python scripts/readme_paste.py --baseline data/eval/baseline.json --repo-root .
+	@echo "OK: README.md PASTE-REAL-NUMBERS block updated"
+
+# ---------------------------------------------------------------------------
 # Pending targets — print the future-phase pointer and exit 1.
 # CONTEXT.md D-22 explicitly says these are NOT no-ops.
 # ---------------------------------------------------------------------------
