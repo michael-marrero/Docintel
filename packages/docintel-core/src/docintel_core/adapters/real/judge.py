@@ -56,7 +56,6 @@ from openai import APIConnectionError as OpenAIAPIConnectionError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from openai import RateLimitError as OpenAIRateLimitError
 from tenacity import (
-    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -67,9 +66,11 @@ from docintel_core.adapters.protocols import LLMClient
 from docintel_core.adapters.types import JudgeVerdict
 from docintel_core.config import Settings
 
-# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_log;
+from ._logging import before_sleep_safe
+
+# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_safe;
 # structlog bound logger for all other structured log lines. Both are used now
-# (the @retry decorator's before_sleep_log consumes _retry_log; the
+# (the @retry decorator's before_sleep_safe consumes _retry_log; the
 # deserialization-failure warning consumes the structlog logger).
 _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
@@ -126,7 +127,7 @@ def _sentinel_judgeverdict() -> JudgeVerdict:
             AnthropicAPITimeoutError,
         )
     ),
-    before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+    before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
     reraise=True,
 )
 def _judge_via_anthropic_raw(client: Any, user_prompt: str) -> dict[str, Any]:
@@ -241,7 +242,7 @@ def _judge_via_anthropic(client: Any, user_prompt: str) -> JudgeVerdict:
             OpenAIAPITimeoutError,
         )
     ),
-    before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+    before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
     reraise=True,
 )
 def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:

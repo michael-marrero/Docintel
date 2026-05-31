@@ -28,7 +28,6 @@ from typing import Any
 import structlog
 from anthropic import APIConnectionError, APITimeoutError, RateLimitError
 from tenacity import (
-    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -39,7 +38,9 @@ from docintel_core.adapters.types import CompletionResponse, TokenUsage
 from docintel_core.config import Settings
 from docintel_core.pricing import cost_for
 
-# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_log;
+from ._logging import before_sleep_safe
+
+# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_safe;
 # structlog bound logger for all other structured log lines.
 _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
@@ -103,7 +104,7 @@ class AnthropicAdapter:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type((RateLimitError, APIConnectionError, APITimeoutError)),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def complete(
