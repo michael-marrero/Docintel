@@ -257,3 +257,195 @@ change needed.
 ---
 
 _Last updated: Phase 13 plan 13-06._
+
+---
+
+## Phase 14 — empirical-closure (EMP-01 / EMP-02 / EMP-03)
+
+Phase 14 closes the five `EMPIRICAL-PENDING` items carried out of v1.0. Three
+of them — EMP-01 (lock the frozen v1.0 baseline), EMP-02 (paste real numbers
+into the README), and EMP-03 (record the hero GIF) — are user-owned per
+CONTEXT.md D-08 / D-10 / D-11. Phase 14 ships the plan-side infrastructure
+(`make baseline-lock`, `make readme-paste`, `scripts/readme_paste.py`) so
+each user-owned step is a one-line invocation; the user owns the
+`gh workflow run` trigger, the eyeball-the-report step, and the
+storyboarded screen recording. **Claude does not run any of the steps
+below — they all require live API keys + screen recording, which the
+project's offline-first design (ADR-001) explicitly keeps off the agent.**
+
+### Prerequisites (macOS only — Pitfall 7)
+
+GitHub Actions Ubuntu runners ship `jq` and `sha256sum` by default. macOS
+ships neither in the configuration Phase 14's `make baseline-lock` body
+expects, so before running step 2 below:
+
+- [ ] **Install `jq`** (the Makefile target uses `jq -r` to read
+  `manifest.representative` / `manifest.dataset_hash` /
+  `manifest.prompt_version_hash` / `manifest.total_cost_usd` from the
+  report's `results.json`):
+
+   ```bash
+   brew install jq
+   jq --version    # confirm 1.6+
+   ```
+
+- [ ] **Verify `sha256sum` (Linux) OR `shasum -a 256` (macOS) is on
+  `PATH`.** Stock macOS ships `shasum`; stock Linux ships `sha256sum`.
+  The Makefile body detects which is available at runtime via `command -v`
+  — no env var to set. Sanity check:
+
+   ```bash
+   command -v sha256sum >/dev/null && sha256sum --version || shasum -a 256 < /dev/null
+   ```
+
+### Step 1 (EMP-01): trigger the workflow_dispatch real-eval job
+
+- [ ] **Trigger the real-eval workflow** from the project root (or from
+  the GitHub Actions UI — same effect):
+
+   ```bash
+   gh workflow run real-eval -f representative=true
+   ```
+
+   The workflow brings up qdrant, builds real BM25 + dense indices, runs
+   the 32-question eval against real Anthropic + OpenAI clients, and
+   commits the new report to `data/eval/reports/<ts>/` with `[skip ci]`.
+
+- [ ] **Wait for green CI.** Pull the resulting commit:
+
+   ```bash
+   gh run watch <run-id>
+   git pull origin "$REAL_RUN_BRANCH"
+   ```
+
+- [ ] **Eyeball the new `data/eval/reports/<ts>/report.md`** before the
+  lock step. The lock target's validation gates catch the obvious failure
+  modes (representative-flag mismatch, eval-set drift) but cannot detect a
+  qdrant warmup glitch or anomalous cost — those are eyeball-only. Open:
+
+   ```bash
+   open "data/eval/reports/<ts>/report.md"
+   ```
+
+  Confirm: manifest header lists real adapter names + a real `git_sha` +
+  `representative: true`; Hit@3 shows a meaningful differential on the
+  canary cases (the Phase 5 reranker silent-truncation canary); `cost_usd`
+  is in the expected `$1-$2` band per `docs/REAL-RUN-CHECKLIST.md`'s
+  cost-ceiling note above. If anything looks off, **do not lock the
+  baseline** — re-run the workflow first.
+
+### Step 2 (EMP-01): lock the v1.0 baseline
+
+- [ ] **Run `make baseline-lock TS=<ts>`** from the project root, where
+  `<ts>` matches the timestamped report directory name from Step 1:
+
+   ```bash
+   make baseline-lock TS=20260601_142233_456789Z
+   ```
+
+   The make target enforces 3 validation gates per CONTEXT.md D-08:
+   `manifest.representative=true`, `eval_set.jsonl` SHA256 matches the
+   report's `manifest.dataset_hash` (defense against locking on a stale
+   eval set per D-01/D-02), and the `results.json` file actually exists.
+   On success it writes the 7-field D-07 schema to `data/eval/baseline.json`
+   and commits with message `chore(baseline): lock v1.0 baseline @ <ts>`.
+
+- [ ] **Verify the lock landed** by running the Wave-0 baseline tests:
+
+   ```bash
+   uv run pytest tests/test_baseline_schema.py tests/test_baseline_cost_matches.py -ra -q
+   ```
+
+   Both must pass green (no xfail markers remain — they were lifted when
+   `baseline.json` landed).
+
+### Step 3 (EMP-02): paste real numbers into the README
+
+- [ ] **Run `make readme-paste`** from the project root:
+
+   ```bash
+   make readme-paste
+   ```
+
+   This invokes `scripts/readme_paste.py` which reads `baseline.json` →
+   follows the `report_dir` pointer → loads `results.json` → rewrites the
+   README's `<!-- PASTE-REAL-NUMBERS: ... <!-- END-PASTE-REAL-NUMBERS -->`
+   anchor block atomically (`re.sub flags=re.DOTALL count=1` — Pitfall 4).
+   The replacement block carries `representative: true`, the locked_at
+   timestamp + short git_sha, and the headline-metrics table shape mirrors
+   the existing stub block exactly.
+
+- [ ] **Visually inspect the rewritten README**:
+
+   ```bash
+   git diff README.md | head -100
+   open README.md       # or render in your editor
+   ```
+
+- [ ] **Commit the README change**:
+
+   ```bash
+   git add README.md
+   git commit -m "docs: populate README with real eval measurements"
+   git push
+   ```
+
+- [ ] **Verify the Streamlit UI auto-flips.** Per Pitfall 5 + ADR-013,
+  `packages/docintel-ui/src/docintel_ui/eval_view.py:128-137` scans
+  `data/eval/reports/` for any non-stub-sample directory whose
+  `results.json` exists and picks the newest by lexical sort — so it
+  auto-detects the new `representative: true` report on its next render
+  with no code change needed. Run the Wave-0 README-banner test:
+
+   ```bash
+   uv run pytest tests/test_readme_no_stub_banner.py -ra -q
+   ```
+
+   Must pass green (the test asserts the README no longer carries the
+   `representative: false` disclaimer block).
+
+### Step 4 (EMP-03): record the hero GIF
+
+- [ ] **Record the hero GIF** per the storyboard at
+  [`HERO-STORYBOARD.md`](HERO-STORYBOARD.md). The storyboard covers the
+  multi-hop comparative answer ("which companies grew R&D while margins
+  shrank in 2023?") + hoverable citation badges + an out-of-corpus refusal
+  + the Traces Gantt view + the Eval-Results tab's now-flipped
+  `representative: true` banner. Use any screen-recorder that outputs
+  GIF (LICEcap, Kap, asciinema-to-gif, etc.).
+
+- [ ] **Commit `docs/hero.gif`** under `docs/`:
+
+   ```bash
+   git add docs/hero.gif
+   git commit -m "docs(14): land EMP-03 hero GIF per docs/HERO-STORYBOARD.md"
+   git push
+   ```
+
+- [ ] **Verify the presence-check test passes**:
+
+   ```bash
+   uv run pytest tests/test_hero_gif_present.py -ra -q
+   ```
+
+   Must pass green (the test asserts `docs/hero.gif` exists, has size > 0,
+   and `mtime > baseline.locked_at` per D-11 — ensures it was recorded
+   after the baseline lock, not from a stale stub).
+
+### Verification — all four EMP closures land green
+
+After Steps 1–4, the full Wave-0 baseline test suite must pass:
+
+```bash
+uv run pytest \
+  tests/test_baseline_schema.py \
+  tests/test_baseline_cost_matches.py \
+  tests/test_readme_no_stub_banner.py \
+  tests/test_hero_gif_present.py \
+  -ra -q
+```
+
+All 4 tests must pass with no `xfail-strict` markers remaining. Phase 14's
+final phase-gate plan (14-07) audits against this exact command.
+
+_Last updated: Phase 14 plan 14-05._

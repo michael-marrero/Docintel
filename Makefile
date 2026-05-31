@@ -16,7 +16,8 @@ SHELL := /usr/bin/env bash
 GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 .PHONY: help test lint format lock-check build build-api build-ui \
-        serve demo down fetch-corpus build-indices ablate-chunk-sweep eval
+        serve demo down fetch-corpus build-indices ablate-chunk-sweep \
+        baseline-lock readme-paste eval
 
 help: ## Show all targets with their current status
 	@echo "docintel — Makefile targets"
@@ -29,6 +30,8 @@ help: ## Show all targets with their current status
 	@echo "    fetch-corpus   fetch + normalize + chunk SEC 10-K corpus (Phase 3)"
 	@echo "    build-indices  build dense + BM25 indices from the corpus (Phase 4)"
 	@echo "    ablate-chunk-sweep  Phase 11 ABL-01 chunk-size sweep {300,450,600} — REAL-mode only; alternate indices are gitignored"
+	@echo "    baseline-lock  Phase 14 EMP-01 / D-08: lock v1.0 baseline from a representative real-eval report (usage: make baseline-lock TS=<timestamp>)"
+	@echo "    readme-paste   Phase 14 EMP-02 / D-10: paste real numbers from baseline.json into README.md PASTE-REAL-NUMBERS block"
 	@echo "    build          docker build both api and ui targets"
 	@echo "    build-api      docker build --target api"
 	@echo "    build-ui       docker build --target ui"
@@ -141,6 +144,89 @@ ablate-chunk-sweep: ## Phase 11 ABL-01 chunk-size sweep {300,450,600} — REAL-m
 	    uv run docintel-index all; \
 	done
 	@echo "ablate-chunk-sweep: complete — size-300/600 indices built under data/indices/chunk-{300,600}/index (gitignored); 450 = production baseline"
+
+# ---------------------------------------------------------------------------
+# Phase 14 EMP-01 / D-08: lock the frozen v1.0 baseline from a representative
+# real-eval report. Two-step process per D-08: (1) `gh workflow run real-eval`
+# produces a `representative: true` report at data/eval/reports/<ts>/; (2) the
+# USER reviews the report and runs `make baseline-lock TS=<ts>` to commit
+# data/eval/baseline.json. Auto-locking from the workflow is explicitly
+# rejected per D-08 (risks locking a flaky report — qdrant warmup, anomalous
+# cost). The target validates: TS is set, results.json exists,
+# manifest.representative == true, and the eval_set.jsonl SHA256 matches the
+# report's dataset_hash (defense against locking against a stale eval set).
+# Writes the D-07 7-field schema and commits with the locked message format.
+#
+# Pitfall 7 (macOS toolchain): `jq` is preinstalled on Ubuntu CI runners but
+# not stock macOS — see docs/REAL-RUN-CHECKLIST.md for `brew install jq`.
+# `sha256sum` (Linux) vs `shasum -a 256` (macOS) is detected at runtime.
+#
+# CRITICAL — the target body is a single multiline command (each `;` followed
+# by ` \` line continuation) so the shell variables persist across the body;
+# separate `@`-prefixed lines reset shell state.
+# CRITICAL — `phase_locked` is the literal integer 14 (no quotes in the
+# printf JSON output) so the Wave-0 baseline schema test's isinstance(int)
+# assertion passes.
+# CRITICAL — `cost_usd` is the raw jq numeric output (no quoting) so Python
+# parses it as float.
+# ---------------------------------------------------------------------------
+
+baseline-lock: ## Phase 14 EMP-01 / D-08: lock v1.0 baseline from a representative real-eval report (usage: make baseline-lock TS=<timestamp>)
+	@if [ -z "$(TS)" ]; then \
+	  echo "FAIL: missing TS=<timestamp> argument (e.g., make baseline-lock TS=20260601_142233_456789Z)" >&2; \
+	  exit 2; \
+	fi
+	@REPORT_DIR="data/eval/reports/$(TS)"; \
+	  RESULTS="$$REPORT_DIR/results.json"; \
+	  if [ ! -f "$$RESULTS" ]; then \
+	    echo "FAIL: $$RESULTS not found (D-08: run 'gh workflow run real-eval' first, then 'make baseline-lock TS=<ts>')" >&2; \
+	    exit 1; \
+	  fi; \
+	  REP=$$(jq -r '.manifest.representative' "$$RESULTS"); \
+	  if [ "$$REP" != "true" ]; then \
+	    echo "FAIL: $$RESULTS manifest.representative=$$REP (D-08: must be true — auto-locking on flaky runs is rejected)" >&2; \
+	    exit 1; \
+	  fi; \
+	  if command -v sha256sum >/dev/null 2>&1; then \
+	    EVAL_SHA=$$(sha256sum data/eval/ground_truth/eval_set.jsonl | cut -d' ' -f1); \
+	  else \
+	    EVAL_SHA=$$(shasum -a 256 data/eval/ground_truth/eval_set.jsonl | cut -d' ' -f1); \
+	  fi; \
+	  REPORT_EVAL_SHA=$$(jq -r '.manifest.dataset_hash' "$$RESULTS"); \
+	  if [ "$$EVAL_SHA" != "$$REPORT_EVAL_SHA" ]; then \
+	    echo "FAIL: eval_set.jsonl sha256 ($$EVAL_SHA) does not match report dataset_hash ($$REPORT_EVAL_SHA) — baseline lock would lock against the wrong eval set" >&2; \
+	    exit 1; \
+	  fi; \
+	  GIT_SHA=$$(git rev-parse HEAD); \
+	  PROMPT_HASH=$$(jq -r '.manifest.prompt_version_hash' "$$RESULTS"); \
+	  COST=$$(jq -r '.manifest.total_cost_usd' "$$RESULTS"); \
+	  NOW=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
+	  printf '{\n  "report_dir": "%s/",\n  "git_sha": "%s",\n  "eval_set_sha256": "%s",\n  "prompt_version_hash": "%s",\n  "phase_locked": 14,\n  "cost_usd": %s,\n  "locked_at": "%s"\n}\n' \
+	    "$$REPORT_DIR" "$$GIT_SHA" "$$EVAL_SHA" "$$PROMPT_HASH" "$$COST" "$$NOW" > data/eval/baseline.json; \
+	  git add data/eval/baseline.json; \
+	  git commit -m "chore(baseline): lock v1.0 baseline @ $(TS)"; \
+	  echo "OK: locked baseline @ $$REPORT_DIR"
+
+# ---------------------------------------------------------------------------
+# Phase 14 EMP-02 / D-10: paste real numbers from baseline.json into the
+# README.md PASTE-REAL-NUMBERS anchor block. Delegates to the Python helper
+# scripts/readme_paste.py (Pitfall 4: sed across multi-line HTML comments is
+# fragile; the helper uses re.sub flags=re.DOTALL count=1 — auditable +
+# defensive single-replacement). Pre-condition: data/eval/baseline.json must
+# exist (the user runs `make baseline-lock TS=<ts>` first per D-08).
+#
+# Per Pitfall 5, this target does NOT touch packages/docintel-ui/ — the
+# Streamlit Eval-Results tab auto-flips on disk-read once a representative
+# real-eval report directory is present (see ADR-013).
+# ---------------------------------------------------------------------------
+
+readme-paste: ## Phase 14 EMP-02 / D-10: paste real numbers from baseline.json into README.md PASTE-REAL-NUMBERS block
+	@if [ ! -f data/eval/baseline.json ]; then \
+	  echo "FAIL: data/eval/baseline.json not found — run 'make baseline-lock TS=<ts>' first per D-08" >&2; \
+	  exit 1; \
+	fi
+	uv run python scripts/readme_paste.py --baseline data/eval/baseline.json --repo-root .
+	@echo "OK: README.md PASTE-REAL-NUMBERS block updated"
 
 # ---------------------------------------------------------------------------
 # Pending targets — print the future-phase pointer and exit 1.
