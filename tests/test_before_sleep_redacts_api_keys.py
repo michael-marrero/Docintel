@@ -1,7 +1,5 @@
-"""Wave-0 xfail-strict scaffold — EMP-05 D-05 redaction fixtures.
+"""EMP-05 D-05 redaction fixtures — green after Plan 14-03.
 
-Plan 14-01 Wave 0 (Phase 14 empirical-closure) lands this red test BEFORE
-the production work in Plan 14-03 ships ``_logging.before_sleep_safe``.
 Confirms the 4 D-05 key shapes (``sk-``, ``sk-ant-``, ``pa-``, ``Bearer``)
 are scrubbed to ``[REDACTED:<type>]`` before reaching the logger. The
 20-char minimum keeps git SHAs and request IDs unscrubbed (D-05).
@@ -11,10 +9,10 @@ Parametrize order matters per CONTEXT.md D-05: ``sk-ant-`` MUST precede
 edit reorders the alternations, ``sk-ant-`` keys would partial-match the
 ``sk-`` branch and emit the wrong marker).
 
-Lifecycle: xfail-strict in Wave 0 (Plan 14-01) while
-``docintel_core.adapters.real._logging`` does not yet exist. Plan 14-03
-lands the helper module + ``before_sleep_safe`` factory; an XPASS would
-then fail the suite, so 14-03 also removes the xfail marker.
+Lifecycle: Wave-0 (Plan 14-01) landed this as red xfail-strict while
+``docintel_core.adapters.real._logging`` did not yet exist. Plan 14-03
+landed the helper module + ``before_sleep_safe`` factory and removed
+the xfail marker — these 4 cases now run green.
 
 Pitfall 3 (14-RESEARCH.md lines 578-598): we drive the callable through a
 real ``tenacity @retry`` decorator on a function that raises
@@ -25,8 +23,8 @@ do not mis-mock the canonical guards.
 Analogs:
 * 14-PATTERNS.md §"NEW tests/test_before_sleep_redacts_api_keys.py" lines
   302-331 (parametrize skeleton).
-* 14-RESEARCH.md Pattern 1 (canonical ``before_sleep_log`` shape, source =
-  tenacity 9.1.4 ``tenacity/before_sleep.py:29-71``).
+* 14-RESEARCH.md Pattern 1 (canonical tenacity before-sleep factory shape,
+  source = ``tenacity/before_sleep.py:29-71``).
 """
 
 from __future__ import annotations
@@ -40,10 +38,6 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 # the module does not yet exist — the xfail marker swallows the ImportError.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="xfail until 14-03: _logging.before_sleep_safe lands",
-)
 @pytest.mark.parametrize(
     "planted,expected_marker",
     [
