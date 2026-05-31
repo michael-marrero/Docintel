@@ -76,9 +76,9 @@ _HEADLINE_METRICS: tuple[str, ...] = ("hit_at_5", "hit_at_3", "reciprocal_rank")
 _N_BOOT: int = 10_000
 _SEED: int = 42
 
-# Ground-truth questions file — the shared dataset whose sha256 stamps every arm
+# Ground-truth eval set file — the shared dataset whose sha256 stamps every arm
 # (D-01 single-process identity; reuse runner._dataset_hash).
-_QUESTIONS_PATH: Path = Path("data/eval/ground_truth/questions.jsonl")
+_EVAL_SET_PATH: Path = Path("data/eval/ground_truth/eval_set.jsonl")
 
 # ---------------------------------------------------------------------------
 # Chunk-size sweep (D-04 / D-05) — the third ABL-01 ablation. Unlike no-rerank /
@@ -458,7 +458,7 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
     representative: bool = provider != "stub"
     manifest: dict[str, Any] = {
         "git_sha": _STUB_GIT_SHA if provider == "stub" else _git_sha(),
-        "dataset_hash": _dataset_hash(_QUESTIONS_PATH),
+        "dataset_hash": _dataset_hash(_EVAL_SET_PATH),
         "seed": _SEED,
         "n_boot": _N_BOOT,
         "provider": provider,
