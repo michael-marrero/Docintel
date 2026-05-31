@@ -166,6 +166,15 @@ jobs:
         # escape. Phase 12 D-06/D-07/D-08 structural enforcement of OBS-03.
         run: bash scripts/check_no_print.sh
 
+      - name: Check before_sleep_safe (EMP-05 / P-EMP-04)
+        # Real adapters must use the sanitizing before_sleep_safe wrapper, not
+        # tenacity's raw before_sleep_log (which leaks API-key patterns in
+        # retry-path exception strings into committed CI logs). Two-sided:
+        # (a) no raw before_sleep_log in adapters/real/;
+        # (b) every @retry-using file imports before_sleep_safe.
+        # Phase 14 D-06 structural enforcement of EMP-05.
+        run: bash scripts/check_before_sleep_safe.sh
+
       - name: Chunk-idempotency gate (ING-04)
         # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
         # committed normalized JSON and asserts byte-identity vs. committed

@@ -10,7 +10,7 @@ For EMP-05 the "positive side" is not a per-line escape-hatch (like the
 no-print gate's ``# noqa: no-print``) but the D-06 structural positive
 shape — a file that contains ``@retry(`` AND imports ``before_sleep_safe``
 (D-06 side B). The gate's two-sided assertion (1) finds no raw
-``before_sleep_log`` and (2) every ``@retry(``-using file imports
+canonical-symbol usage and (2) every ``@retry(``-using file imports
 ``before_sleep_safe`` — both pass here.
 
 The planted ``@retry(... before_sleep=before_sleep_safe(...))`` IS the

@@ -1,10 +1,10 @@
 """Sanitizing ``before_sleep`` factory for tenacity ``@retry`` decorators.
 
 EMP-05 / Phase 14 D-04 / D-05 — closes ``P-EMP-04`` ("API-key leakage on
-retry-path log"). Real adapters wrap every SDK call with ``@retry(... )``
-per CLAUDE.md "no silent retries on LLM calls"; the canonical tenacity
-before-sleep callback passes ``str(exception)`` verbatim into a stdlib
-``logger.log(...)`` line. If an SDK exception ever surfaces an
+retry-path log"). Real adapters wrap every SDK call with the tenacity
+``@retry`` decorator per CLAUDE.md "no silent retries on LLM calls";
+the canonical tenacity before-sleep callback passes ``str(exception)``
+verbatim into a stdlib ``logger.log(...)`` line. If an SDK exception ever surfaces an
 ``Authorization`` header or a raw API key (many SDKs do, in 401/403
 paths), the canonical factory writes that secret straight into committed
 CI logs.
