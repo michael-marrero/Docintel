@@ -1,0 +1,475 @@
+# Architectural Decisions
+
+This document is the synthesized ADR record for docintel — a production-shaped
+Retrieval-Augmented Generation system over SEC 10-K filings. Each ADR captures
+one load-bearing decision made during build, sourced from the per-phase
+decision logs and the project's two empirical findings (a refuted assumption
+and a structural stub-mode limitation that shaped the ablation harness).
+
+The template is **Context / Decision / Consequences**. Pluses (`+`) call out
+the value the decision delivered; minuses (`-`) call out the cost it locked
+in. None of these decisions are aspirational — every one is backed by code
+in this repo and tests in `tests/`.
+
+---
+
+## ADR-001: Offline-first stub default everywhere
+
+**Status:** Accepted
+
+**Context:**
+The project's headline artifact is the evaluation harness — Hit@K, MRR,
+faithfulness, citation accuracy, latency, cost — reported with Wilson CIs on
+rates and bootstrap CIs on deltas. Reviewers without API keys must be able
+to clone the repo, run the full pipeline, and reproduce the eval suite. CI
+must run the same suite on every PR without burning OpenAI/Anthropic credit
+on each commit. A portfolio piece that requires keys to demonstrate excludes
+its audience and breaks on every fork.
+
+**Decision:**
+`DOCINTEL_LLM_PROVIDER=stub` is the default in `.env.example`,
+`docker-compose.yml`, and every CI job. Every swappable component
+(`Embedder`, `Reranker`, `LLMClient`, `LLMJudge`) ships a stub adapter
+alongside the real one, and stubs are deterministic — the same input always
+produces the same output. CI's `lint-and-test` job runs the full eval suite
+in stub mode on every PR; real-mode runs only on manual `workflow_dispatch`.
+
+**Consequences:**
+
+- + Any reviewer can run `docker-compose up` on a fresh clone and exercise
+  every code path — query, traces, eval tables, ablation deltas — with zero
+  API keys.
+- + CI is fast and cheap (no API billing per PR) while still gating real
+  behavior change via the full eval suite.
+- + Every stub-mode report is labeled `representative: false` in its
+  manifest, the UI's Eval-Results tab carries a prominent banner, and the
+  README marks its placeholder numbers the same way.
+- - Real-mode published numbers depend on a manual `gh workflow run` step.
+  See `docs/REAL-RUN-CHECKLIST.md` for the user-owned procedure.
+- - The stub reranker is structurally non-discriminative (see ADR-006).
+
+---
+
+## ADR-002: Adapter protocols + a single factory for swappable components
+
+**Status:** Accepted
+
+**Context:**
+Phase 2 had to wire embedding, reranking, generation, and judging in a way
+that lets the same pipeline run against deterministic stubs in CI and against
+real OpenAI/Anthropic clients on a `workflow_dispatch` job — without two
+parallel codebases and without `if provider == "stub"` branches threading
+through retrieval, generation, and eval. The eval harness has to read every
+metric value out of the same call sites whether the backend is real or stub.
+
+**Decision:**
+Each swappable surface is a Python `Protocol` (`Embedder`, `Reranker`,
+`LLMClient`, `LLMJudge`) in `packages/docintel-core/src/docintel_core/adapters/`
+with at least one real adapter and one stub adapter implementing it. A single
+factory `make_adapters(cfg)` (with siblings `make_retriever`, `make_generator`)
+reads `Settings.llm_provider` and returns the appropriate bundle. Real
+adapters live under `adapters/real/`; stubs live under `adapters/stub/`.
+A CI grep gate (`scripts/check_adapter_wraps.sh`) asserts every LLM/embedder
+call site is wrapped in `tenacity` retry with `before_sleep_log`.
+
+**Consequences:**
+
+- + Retrieval, generation, and eval code paths are byte-identical between
+  stub and real — only the adapter bundle changes. The Phase 11 ablation
+  harness re-uses this seam to swap `NullReranker`/`NullBM25Store` arms
+  without forking `run_eval`.
+- + The grep gate makes silent retries impossible: every `client.complete()`
+  call has to be reachable from `_wrap_retry()` or CI fails.
+- - Adding a 5th adapter family means writing a Protocol + 2 implementations
+  + a factory hook + a grep-gate entry. This is a feature, not a bug.
+
+---
+
+## ADR-003: Pure-ASGI middleware (not BaseHTTPMiddleware) for trace_id propagation
+
+**Status:** Accepted
+
+**Context:**
+Phase 12 needed to bind a `trace_id` contextvar so structlog's
+`merge_contextvars` could attach it to every log line in a request — across
+retrieval, generation, and the trace persistence layer. The obvious approach
+in FastAPI / Starlette is `BaseHTTPMiddleware` because it has a clean
+`async def dispatch(request, call_next)` signature.
+
+That approach silently breaks. Starlette runs the endpoint handler in a
+child `anyio` task, which gets a *copy* of the contextvar context at task
+spawn — so `bind_contextvars(trace_id=...)` in the middleware does not
+propagate into the handler, and the handler's logs come out without a
+trace_id. The bug looks like "structlog stopped working" but is actually a
+Starlette / contextvars composition issue.
+
+**Decision:**
+`TraceIdMiddleware` (in `packages/docintel-api/src/docintel_api/middleware.py`)
+is a **pure-ASGI** middleware: it implements `async def __call__(scope,
+receive, send)` directly, binds the contextvar before invoking the inner
+app, and clears it in a `finally`. The inbound `X-Trace-Id` header is
+UUID-validated before binding (V5 log-injection guard); invalid values are
+replaced with a fresh `uuid4()`. The middleware also stores its live
+`TraceSpanCollector` on `scope["state"]["trace_collector"]` so the
+`POST /query` handler reuses the same collector and produces exactly one
+`trace_completed` JSONL record per request.
+
+**Consequences:**
+
+- + `trace_id` propagates through every log line emitted during a request,
+  including those inside the retriever and the generator — Phase 12 didn't
+  have to retrofit `structlog.contextvars.bind_contextvars` calls into
+  Phases 5 and 6.
+- + No double-write: one request → one consolidated `trace_completed`
+  record on disk. The Streamlit Traces tab renders that record as a single
+  row with a per-stage waterfall.
+- - Pure-ASGI middleware is lower-level than `BaseHTTPMiddleware` —
+  inbound header lookup is a manual scan over `scope["headers"]`, and
+  testing requires the pure-ASGI `TestClient` patterns rather than
+  request/response mocks. The trade is correctness over ergonomics.
+
+---
+
+## ADR-004: BGE-small-en-v1.5 embedder + BGE-reranker-base cross-encoder
+
+**Status:** Accepted
+
+**Context:**
+Phase 4 (embedding + indexing) and Phase 5 (hybrid retrieval) needed an
+embedder small enough to run on a laptop and on the GitHub Actions runner,
+deterministic enough that hashes match across reruns, and one of the
+recognized strong open models so the eval numbers carry weight with senior
+reviewers. The reranker had to be a cross-encoder (not a bi-encoder) for
+the no-rerank-vs-baseline ablation to be a meaningful component swap.
+
+**Decision:**
+`BAAI/bge-small-en-v1.5` is the embedder (384-dim, ~133MB, sentence-transformers
+loader). `BAAI/bge-reranker-base` (~280MB, AutoModelForSequenceClassification)
+is the cross-encoder reranker. Both are downloaded once into the
+HuggingFace cache, then loaded with `HF_HUB_OFFLINE=1` for CI determinism.
+Dense vectors are stored in Qdrant (under the `real` compose profile) for
+real runs and a NumPy `.npy` flat index for stub runs. BM25 uses `bm25s`.
+
+**Consequences:**
+
+- + Two of the strongest open-weight retrieval models at this size class —
+  reviewer-recognizable choices that produce defensible Hit@K and MRR.
+- + Stub-mode indices build in seconds on a fresh clone; real-mode indices
+  build in ~7 minutes on the GitHub runner.
+- - Reranker tokenizer has a 512-token sequence cap. This silent truncation
+  is the most common subtle failure mode of cross-encoder rerankers; the
+  Phase 5 RET-03 canary exists specifically to catch it (see ADR-006 for
+  the empirical refutation of its sibling assumption about embedder/
+  reranker tokenizer drift).
+
+---
+
+## ADR-005: Hybrid retrieval — BM25 + dense + Reciprocal Rank Fusion
+
+**Status:** Accepted
+
+**Context:**
+Phase 5 had to choose a retrieval architecture. Pure-dense retrieval on
+BGE-small leaves money on the table for lexical queries (ticker symbols,
+exact phrases, numeric strings) — these are common in SEC 10-K questions
+("R&D as % of revenue in FY2024 for TSLA"). Pure-BM25 misses semantic
+matches and synonyms ("supply chain risk" vs "supplier concentration").
+The hero question is a multi-hop comparative across companies, which
+stresses both.
+
+**Decision:**
+Retrieval is hybrid: a BM25 search and a dense search run in parallel,
+their top-K results are fused via **Reciprocal Rank Fusion** (`RRF` with
+`k=60` per the standard recipe), then the fused top-N is reranked by the
+cross-encoder. The Phase 11 ablation harness swaps `BM25Store` for a
+null/no-op (the `dense-only` arm) and `Reranker` for a null/no-op (the
+`no-rerank` arm) on the same byte-identical eval path — so the headline
+ablation table shows Hit@5 / Hit@3 / MRR with paired bootstrap CIs on the
+Δ-vs-baseline.
+
+**Consequences:**
+
+- + The Phase 11 ablation deltas are real component swaps, not parameter
+  sweeps. Each arm is exactly one swap away from baseline, so causal
+  attribution is honest.
+- + The `dense-only` arm's empirical behavior in real mode is the project's
+  load-bearing argument for why hybrid retrieval is worth the implementation
+  cost.
+- - RRF is a 1-line algorithm with no parameters worth tuning; the only knob
+  is `k=60` which is the literature default. This is a feature.
+
+---
+
+## ADR-006: Stub reranker cannot beat stub dense-only — canary cases real-mode-only (Option D)
+
+**Status:** Accepted (empirical finding)
+
+**Context:**
+Phase 5 RET-03 specifies a "reranker canary": on ≥5 hand-written hard cases,
+the cross-encoder must measurably improve top-3 hit rate vs. dense-only.
+The canary's purpose is to catch the cross-encoder's 512-token silent
+truncation regression *before* it ships. The natural implementation is a
+stub-mode test that runs the canary on the deterministic stub embedder +
+stub reranker + the hand-written cases, and asserts `hits@3(rerank) >
+hits@3(dense_only)`.
+
+That test **structurally cannot pass** in stub mode. Both the stub embedder
+and the stub reranker reduce to a deterministic hash of the input string;
+the reranker's score is a monotone function of the same hash the dense
+retriever uses to order candidates, so rerank produces zero rank changes
+and `hits@3(rerank) == hits@3(dense_only)` by construction. The empirical
+finding is recorded in `.planning/STATE.md` as one of the two flagged
+Phase 13 ADRs.
+
+**Decision:**
+Option D from the Phase 5 D-14 decision: the reranker canary cases are
+**real-mode-only**. Stub-mode CI does not run the canary assertion; the
+real-mode `workflow_dispatch` job runs it as the structural acceptance
+gate. The Phase 11 ablation `no-rerank` arm exists in both stub and real
+mode (the arm's Δ is *measurable* in stub mode, just not load-bearing
+about real-world rerank quality).
+
+**Consequences:**
+
+- + The canary stays load-bearing in real mode — its whole point is
+  catching a real cross-encoder regression, and it does exactly that.
+- + Stub-mode CI is honest: a passing stub canary would have been a lie.
+  We surface the structural limitation rather than papering over it.
+- - The real-mode canary depends on the user running `gh workflow run`
+  with API keys configured — see `docs/REAL-RUN-CHECKLIST.md`.
+- - The Phase 11 stub ablation's `no-rerank` Δ is a wiring assertion (does
+  the arm-injection work end-to-end), not a quality claim. The ablation
+  manifest carries `representative: false` to make this honest.
+
+---
+
+## ADR-007: BGE tokenizer-drift A1 — REFUTED, measured +14% chunk overflow
+
+**Status:** Accepted (empirical refutation)
+
+**Context:**
+The Phase 3 chunker uses an XLM-RoBERTa tokenizer to count tokens against
+the `TARGET_TOKENS=450` / `HARD_CAP_TOKENS=500` thresholds. The BGE
+embedder uses its own tokenizer. Assumption A1 in the Phase 3/5 research
+record was: "XLM-RoBERTa's token count is close enough to BGE's that the
+500-token cap rarely overshoots BGE's 512-token sequence limit." A weak
+overshoot was budgeted for; a large one would have meant the embedder
+silently truncates the tail of long chunks and we'd be retrieving
+incomplete vectors.
+
+**Decision:**
+The assumption was measured and **refuted**. The two tokenizers disagree
+by a mean ratio of **1.1404** — a +14% systematic over-shoot. Of 6,053
+chunks in the production corpus, **1,794 chunks (29.6%) exceed the
+500-token threshold when re-counted with the BGE tokenizer**. This is
+recorded in `.planning/STATE.md` as the second of two flagged Phase 13
+ADRs, and the chunker now emits a `chunker_token_overflow_warning`
+structlog event on every chunk where the BGE re-count exceeds the cap,
+so downstream consumers can decide whether to re-chunk.
+
+**Consequences:**
+
+- + The token-overflow warning is now load-bearing observability — without
+  it, BGE's silent tail-truncation on ~30% of chunks would degrade retrieval
+  quality invisibly. The warning makes the truncation surface visible in
+  every embed-build run.
+- + The Phase 5 reranker canary (ADR-006) sits downstream of the same
+  truncation surface, and the real-mode canary's pass/fail is the
+  end-to-end test for whether the truncation actually hurts retrieval.
+- - The chunker does NOT re-chunk on overflow — that would require a
+  second pass with a different tokenizer and break Phase 3's deterministic
+  pipeline. The decision is to surface the issue and let real-mode metrics
+  decide whether re-chunking is worth its complexity.
+- - This negative result is documented openly precisely because honest
+  measurement of refuted assumptions is more useful to a reviewer than a
+  vague "we considered this and chose to proceed."
+
+---
+
+## ADR-008: Single env reader via `Settings` (Pydantic-settings) — CI grep-gated
+
+**Status:** Accepted
+
+**Context:**
+A 4-day portfolio project routinely accretes `os.environ.get("DOCINTEL_X",
+"default")` calls scattered through retrieval, indexing, and UI modules
+during development. Each one is a hidden dependency that breaks
+configurability and makes the test harness's `monkeypatch.setenv` calls
+order-sensitive. The pattern is so common it has a name (FND-11 in the
+project's foundation requirements).
+
+**Decision:**
+**Every** environment variable read in the codebase flows through
+`packages/docintel-core/src/docintel_core/config.py` (Pydantic v2 +
+`pydantic-settings`, `env_prefix="DOCINTEL_"`). `Settings` is the single
+env reader. A CI grep gate asserts `os.environ` / `os.getenv` matches
+return zero in any file outside `config.py`. New configuration is added
+as a new `Settings` field, not as a new env read.
+
+**Consequences:**
+
+- + Tests that need a specific config use `monkeypatch.setenv` + a fresh
+  `Settings()` instance; nothing else has to be patched.
+- + The compose file, the `.env.example`, and the CI env block are the
+  authoritative list of every input the system reads.
+- - Adding a new env var requires a `Settings` field with a default. This
+  has been zero friction in practice.
+
+---
+
+## ADR-009: Prompts versioned with a content hash, locality CI-gated
+
+**Status:** Accepted
+
+**Context:**
+A RAG system's prompts are part of its measurable behavior. If a prompt
+changes between an eval run on Tuesday and an eval run on Wednesday, the
+Hit@K and faithfulness deltas mean nothing — the system literally is a
+different system. Reviewers reading `data/eval/reports/*/report.md` need to
+know *which* prompts produced the numbers in front of them. And the
+"prompts must live in one module" rule is dead unless it's mechanically
+enforced — inline string-literal prompts crop up in stub adapters and tests
+within days of the rule being written down.
+
+**Decision:**
+All prompts live in
+`packages/docintel-generate/src/docintel_generate/prompts.py` as three
+`Final[str]` constants: `SYNTHESIS_PROMPT`, `REFUSAL_PROMPT`, `JUDGE_PROMPT`.
+Each prompt has a `sha256[:12]` hash (`_SYNTHESIS_HASH`, etc.) and a
+combined `PROMPT_VERSION_HASH` that the eval manifest header records on
+every run. A CI grep gate (`scripts/check_prompt_locality.sh`) asserts no
+inline prompt-shaped string literals exist outside `prompts.py` (a
+`# noqa: prompt-locality` escape exists for the stub adapter's
+sentinel constants).
+
+**Consequences:**
+
+- + Every eval report names the exact prompt set that produced its numbers.
+  A reviewer can read `PROMPT_VERSION_HASH = 65da07f1ba3e` in the manifest
+  and check it out of git.
+- + The grep gate makes prompt drift mechanically impossible. Phase 7
+  D-04's confidence-marker edit rotated `_SYNTHESIS_HASH` and
+  `PROMPT_VERSION_HASH` — both changes are visible in the next eval
+  manifest, with no developer effort.
+- - Tests that need a custom prompt must construct one inline and pass it
+  to the LLM client directly, bypassing the prompts module. This is rare
+  (3 occurrences) and the bypass is explicit.
+
+---
+
+## ADR-010: Wilson CIs on rates, paired bootstrap CIs on ablation deltas
+
+**Status:** Accepted
+
+**Context:**
+The eval harness reports rates (Hit@K, MRR, faithfulness pass rate, refusal
+matrix) and the ablation harness reports deltas-vs-baseline on those rates.
+Naive point estimates on n=32 questions are dishonest — reviewers and
+engineers both know the per-rate confidence is ±0.10 at that sample size,
+and a delta of 0.05 might or might not be real. The ablation harness has to
+distinguish "the cross-encoder improved Hit@5 by 0.06" from "we got lucky
+on 2 questions."
+
+**Decision:**
+Every rate in `results.json` carries a 95% **Wilson CI** computed via
+`scipy.stats.binomtest(k, n).proportion_ci(method='wilson')`. Every ablation
+delta in `ablation-manifest.json` carries a 95% **paired bootstrap CI**
+computed by `bootstrap_delta_ci(seed=42, n_boot=10_000)`. The bootstrap is
+paired (per-question pairing) because each arm runs against the same 32
+questions; pairing is what makes the CI tight enough to be informative at
+n=32. The seed is fixed so CIs are deterministic across reruns.
+
+**Consequences:**
+
+- + Both UIs (the Streamlit Eval-Results tab and the rendered `report.md`)
+  show CIs alongside every point estimate; readers don't have to ask
+  "is that significant?"
+- + The paired bootstrap is the right statistic at portfolio sample size
+  (n=32); a non-paired bootstrap would inflate the CIs and hide real
+  effects.
+- - n=32 is small. The CIs are wide enough that some ablation deltas are
+  inconclusive even in real mode. The honest move is to report this rather
+  than to swap to a less rigorous statistic.
+
+---
+
+## ADR-011: Eval-in-CI is always stub-mode; real-mode is `workflow_dispatch`
+
+**Status:** Accepted
+
+**Context:**
+Two competing pressures. (1) CI on every PR must run the full eval suite —
+that's the project's quality gate, and the only way to catch regressions
+that don't show up in unit tests. (2) Real-mode runs cost real Anthropic
+and OpenAI API calls; running the full 32-question suite on every PR would
+burn dozens of dollars a week and would block third-party PRs (no keys on
+untrusted PRs is a Phase 10 threat-model item, T-10-CI1).
+
+**Decision:**
+The `lint-and-test` job runs the full eval suite in stub mode on every PR.
+It generates + validates the report but **does not commit** it (no per-PR
+git bloat). Real-mode runs are `workflow_dispatch`-only via two named
+jobs: `real-eval` (full 32-Q eval) and `real-ablation` (full ablation
+sweep including the chunk-size sweep arms). Both commit their reports
+under `data/eval/reports/<ts>/` and `data/eval/ablations/<ts>/` with
+`[skip ci]` to avoid trigger loops. One canonical `stub-sample/` report
++ ablation is committed to give the UI's Eval-Results tab data to render
+on a fresh clone.
+
+**Consequences:**
+
+- + Every PR runs the full pipeline against the deterministic stub bundle —
+  ranking determinism, refusal logic, citation parsing, faithfulness shape,
+  cost wiring — without burning a cent.
+- + Real-mode reports are owned by the user: a `gh workflow run ci.yml`
+  trigger produces a real `data/eval/reports/<ts>/report.md` committed
+  to the branch, and the Eval-Results tab auto-detects it on next render.
+- - The published headline numbers in the README depend on the user
+  running the workflow. Phase 13 D-14 is the explicit decision to NOT
+  block on this — the README ships a labeled `representative: false`
+  stub block + a documented paste step (see `docs/REAL-RUN-CHECKLIST.md`).
+
+---
+
+## ADR-012: One-command demo via stub-index built at container startup
+
+**Status:** Accepted
+
+**Context:**
+The project spec's "Definition of Done" includes a non-negotiable one-command
+demo: `git clone && docker-compose up` produces a working demo on a fresh
+machine. The complication is that `data/indices/` is gitignored — indices
+are 100s of MB of binary blobs that would balloon the repo. A fresh clone
+has no MANIFEST, no BM25 store, no dense vectors. Every prior portfolio
+project I've seen handles this by either committing indices (bloats the
+repo) or pre-building them in CI (breaks the one-command promise).
+
+**Decision:**
+The `api` container's entrypoint (`docker/entrypoint-api.sh`, POSIX sh,
+`set -e`) runs `docintel-index build` in stub/NumPy mode at container
+startup if `${DOCINTEL_DATA_DIR}/indices/MANIFEST.json` is absent (the build
+is idempotent — IDX-03 — so subsequent boots skip the rebuild in
+milliseconds). Once the index is built, the entrypoint `exec`s uvicorn so
+the Python process is PID 1 and Docker's SIGTERM reaches it directly. A
+committed `data/eval/traces-seed.jsonl` (3 hand-authored `trace_completed`
+records, one with `refused=true`) is copied into the trace directory if
+empty, so the Streamlit Traces tab renders something before the first
+query is issued. The healthcheck `start_period` is 30s — enough to cover
+first-boot Python cold-start + index build.
+
+**Consequences:**
+
+- + `git clone && docker-compose up` works on any machine with Docker, zero
+  API keys, no pre-build step. The promise is structurally kept.
+- + The first-boot cost (a few seconds) is paid once per fresh volume; the
+  idempotent MANIFEST check skips on subsequent boots.
+- + The trace seed means the Traces tab demonstrates per-stage timing bars
+  before the user runs any query — important for the recordable demo and
+  for the recruiter who scans the UI in 30 seconds.
+- - If `docintel-index build` ever fails at runtime (e.g. corrupt chunks
+  file), the container exits unhealthy with a clear error rather than
+  serving 500s. `set -e` makes this explicit.
+
+---
+
+*Last updated: 2026-05-30, Phase 13 plan 13-06.*

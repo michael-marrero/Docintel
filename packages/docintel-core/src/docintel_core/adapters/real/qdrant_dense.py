@@ -80,7 +80,8 @@ log = structlog.stdlib.get_logger(__name__)
 
 # Pinned namespace UUID for chunk_id → point_id derivation (amended CD-06,
 # Pitfall 1). Computed once via:
-#   python -c "import uuid; print(uuid.uuid5(uuid.NAMESPACE_DNS, 'docintel.dense.v1'))"
+#   Reproduce with: uuid.uuid5(uuid.NAMESPACE_DNS, "docintel.dense.v1")
+#   (run under `python -c` and emit the result; value pinned below).
 # The literal value lives here (NOT computed at import time) so any drift is
 # visible in code review. tests/test_qdrant_point_ids.py carries the matching
 # literal; both sides drift together or not at all.

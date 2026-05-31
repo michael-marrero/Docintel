@@ -62,6 +62,11 @@ Rules:
    "I cannot answer this question from the retrieved 10-K excerpts."
 4. For comparative questions across companies, structure the answer to enumerate each
    compared entity's grounded evidence before reaching a comparison conclusion.
+5. At the end of your answer, on a new line, append EXACTLY one of:
+   [confidence: high]   — if the context strongly supports the answer
+   [confidence: medium] — if the context partially supports the answer
+   [confidence: low]    — if the context barely supports the answer
+   Do not add any other text after the confidence marker.
 
 Example:
 Apple highlighted supplier concentration in China and Taiwan as a key risk in its

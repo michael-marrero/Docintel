@@ -94,6 +94,15 @@ class Settings(BaseSettings):
             "Where index artifacts land " "(data/indices/dense/, /bm25/, /MANIFEST.json)."
         ),
     )
+    # Phase 12 amendment (D-03). Consolidated JSONL trace sink location.
+    # Mirrors index_dir; single env-reader rule (FND-11) means it lives here.
+    trace_dir: str = Field(
+        default="data/traces",
+        description=(
+            "Where consolidated trace_completed JSONL records land "
+            "(data/traces/<run>.jsonl). Gitignored, mirrors index_dir."
+        ),
+    )
     qdrant_url: str = Field(
         default="http://qdrant:6333",
         description=(

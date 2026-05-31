@@ -67,6 +67,11 @@ files = ["packages/*/src"]
 # mypy knob (D-19; extended in Plan 03-04 for the Phase 3 ingest stack).
 # bm25s (Plan 04-04 D-07) + PyStemmer (Plan 04-04 D-08 — imports as ``Stemmer``)
 # also lack py.typed markers; same override pattern.
+# scipy (Plan 09-02) ships no bundled py.typed stubs; scipy-stubs is a separate package
+# not required by the project. numpy has inline stubs (numpy.pyi) so no override needed.
+# pandas (Plan 13-04) ships no bundled py.typed marker (pandas-stubs is a separate
+# package; consumed only by the Streamlit Traces tab Altair chart waterfall, so the
+# canonical missing-stubs override matches the existing pattern).
 module = [
     "sentence_transformers",
     "sentence_transformers.*",
@@ -81,6 +86,10 @@ module = [
     "bm25s",
     "bm25s.*",
     "Stemmer",
+    "scipy",
+    "scipy.*",
+    "pandas",
+    "pandas.*",
 ]
 ignore_missing_imports = true
 

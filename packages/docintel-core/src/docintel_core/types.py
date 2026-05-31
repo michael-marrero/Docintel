@@ -33,8 +33,11 @@ RESEARCH.md §Anti-pattern line 428: NormalizedFiling.fetched_at is ISO-8601
 
 from __future__ import annotations
 
+import csv
+import functools
 import re
 from datetime import date
+from pathlib import Path
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -46,6 +49,8 @@ from docintel_core.adapters.types import CompletionResponse
 
 __all__ = [
     "REFUSAL_TEXT_SENTINEL",
+    "Answer",
+    "Citation",
     "Chunk",
     "CompanyEntry",
     "GenerationResult",
@@ -526,3 +531,284 @@ class CompanyEntry(BaseModel):
                 f"snapshot_date {v!r} is not ISO-8601 YYYY-MM-DD format: {exc}"
             ) from exc
         return v
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 Answer / Citation models and supporting constants
+# ---------------------------------------------------------------------------
+
+# Canonical 10-K item code → item title mapping for Phase 7 Citation.item_title.
+# Copied verbatim from docintel_ingest.chunk._CANONICAL_ITEM_TITLES.
+# ``docintel_core.types`` MUST NOT import from ``docintel_ingest`` (import
+# direction: ingest/retrieve/generate → core; never reverse). The 22-entry
+# dict is low-risk duplication; the SEC 10-K item list changes only with
+# major regulatory updates.
+# Keep in sync with docintel_ingest.chunk._CANONICAL_ITEM_TITLES.
+_ITEM_CODE_TITLE_MAP: dict[str, str] = {
+    "Item 1": "Business",
+    "Item 1A": "Risk Factors",
+    "Item 1B": "Unresolved Staff Comments",
+    "Item 1C": "Cybersecurity",
+    "Item 2": "Properties",
+    "Item 3": "Legal Proceedings",
+    "Item 4": "Mine Safety Disclosures",
+    "Item 5": "Market for Registrant's Common Equity, Related Stockholder Matters and Issuer Purchases of Equity Securities",
+    "Item 6": "[Reserved]",
+    "Item 7": "Management's Discussion and Analysis of Financial Condition and Results of Operations",
+    "Item 7A": "Quantitative and Qualitative Disclosures About Market Risk",
+    "Item 8": "Financial Statements and Supplementary Data",
+    "Item 9": "Changes in and Disagreements with Accountants on Accounting and Financial Disclosure",
+    "Item 9A": "Controls and Procedures",
+    "Item 9B": "Other Information",
+    "Item 9C": "Disclosure Regarding Foreign Jurisdictions That Prevent Inspections",
+    "Item 10": "Directors, Executive Officers and Corporate Governance",
+    "Item 11": "Executive Compensation",
+    "Item 12": "Security Ownership of Certain Beneficial Owners and Management and Related Stockholder Matters",
+    "Item 13": "Certain Relationships and Related Transactions, and Director Independence",
+    "Item 14": "Principal Accountant Fees and Services",
+    "Item 15": "Exhibits and Financial Statement Schedules",
+    "Item 16": "Form 10-K Summary",
+}
+
+
+@functools.lru_cache(maxsize=None)
+def _load_ticker_name_map() -> dict[str, str]:
+    """Load ticker → full company name from the committed companies.snapshot.csv.
+
+    Lazy + cached: first call loads from disk; subsequent calls return the
+    cached dict. D-16: no new Settings fields — this loader reads the committed
+    data file, NOT an env var (FND-11 preserved). ``from_generation_result``
+    accepts ``ticker_name_map: dict[str, str] | None = None`` for test
+    injection (Focus Q4 Option 2 in 07-RESEARCH.md — avoids filesystem
+    coupling in test context).
+
+    Path resolution: ``types.py`` is at
+    ``packages/docintel-core/src/docintel_core/types.py`` → 4 parents up
+    (docintel_core → src → docintel-core → packages → repo root) lands at
+    the repo root. ``data/corpus/companies.snapshot.csv`` is committed
+    (Phase 3 D-04).
+
+    Pitfall 4 (07-RESEARCH.md): MUST be a module-level function, NOT a method.
+    ``@functools.lru_cache`` on an instance method holds a reference to
+    ``self``, leaking memory. Module-level placement is safe.
+    """
+    csv_path = (
+        Path(__file__).parents[4] / "data" / "corpus" / "companies.snapshot.csv"
+    )
+    result: dict[str, str] = {}
+    with csv_path.open(encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            result[row["ticker"]] = row["name"]
+    return result
+
+
+class Citation(BaseModel):
+    """A single citation anchor produced by Phase 7 ``Answer.from_generation_result``.
+
+    Carries the seven D-07..D-11 fields that Phase 13 UI needs to render a
+    hoverable, highlighted citation quote without a second lookup:
+
+    * ``chunk_id`` — matches ``Chunk.chunk_id`` format ({ticker}-FY{year}-…).
+    * ``company`` — full name e.g. ``"Apple Inc."`` (D-07); sourced from the
+      ticker→name map built from ``data/corpus/companies.snapshot.csv``.
+    * ``fiscal_year`` — int e.g. ``2024`` (D-10).
+    * ``item_code`` — e.g. ``"Item 1A"`` (D-08); matches ``RetrievedChunk.item_code``.
+    * ``item_title`` — e.g. ``"Risk Factors"`` (D-08); resolved via
+      ``_ITEM_CODE_TITLE_MAP``.
+    * ``text`` — the chunk excerpt (D-09); self-contained so the UI renders
+      the quote without a second lookup.
+    * ``char_span_in_section`` — ``(start, end)`` citation anchor into the
+      original section text (D-11); same semantics as
+      ``RetrievedChunk.char_span_in_section``. Phase 13 "expand" affordance
+      highlights this span.
+
+    ``extra="forbid"`` + ``frozen=True``: same ConfigDict pattern as
+    ``RetrievedChunk`` and ``GenerationResult``. Extra fields at construction
+    raise immediately (T-07-V5-02 threat mitigated); post-construction mutation
+    raises (defense against shared-list corruption).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chunk_id: str
+    company: str  # full name e.g. "Apple Inc." — D-07
+    fiscal_year: int  # e.g. 2024 — D-10
+    item_code: str  # e.g. "Item 1A" — D-08
+    item_title: str  # e.g. "Risk Factors" — D-08
+    text: str  # excerpt — D-09 (self-contained; UI renders without second lookup)
+    char_span_in_section: tuple[int, int]  # citation anchor — D-11
+
+
+class Answer(BaseModel):
+    """Phase 7 answer schema (ANS-01). Phase 9 metrics and Phase 13 UI consume this.
+
+    Wraps ``GenerationResult`` into a citation-grade shape via the
+    ``from_generation_result`` classmethod (D-15). Lives in
+    ``docintel_core.types`` to honor the upward import direction — Phase 9
+    and Phase 13 import from core without depending on ``docintel-generate``.
+
+    D-01 contract: five fields exactly.
+    * ``text`` — answer text with the ``[confidence: X]`` marker STRIPPED so
+      Phase 13 UI never renders the bracket literal (Pitfall 6).
+    * ``citations`` — list of ``Citation`` instances; non-empty when
+      ``refused=False`` (ANS-03 model_validator enforces this).
+    * ``confidence`` — LLM self-reported: ``Literal["high","medium","low"]``
+      (D-03). On ``refused=True``, always ``"low"`` (D-05). ``"medium"`` is the
+      fallback if the marker is absent from the synthesis text.
+    * ``refused`` — mirrors ``GenerationResult.refused``.
+    * ``prompt_version_hash`` — pass-through of the combined
+      ``PROMPT_VERSION_HASH`` at generation time (EVAL-02 manifest).
+
+    ``extra="forbid"`` + ``frozen=True``: same ConfigDict pattern as
+    ``GenerationResult``. Extra fields raise at construction (T-07-V5-02);
+    mutation raises (shared-list defense).
+
+    ANS-03 / D-13: the ``_citations_required_when_not_refused`` model_validator
+    enforces ``not refused => len(citations) >= 1``. This is the structural
+    precondition for Phase 9's per-claim anchoring rate measurement.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    text: str
+    citations: list[Citation]
+    confidence: Literal["high", "medium", "low"]
+    refused: bool
+    prompt_version_hash: str
+
+    @model_validator(mode="after")
+    def _citations_required_when_not_refused(self) -> "Answer":
+        """ANS-03 structural invariant: not refused => len(citations) >= 1.
+
+        Fires AFTER all fields are constructed (``mode="after"`` is required —
+        Pitfall 7 in 07-RESEARCH.md: ``mode="before"`` would see the raw input
+        dict, not the coerced ``list[Citation]``). Pattern copied verbatim from
+        ``IndexManifestDense._backend_field_consistency`` at lines 321-374.
+
+        Raises ``ValueError`` (wrapped as ``pydantic.ValidationError``) when
+        ``refused=False`` but ``citations`` is empty. On ``refused=True``,
+        empty citations are valid (there are no grounded claims).
+        """
+        if not self.refused and len(self.citations) < 1:
+            raise ValueError(
+                "ANS-03: Answer.refused=False requires len(citations) >= 1. "
+                "Got empty citations list on a non-refusal answer — this means "
+                "cited_chunk_ids was empty after hallucination drop OR "
+                "from_generation_result was called incorrectly."
+            )
+        return self
+
+    @classmethod
+    def from_generation_result(
+        cls,
+        gr: "GenerationResult",
+        *,
+        ticker_name_map: dict[str, str] | None = None,
+        item_code_title_map: dict[str, str] | None = None,
+    ) -> "Answer":
+        """Build Answer from GenerationResult (D-15).
+
+        On ``refused=True``: returns ``Answer(refused=True, citations=[],
+        confidence="low")`` without calling ``parse_confidence`` (D-05,
+        Pitfall 1 in 07-RESEARCH.md).
+
+        On ``refused=False``: builds ``Citation`` instances from
+        ``gr.cited_chunk_ids × gr.retrieved_chunks``, parses the
+        ``[confidence: X]`` marker from ``gr.text`` via a lazy
+        ``docintel_generate.parse.parse_confidence`` import, and strips the
+        marker from ``Answer.text`` (Pitfall 6). If no marker is found,
+        ``confidence`` defaults to ``"medium"``.
+
+        The ``if cid in rc_by_id`` guard (Pitfall 5) prevents ``KeyError``
+        on hallucination-dropped IDs that Phase 6 did not fully clean up.
+
+        Args:
+            gr: ``GenerationResult`` from Phase 6 ``Generator.generate()``.
+            ticker_name_map: ticker → full company name. Defaults to the
+                module-level cached loader (``_load_ticker_name_map()``) when
+                ``None``. Tests inject a small fixture dict to avoid filesystem
+                coupling (D-16 / Focus Q4 Option 2 in 07-RESEARCH.md).
+            item_code_title_map: item_code → item_title. Defaults to
+                ``_ITEM_CODE_TITLE_MAP`` when ``None``.
+
+        Returns:
+            A fully-validated ``Answer`` instance.
+
+        Raises:
+            pydantic.ValidationError: if the ANS-03 invariant is violated
+                (``refused=False`` + empty citations after hallucination drop).
+        """
+        _ticker_map = (
+            ticker_name_map if ticker_name_map is not None else _load_ticker_name_map()
+        )
+        _item_map = (
+            item_code_title_map
+            if item_code_title_map is not None
+            else _ITEM_CODE_TITLE_MAP
+        )
+
+        # Pitfall 1: check refusal FIRST — do NOT call parse_confidence on
+        # refusal text (D-05). confidence="low" is unconditional on this path.
+        if gr.refused:
+            return cls(
+                text=gr.text,
+                citations=[],
+                confidence="low",
+                refused=True,
+                prompt_version_hash=gr.prompt_version_hash,
+            )
+
+        # Non-refusal path: build Citations from cited_chunk_ids × retrieved_chunks.
+        # Pitfall 5: use rc_by_id.get() / 'if cid in rc_by_id' guard — never
+        # bare-index rc_by_id[cid] which would KeyError on any hallucination-dropped
+        # ID that Phase 6 did not catch.
+        rc_by_id = {rc.chunk_id: rc for rc in gr.retrieved_chunks}
+        citations: list[Citation] = []
+        for cid in gr.cited_chunk_ids:
+            if cid not in rc_by_id:
+                continue  # Pitfall 5 guard — skip phantom IDs
+            rc = rc_by_id[cid]
+            citations.append(
+                Citation(
+                    chunk_id=rc.chunk_id,
+                    company=_ticker_map.get(rc.ticker, rc.ticker),
+                    fiscal_year=rc.fiscal_year,
+                    item_code=rc.item_code,
+                    item_title=_item_map.get(rc.item_code, rc.item_code),
+                    text=rc.text,
+                    char_span_in_section=rc.char_span_in_section,
+                )
+            )
+
+        # ANS-03 early trigger: if no citations would result from a non-refusal
+        # GenerationResult, the model_validator will raise ValidationError on
+        # Answer construction regardless. Trigger it now (before parse_confidence
+        # is imported) so the invariant fires even when parse_confidence is not
+        # yet available (Plan 07-03 ships parse_confidence in Wave 3).
+        if not citations:
+            cls(
+                text="",
+                citations=[],
+                confidence="medium",
+                refused=False,
+                prompt_version_hash=gr.prompt_version_hash,
+            )
+            # model_validator raises above; this line is unreachable but
+            # satisfies mypy's return analysis.
+            raise AssertionError("unreachable: model_validator must have raised")  # noqa: TRY004
+
+        # Pitfall 2: parse FIRST, then strip. Never strip first.
+        # Lazy in-method import preserves module-level import direction
+        # (generate → core; never the reverse at module scope).
+        # The ONE allowed cross-package call per CONTEXT.md D-12.
+        from docintel_generate.parse import parse_confidence  # noqa: PLC0415
+
+        text_stripped, confidence = parse_confidence(gr.text)
+
+        return cls(
+            text=text_stripped,
+            citations=citations,
+            confidence=confidence if confidence is not None else "medium",
+            refused=False,
+            prompt_version_hash=gr.prompt_version_hash,
+        )

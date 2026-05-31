@@ -74,6 +74,53 @@ jobs:
         # Catches non-deterministic build paths AND silent dep drift.
         run: uv run docintel-index verify
 
+      - name: Eval run (stub-mode, EVAL-01/EVAL-03)
+        # D-09: generates + validates but does NOT commit. Stub run is fast + deterministic.
+        # Must run AFTER "Build indices (stub)" step — make_retriever loads data/indices/.
+        # (Pitfall 6: eval step must come after docintel-index all because make_retriever
+        # loads data/indices artifacts that must exist first.)
+        run: uv run docintel-eval run
+
+      - name: Eval validate (EVAL-04)
+        # D-11: validate subcommand is the well-formedness gate (no NaN, all manifest fields,
+        # 32 questions). report_dir is the most-recent timestamped dir under data/eval/reports/.
+        # ls -1td sorts by mtime so the freshly-generated timestamped dir is newest.
+        run: |
+          latest=$(ls -1td data/eval/reports/*/ | head -1)
+          uv run docintel-eval validate "$latest"
+
+      - name: Eval stub-sample drift gate (EVAL-03)
+        # Open-Question-2: auto-detect report-format drift in the committed stub-sample on
+        # every PR. Re-validates the canonical committed sample so schema changes are caught
+        # before they break the real-mode committed reports.
+        run: uv run docintel-eval validate data/eval/reports/stub-sample
+
+      - name: Ablation run (stub-mode, component arms only) (ABL-01/ABL-02)
+        # Phase 11 D-10: every-PR stub smoke over the component arms (baseline +
+        # no-rerank + dense-only) — generate + validate, NO commit (a committed stub
+        # ablation per PR bloats git; stub deltas are non-representative, L-04).
+        # ~3 arms x ~0.25s, trivial. The re-chunk/re-index size arms are REAL-mode only
+        # (D-04) and are absent from this track — they run solely in the real-ablation job.
+        # Must run AFTER "Build indices (stub)" above — each arm's Retriever warms its
+        # stores from data/indices/ (Pitfall 6: make_index_stores loads data/indices/).
+        run: uv run docintel-eval ablate
+
+      - name: Ablation validate (EVAL-04 extended, D-11)
+        # D-11: run the extended ablation gate (all arms present, baseline present, n=32
+        # per arm, finite deltas + CIs, seed=42 determinism recompute) on the freshly
+        # produced ablation dir. The timestamped run dirs are named YYYYMMDD_* so the
+        # `20*/` glob selects only the new run and never the committed stub-sample/ dir
+        # (mtime-independent; safer than a bare `*/` glob).
+        run: |
+          latest=$(ls -1td data/eval/ablations/20*/ | head -1)
+          uv run docintel-eval validate "$latest"
+
+      - name: Ablation stub-sample drift gate (D-11)
+        # Mirrors the "Eval stub-sample drift gate" above: re-validate the canonical
+        # committed sample so a renderer/schema change is caught in the PR diff before it
+        # breaks the real-mode committed ablation reports.
+        run: uv run docintel-eval validate data/eval/ablations/stub-sample
+
       - name: pytest
         # Deselect real-mode tests (-m "not real") — they require
         # API keys + qdrant service + HF model download. Real-mode runs
@@ -113,12 +160,22 @@ jobs:
         # (Phase 6 D-04 structural enforcement of GEN-01).
         run: bash scripts/check_prompt_locality.sh
 
+      - name: Check no print (OBS-03)
+        # Production code must not use unstructured print(); logs are JSON via
+        # structlog (FND-02). Scans packages/*/src; per-line `# noqa: no-print`
+        # escape. Phase 12 D-06/D-07/D-08 structural enforcement of OBS-03.
+        run: bash scripts/check_no_print.sh
+
       - name: Chunk-idempotency gate (ING-04)
         # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
         # committed normalized JSON and asserts byte-identity vs. committed
         # JSONL; re-computes every sha256 in MANIFEST.json. Headline Phase 3
         # acceptance gate — must stay green on every PR.
         run: uv run pytest tests/test_chunk_idempotency.py -ra -q
+
+      - name: Ground-truth eval set well-formedness gate (GT-02)
+        # Phase 8: EvalRecord schema, citations⊆golds, gold-id resolution, refusal-empties, D-17 flavors, ≥30/15/10/5 mix. Stub-eligible.
+        run: uv run pytest tests/test_eval_dataset_schema.py -ra -q
 
   gitleaks:
     name: gitleaks (secrets scan)
@@ -321,6 +378,201 @@ jobs:
 
       - name: Real-only pytest
         run: uv run pytest -m real -ra -q
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile real down -v
+
+  # Phase 10 D-10: real-mode eval run, manual trigger only.
+  # Mirrors real-index-build. Gated on workflow_dispatch — never runs on push/PR
+  # (no API keys on untrusted PRs, T-10-CI1). Builds the real index, runs the
+  # full 32-question eval, validates the produced report, and COMMITS it under
+  # data/eval/reports/<ts>/ with [skip ci] so the published numbers are in-repo.
+  # The stub PR eval (lint-and-test Eval run step) generates + validates but
+  # never commits (D-09); only this job and the one canonical stub-sample commit.
+  real-eval:
+    name: real-mode eval run (manual trigger only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # CR-01: required for the "Commit report (D-10)" git push step
+    env:
+      DOCINTEL_LLM_PROVIDER: real
+      # The python process runs on the runner host, NOT inside the docker
+      # network — override to localhost since qdrant maps port 6333 to host.
+      DOCINTEL_QDRANT_URL: http://localhost:6333
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace (frozen)
+        run: uv sync --all-packages --frozen
+
+      - name: Pre-create data/indices/ as runner-owned
+        # Pre-create before docker starts so the runner user owns the dirs
+        # (qdrant compose volume mount creates parent dirs as root otherwise).
+        run: mkdir -p data/indices/bm25 data/indices/dense data/indices/.qdrant
+
+      - name: Start qdrant via compose profile 'real'
+        run: docker compose --profile real up -d qdrant
+
+      - name: Wait for qdrant /readyz
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            if curl -fsS http://localhost:6333/readyz; then
+              echo "qdrant ready on attempt $i"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FAIL: qdrant /readyz never returned 200"
+          docker compose --profile real logs qdrant
+          exit 1
+
+      - name: Real-mode index build
+        run: uv run docintel-index all
+
+      - name: Real-mode eval run
+        run: uv run docintel-eval run
+
+      - name: Real-mode eval validate
+        # D-11: validate the freshly-produced report before committing.
+        # ls -1td sorts by mtime; the just-produced timestamped dir is newest.
+        run: |
+          latest=$(ls -1td data/eval/reports/*/ | head -1)
+          uv run docintel-eval validate "$latest"
+
+      - name: Commit report (D-10)
+        # D-10: committed reports come from real-mode workflow_dispatch runs.
+        # [skip ci] prevents an infinite trigger loop. The GITHUB_TOKEN is
+        # GitHub-managed and scoped to the repo — no project secret introduced.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/eval/reports/
+          git commit -m "chore: commit real-mode eval report [skip ci]" || echo "Nothing to commit"
+          git push
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile real down -v
+
+  # Phase 11 D-09 / D-04: real-mode ablation run, manual trigger only.
+  # Sibling of real-eval; mirrors its qdrant bring-up + EACCES pre-create + teardown.
+  # Gated on workflow_dispatch — never runs on push/PR (T-11-07 cost guard: the
+  # re-chunk -> re-embed -> re-index x{300,600} + multi-arm real eval is the
+  # real-pipeline cost offline-first stub-CI deliberately avoids; T-11-12: no API
+  # keys on untrusted PRs). Builds the production (450) index, builds the size-300/600
+  # indices via the Plan 04 sweep target, runs ablate in real mode (all arms incl.
+  # the chunk-size sweep), validates the produced ablation dir, and COMMITS the
+  # ablation-report.md + sidecars under data/eval/ablations/<ts>/ with [skip ci] so
+  # the published deltas are in-repo (Phase 13 README input). The stub PR ablation
+  # (lint-and-test) generates + validates but never commits (D-10); only this job and
+  # the one canonical committed stub-sample.
+  real-ablation:
+    name: real-mode ablation run (manual trigger only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # 60-min budget (vs real-eval's 30): this job does the production index build
+    # PLUS the chunk-size sweep — re-chunk + re-embed + re-index at sizes 300 and 600
+    # (450 reuses the production baseline) — PLUS a real eval over ~6 arms (baseline +
+    # no-rerank + dense-only + chunk-300/450/600), each arm a full 32-question pass.
+    # That is materially heavier than real-eval's single index + single eval, so the
+    # cap is doubled. Raise further if the sweep build dominates. The timeout is the
+    # DoS bound (T-11-07), same role as real-eval's cap.
+    timeout-minutes: 60
+    permissions:
+      contents: write # required for the "Commit ablation report (D-09)" git push step
+    env:
+      DOCINTEL_LLM_PROVIDER: real
+      # The python process runs on the runner host, NOT inside the docker
+      # network — override to localhost since qdrant maps port 6333 to host.
+      DOCINTEL_QDRANT_URL: http://localhost:6333
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Sync workspace (frozen)
+        run: uv sync --all-packages --frozen
+
+      - name: Pre-create data/indices/ as runner-owned
+        # Pre-create before docker starts so the runner user owns the dirs
+        # (qdrant compose volume mount creates parent dirs as root otherwise).
+        run: mkdir -p data/indices/bm25 data/indices/dense data/indices/.qdrant
+
+      - name: Start qdrant via compose profile 'real'
+        run: docker compose --profile real up -d qdrant
+
+      - name: Wait for qdrant /readyz
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            if curl -fsS http://localhost:6333/readyz; then
+              echo "qdrant ready on attempt $i"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FAIL: qdrant /readyz never returned 200"
+          docker compose --profile real logs qdrant
+          exit 1
+
+      - name: Build production index (450 baseline)
+        # The baseline + no-rerank + dense-only arms all run against this production
+        # 450-token index. The chunk-450 sweep arm reuses it too (no rebuild).
+        run: uv run docintel-index all
+
+      - name: Build chunk-sweep indices (300/450/600)
+        # Plan 04 (D-05): re-chunk + re-index at 300 and 600 into gitignored size roots
+        # under data/indices/chunk-{300,600}/ (450 reuses the production index above).
+        # MUST run before "Real-mode ablation run" so the chunk arms find their indices.
+        run: make ablate-chunk-sweep
+
+      - name: Real-mode ablation run (all arms incl. chunk sweep)
+        # Real mode appends the chunk-300/450/600 arms at the run_ablations seam (Plan 02);
+        # baseline + no-rerank + dense-only run as in stub. One process -> one git SHA,
+        # one dataset hash, one seed -> a valid paired bootstrap across all arms (D-01).
+        run: uv run docintel-eval ablate
+
+      - name: Real-mode ablation validate
+        # D-11: extended gate now also covers the chunk arms (validate reads the manifest
+        # arm list). Same 20*/ glob as the stub track — selects the fresh run, never the
+        # committed stub-sample/ dir.
+        run: |
+          latest=$(ls -1td data/eval/ablations/20*/ | head -1)
+          uv run docintel-eval validate "$latest"
+
+      - name: Commit ablation report (D-09)
+        # D-09: committed ablation reports come from real-mode workflow_dispatch runs.
+        # [skip ci] prevents an infinite trigger loop (mirror real-eval's commit step).
+        # The GITHUB_TOKEN is GitHub-managed and scoped to the repo — no project secret
+        # introduced (T-11-12). data/eval/ablations/ is tracked (only data/eval/cache/ is
+        # gitignored, D-08); the size indices under data/indices/ stay gitignored (A3) so
+        # `git add data/eval/ablations/` never stages them.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/eval/ablations/
+          git commit -m "chore: commit real-mode ablation report [skip ci]" || echo "Nothing to commit"
+          git push
 
       - name: Tear down
         if: always()

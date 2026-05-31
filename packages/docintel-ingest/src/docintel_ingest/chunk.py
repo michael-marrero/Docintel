@@ -423,14 +423,22 @@ def _chunk_section(
     ticker: str,
     fiscal_year: int,
     accession: str,
+    target_tokens: int = TARGET_TOKENS,
 ) -> list[Chunk]:
     """Paragraph-greedy splitter for one Item's section text (D-13).
 
     Walks paragraphs (``\\n\\n``-split) in document order, greedily
     accumulating until the next paragraph would push the running token
-    total past ``TARGET_TOKENS``; then closes the chunk via
+    total past ``target_tokens``; then closes the chunk via
     ``_emit_chunk()``, retains a ~50-token overlap (the trailing
     paragraphs of the just-closed chunk), and continues.
+
+    A1 LOCKED (Phase 11 ABL-01 / D-05): overlap (``OVERLAP_TOKENS``=50) +
+    hard cap (``HARD_CAP_TOKENS``=500) stay FIXED across the {300,450,600}
+    sweep; ``target_tokens`` is the single swept knob; the hard cap is tied
+    to BGE's 512 limit + the Phase 5 truncation canary — never scale it for
+    the smaller arms. ``target_tokens`` defaults to the production
+    ``TARGET_TOKENS`` (450) so the default path is byte-identical (ING-04).
 
     Outlier paragraphs (> ``HARD_CAP_TOKENS``) are pre-split via
     ``_split_outlier_paragraph()`` — sentence regex first, then
@@ -452,6 +460,10 @@ def _chunk_section(
         item_title: Human-readable title (``"Risk Factors"``).
         section_text: Full ``NormalizedFiling.sections[item_code]`` text.
         ticker / fiscal_year / accession: Stamped on every emitted Chunk.
+        target_tokens: Greedy split point in BGE tokens (default 450). The
+            single swept knob for the Phase 11 chunk-size ablation (D-05);
+            ``OVERLAP_TOKENS`` / ``HARD_CAP_TOKENS`` stay fixed module
+            constants (A1).
 
     Returns:
         List of ``Chunk`` instances in document order. ``prev_chunk_id``
@@ -491,17 +503,19 @@ def _chunk_section(
         # one true gate, and we want it firing at emit time so the
         # diagnostic message includes the chunk_id.
 
-        # Rule 1 (auto-fix bug) flush condition: TARGET_TOKENS gates the
+        # Rule 1 (auto-fix bug) flush condition: ``target_tokens`` gates the
         # USUAL split, but HARD_CAP_TOKENS gates EVERY split. Even when
-        # we're under TARGET, if adding the next paragraph would push us
+        # we're under target, if adding the next paragraph would push us
         # over HARD_CAP, we MUST flush first. Empirically this matters
         # because overlap can leave cur_tokens at ~OVERLAP_TOKENS (50)
-        # but the next paragraph might be ~480 tokens — under TARGET we'd
+        # but the next paragraph might be ~480 tokens — under target we'd
         # combine to 530+ and violate HARD_CAP at emit time. The fix is
-        # this explicit HARD_CAP guard.
+        # this explicit HARD_CAP guard. A1: HARD_CAP_TOKENS stays the FIXED
+        # module constant (500) across the sweep; only ``target_tokens``
+        # (the swept knob) gates the usual split.
         if cur and cur_tokens + para_tok > HARD_CAP_TOKENS:
             flush_now = True
-        elif cur and cur_tokens + para_tok > TARGET_TOKENS:
+        elif cur and cur_tokens + para_tok > target_tokens:
             flush_now = True
         else:
             flush_now = False
@@ -616,7 +630,7 @@ def _wire_neighbors(chunks: list[Chunk]) -> list[Chunk]:
     ]
 
 
-def chunk_filing(normalized_path: Path) -> list[Chunk]:
+def chunk_filing(normalized_path: Path, *, target_tokens: int = TARGET_TOKENS) -> list[Chunk]:
     """Read one ``NormalizedFiling`` JSON; return its chunks in document order (D-12).
 
     Pipeline:
@@ -634,6 +648,11 @@ def chunk_filing(normalized_path: Path) -> list[Chunk]:
     Args:
         normalized_path: Absolute or repo-relative path to one
             ``data/corpus/normalized/{ticker}/FY{year}.json`` file.
+        target_tokens: Greedy split point in BGE tokens (Phase 11 ABL-01
+            chunk-size sweep, D-05). Threaded into ``_chunk_section``.
+            A1 LOCKED — overlap (50) + hard cap (500) stay fixed; only
+            this knob varies across {300,450,600}. Defaults to the
+            production ``TARGET_TOKENS`` (450) — byte-identical default.
 
     Returns:
         ``list[Chunk]`` in document order. Empty if the input has no
@@ -656,6 +675,7 @@ def chunk_filing(normalized_path: Path) -> list[Chunk]:
             ticker=nf.ticker,
             fiscal_year=nf.fiscal_year,
             accession=nf.accession,
+            target_tokens=target_tokens,
         )
         chunks.extend(item_chunks)
 
@@ -676,6 +696,8 @@ def chunk_all(
     cfg: Settings,
     normalized_root: Path | None = None,
     out_root: Path | None = None,
+    *,
+    target_tokens: int = TARGET_TOKENS,
 ) -> int:
     """Iterate every committed normalized JSON; write chunks JSONL under ``data/corpus/chunks``.
 
@@ -705,14 +727,25 @@ def chunk_all(
         out_root: Override for the chunks JSONL output root. Tests use
             this for idempotency comparison; production callers leave
             it ``None``.
+        target_tokens: A1 LOCKED — overlap (50) + hard-cap (500) stay
+            fixed across the {300,450,600} sweep; target_tokens is the
+            single swept knob; hard cap is tied to BGE 512 + the Phase 5
+            canary — never scale it. The greedy split point in BGE tokens
+            (Phase 11 ABL-01 chunk-size sweep, D-05). Defaults to the
+            production ``TARGET_TOKENS`` (450) so every existing call site
+            is byte-identical (ING-04 idempotency preserved).
 
     Returns:
         Shell exit code:
             * 0 — every normalized JSON either produced a chunks JSONL
-              or was empty (zero-byte JSONL written).
-            * 1 — at least one filing raised an unrecoverable error
-              (e.g. HARD_CAP loud-fail — surfaces as ``ValueError``
-              from ``_emit_chunk``).
+              or was empty (zero-byte JSONL written). All JSONL is flushed
+              to disk only after the full corpus chunked cleanly.
+            * 1 — at least one filing raised an unrecoverable ``ValueError``
+              (e.g. HARD_CAP loud-fail from ``_emit_chunk``). In this case
+              NOTHING is written: the rewrite is all-or-nothing so the
+              on-disk corpus is never left half-regenerated (inconsistent
+              with the committed ``MANIFEST.json``). Unexpected exception
+              types are NOT caught — they propagate and abort loudly.
     """
     if normalized_root is None:
         normalized_root = Path(cfg.data_dir) / "corpus" / "normalized"
@@ -732,13 +765,27 @@ def chunk_all(
     max_chunk_tokens = 0
     sum_chunk_tokens = 0
 
+    # Chunk every filing into an in-memory buffer FIRST; only flush to disk
+    # after the whole corpus chunked cleanly. This makes the rewrite
+    # all-or-nothing: a single HARD_CAP ValueError no longer leaves
+    # data/corpus/chunks/ half-rewritten (inconsistent with the un-regenerated
+    # committed MANIFEST.json), which would make the next verify/idempotency
+    # gate fail for a reason unrelated to the original error.
+    pending_writes: list[tuple[Path, str]] = []
+
     for normalized_path in sorted(normalized_root.rglob("*.json")):
         rel = normalized_path.relative_to(normalized_root)
         out_path = (out_root / rel).with_suffix(".jsonl")
 
         try:
-            chunks = chunk_filing(normalized_path)
-        except Exception as exc:
+            chunks = chunk_filing(normalized_path, target_tokens=target_tokens)
+        except ValueError as exc:
+            # HARD_CAP loud-fail (_emit_chunk raises ValueError) is the ONLY
+            # expected per-filing failure. Narrow the caught type so unexpected
+            # programming errors (AttributeError, KeyError, ...) propagate and
+            # abort loudly rather than being silently logged as "filing chunk
+            # failed" — masking a real bug. On any expected failure we skip the
+            # disk flush entirely (below) so the corpus is never half-rewritten.
             n_failed += 1
             log.error(
                 "filing_chunk_failed",
@@ -748,7 +795,6 @@ def chunk_all(
             )
             continue
 
-        out_path.parent.mkdir(parents=True, exist_ok=True)
         # JSONL: one line per chunk. Empty filings write a zero-byte
         # file (no newline) — preserves the corpus layout for
         # MANIFEST.json hashing.
@@ -756,7 +802,7 @@ def chunk_all(
             payload = "\n".join(chunk.model_dump_json() for chunk in chunks) + "\n"
         else:
             payload = ""
-        out_path.write_text(payload, encoding="utf-8")
+        pending_writes.append((out_path, payload))
 
         n_filings += 1
         n_chunks_total += len(chunks)
@@ -764,6 +810,15 @@ def chunk_all(
             sum_chunk_tokens += c.n_tokens
             if c.n_tokens > max_chunk_tokens:
                 max_chunk_tokens = c.n_tokens
+
+    # All-or-nothing flush: only touch the corpus on a fully clean pass. On any
+    # per-filing failure, return 1 WITHOUT writing — the on-disk corpus stays
+    # consistent with its committed MANIFEST.json (the caller short-circuits
+    # write_manifest on this non-zero rc).
+    if n_failed == 0:
+        for out_path, payload in pending_writes:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(payload, encoding="utf-8")
 
     duration = time.perf_counter() - t_start
     mean_tokens = (sum_chunk_tokens / n_chunks_total) if n_chunks_total else 0.0

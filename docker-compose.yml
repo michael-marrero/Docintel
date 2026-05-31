@@ -34,7 +34,14 @@ services:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 10s
       timeout: 3s
-      start_period: 8s
+      # Raised 8s -> 30s for Phase 13 UI-06: the api entrypoint
+      # (docker/entrypoint-api.sh) builds the stub/NumPy index at first
+      # container boot before exec'ing uvicorn. Stub build itself is
+      # sub-second, but Python + uv cold-start can take a few seconds on
+      # a fresh image. Subsequent starts hit the idempotent MANIFEST.json
+      # skip path. retries=3 × interval=10s still catches genuinely broken
+      # containers within ~60s of total startup time.
+      start_period: 30s
       retries: 3
     restart: unless-stopped
 

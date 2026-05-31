@@ -115,7 +115,11 @@ class StubLLMClient:
             # `[STUB ANSWER citing [<list-repr>]]` which the regex captured
             # as a single nested match — Phase 6 Pitfall 5 fix.
             citations = " ".join(f"[{cid}]" for cid in chunk_ids)
-            text = f"Stub synthesis grounded in the provided context. " f"Citations: {citations}"
+            text = (
+                f"Stub synthesis grounded in the provided context. "
+                f"Citations: {citations}"
+                f"\n[confidence: medium]"
+            )
         prompt_tokens = len(prompt.split())
         completion_tokens = len(text.split())
         return CompletionResponse(

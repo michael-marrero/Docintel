@@ -291,10 +291,16 @@ version = "0.1.0"
 source = { editable = "packages/docintel-eval" }
 dependencies = [
     { name = "docintel-core" },
+    { name = "numpy" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "docintel-core", editable = "packages/docintel-core" }]
+requires-dist = [
+    { name = "docintel-core", editable = "packages/docintel-core" },
+    { name = "numpy", specifier = ">=2.4" },
+    { name = "scipy", specifier = ">=1.17" },
+]
 
 [[package]]
 name = "docintel-generate"

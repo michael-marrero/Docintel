@@ -81,6 +81,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override path to chunks JSONL output root (default: data/corpus/chunks)",
     )
+    # Phase 11 (ABL-01 / D-05): the chunk-size sweep knob. When absent the call
+    # is byte-identical to today (default 450). A1: only the greedy split point
+    # is swept — overlap (50) + hard cap (500) stay fixed in the chunker. This
+    # is a CLI flag / function param, never an env var (FND-11 — Pitfall 4).
+    chunk_parser.add_argument(
+        "--target-tokens",
+        type=int,
+        default=None,
+        help="Override greedy split point in tokens (default 450; Phase 11 chunk-size sweep {300,450,600}, ABL-01)",
+    )
     sub.add_parser("all", help="fetch + normalize + chunk + manifest")
     sub.add_parser("verify", help="re-chunk normalized; assert byte-identity")
 
@@ -101,11 +111,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "chunk":
         from pathlib import Path
 
-        from docintel_ingest.chunk import chunk_all
+        from docintel_ingest.chunk import TARGET_TOKENS, chunk_all
 
         normalized_root = Path(args.normalized_root) if args.normalized_root is not None else None
         out_root = Path(args.out_root) if args.out_root is not None else None
-        return int(chunk_all(cfg, normalized_root=normalized_root, out_root=out_root))
+        # FND-11: --target-tokens is a CLI flag threaded into chunk_all, never an
+        # env read. Absent flag -> the chunker default (450) -> byte-identical
+        # to today (ING-04). Present -> the Phase 11 swept size {300,450,600}.
+        target_tokens = args.target_tokens if args.target_tokens is not None else TARGET_TOKENS
+        return int(
+            chunk_all(
+                cfg,
+                normalized_root=normalized_root,
+                out_root=out_root,
+                target_tokens=target_tokens,
+            )
+        )
     if args.cmd == "all":
         return _cmd_all(cfg)
     if args.cmd == "verify":
@@ -144,6 +165,10 @@ def _cmd_all(cfg: Settings) -> int:
         return rc
     rc = chunk_all(cfg)
     if rc != 0:
+        # chunk_all is all-or-nothing: a non-zero rc means it wrote NOTHING
+        # (see chunk.py), so the on-disk corpus still matches its committed
+        # MANIFEST.json. Short-circuiting before write_manifest here therefore
+        # leaves a consistent corpus rather than a half-rewritten one.
         log.error("all_step_failed", step="chunk", rc=rc)
         return rc
     write_manifest(cfg)

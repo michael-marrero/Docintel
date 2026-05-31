@@ -5,6 +5,8 @@ description = "Eval CLI scaffold for docintel (Phase 1 placeholder)"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "docintel-core",
+    "scipy>=1.17",   # Wilson CI: binomtest(k,n).proportion_ci(method='wilson') — MET-01..04
+    "numpy>=2.4",    # Paired bootstrap: np.random.default_rng(seed).integers() — MET-06
 ]
 
 [project.scripts]
