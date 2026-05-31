@@ -56,10 +56,6 @@ _POS_FIXTURE_DIR = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="xfail until 14-04: gate script + sweep (scripts/check_before_sleep_safe.sh)",
-)
 def test_gate_fails_on_planted_raw_before_sleep_log() -> None:
     """EMP-05 / D-06 (negative) — gate exits non-zero against the planted raw ``before_sleep_log``.
 
@@ -83,10 +79,6 @@ def test_gate_fails_on_planted_raw_before_sleep_log() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="xfail until 14-04: gate script + sweep (12 sites across 6 files per Pitfall 1)",
-)
 def test_gate_passes_on_canonical_adapters_real() -> None:
     """EMP-05 / D-06 (canonical) — gate exits 0 scanning ``adapters/real/`` after the sweep.
 
@@ -112,10 +104,6 @@ def test_gate_passes_on_canonical_adapters_real() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="xfail until 14-04: gate script + sweep (scripts/check_before_sleep_safe.sh)",
-)
 def test_gate_passes_on_positive_fixture() -> None:
     """EMP-05 / D-06 (positive) — gate exits 0 on the planted positive fixture.
 
