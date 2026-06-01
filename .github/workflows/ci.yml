@@ -332,6 +332,12 @@ jobs:
     timeout-minutes: 30
     env:
       DOCINTEL_LLM_PROVIDER: real
+      # EMP-01 (Phase 14): pass through real provider API-key secrets so the
+      # llm_anthropic / llm_openai adapters can initialize when DOCINTEL_LLM_PROVIDER=real.
+      # The secret names on the repo side are unprefixed (ANTHROPIC_API_KEY,
+      # OPENAI_API_KEY); the adapter-side names are DOCINTEL_-prefixed.
+      DOCINTEL_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DOCINTEL_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       # The python process runs on the runner host, NOT inside the docker
       # network — so the default ``qdrant`` service hostname (from
       # docker-compose.yml D-05) cannot be resolved. Override to localhost
@@ -408,6 +414,10 @@ jobs:
       contents: write # CR-01: required for the "Commit report (D-10)" git push step
     env:
       DOCINTEL_LLM_PROVIDER: real
+      # EMP-01 (Phase 14): pass through real provider API-key secrets — see
+      # the matching block in the real-mode index build job for the rationale.
+      DOCINTEL_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DOCINTEL_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       # The python process runs on the runner host, NOT inside the docker
       # network — override to localhost since qdrant maps port 6333 to host.
       DOCINTEL_QDRANT_URL: http://localhost:6333
@@ -504,6 +514,10 @@ jobs:
       contents: write # required for the "Commit ablation report (D-09)" git push step
     env:
       DOCINTEL_LLM_PROVIDER: real
+      # EMP-01 (Phase 14): pass through real provider API-key secrets — see
+      # the matching block in the real-mode index build job for the rationale.
+      DOCINTEL_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DOCINTEL_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       # The python process runs on the runner host, NOT inside the docker
       # network — override to localhost since qdrant maps port 6333 to host.
       DOCINTEL_QDRANT_URL: http://localhost:6333
