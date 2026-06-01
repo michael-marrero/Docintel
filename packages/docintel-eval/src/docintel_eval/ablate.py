@@ -493,9 +493,7 @@ def run_ablations(cfg: Settings, *, output_dir: Path | None = None) -> int:
     # (f) Comparison table (D-06 / D-07). render_ablation_markdown is pure — it
     # only formats the (delta, lo, hi) tuples computed above (no bootstrap call
     # in report.py).
-    report_md: str = render_ablation_markdown(
-        arm_names, arm_metrics, deltas, provider=provider
-    )
+    report_md: str = render_ablation_markdown(arm_names, arm_metrics, deltas, provider=provider)
     (root / "ablation-report.md").write_text(report_md + "\n", encoding="utf-8")
 
     # (g) Structured completion log.

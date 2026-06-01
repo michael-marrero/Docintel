@@ -159,7 +159,9 @@ def run_eval(
     # identical per arm.
     if generator is None:
         generator = make_generator(cfg)
-    retriever = generator._retriever  # reuse warm retriever (Pitfall 2 — never make_retriever again)
+    retriever = (
+        generator._retriever
+    )  # reuse warm retriever (Pitfall 2 — never make_retriever again)
 
     # ------------------------------------------------------------------
     # Step 3: load ground-truth questions
@@ -258,9 +260,7 @@ def run_eval(
             gold_set: set[str] = set(record.gold_passage_ids)
             if not refused_flag:
                 cited_ids: list[str] = [cit.chunk_id for cit in answer.citations]
-                cit_result = compute_citation_accuracy(
-                    cited_ids, set(record.expected_citation_ids)
-                )
+                cit_result = compute_citation_accuracy(cited_ids, set(record.expected_citation_ids))
                 citation_hits_total += sum(
                     1 for cid in cited_ids if cid in set(record.expected_citation_ids)
                 )

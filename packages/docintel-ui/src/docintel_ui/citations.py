@@ -218,7 +218,5 @@ def build_sources_list(answer: Answer) -> list[str]:
         excerpt = citation.text[:_SOURCES_EXCERPT_CHARS]
         ellipsis = "..." if len(citation.text) > _SOURCES_EXCERPT_CHARS else ""
         section = f"{citation.item_code}: {citation.item_title}"
-        entries.append(
-            f"**[{index}]** {citation.company} · {section}  \n*{excerpt}{ellipsis}*"
-        )
+        entries.append(f"**[{index}]** {citation.company} · {section}  \n*{excerpt}{ellipsis}*")
     return entries

@@ -43,9 +43,10 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import structlog
 from pydantic import BaseModel, ConfigDict
@@ -112,7 +113,9 @@ class TraceSpanCollector:
         self._source = source
         # Collector-controlled, per-process sink filename (NEVER request-derived,
         # Security T-12-01). One file per process run; many traces append to it.
-        self._sink_filename = sink_filename if sink_filename is not None else _default_sink_filename()
+        self._sink_filename = (
+            sink_filename if sink_filename is not None else _default_sink_filename()
+        )
         self._spans: list[StageSpan] = []
         self._fields: dict[str, Any] = {}
         self._start_perf: float = 0.0

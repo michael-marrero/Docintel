@@ -117,7 +117,7 @@ def _redact(text: str) -> str:
 def before_sleep_safe(
     logger: logging.Logger,
     log_level: int,
-) -> typing.Callable[["RetryCallState"], None]:
+) -> typing.Callable[[RetryCallState], None]:
     """Tenacity ``before_sleep`` factory that redacts API-key patterns.
 
     Drop-in replacement for the canonical tenacity before-sleep factory.
@@ -157,18 +157,14 @@ def before_sleep_safe(
             ``AttributeError``.
     """
 
-    def log_it(retry_state: "RetryCallState") -> None:
+    def log_it(retry_state: RetryCallState) -> None:
         # Pitfall 3 None-guards — mirror tenacity's own contract verbatim.
         # Raising RuntimeError (not AttributeError) is what upstream
         # documents in its vendored before-sleep factory.
         if retry_state.outcome is None:
-            raise RuntimeError(
-                "before_sleep_safe called before outcome was set"
-            )
+            raise RuntimeError("before_sleep_safe called before outcome was set")
         if retry_state.next_action is None:
-            raise RuntimeError(
-                "before_sleep_safe called before next_action was set"
-            )
+            raise RuntimeError("before_sleep_safe called before next_action was set")
 
         if retry_state.outcome.failed:
             ex = retry_state.outcome.exception()
@@ -183,11 +179,7 @@ def before_sleep_safe(
             verb = "returned"
             value = _redact(str(retry_state.outcome.result()))
 
-        fn_name = (
-            get_callback_name(retry_state.fn)
-            if retry_state.fn is not None
-            else "<unknown>"
-        )
+        fn_name = get_callback_name(retry_state.fn) if retry_state.fn is not None else "<unknown>"
 
         logger.log(
             log_level,
