@@ -64,7 +64,7 @@ class OpenAIAdapter:
     the same LLMClient Protocol — the 'seam is the artifact' demonstration.
     """
 
-    def __init__(self, cfg: Settings) -> None:
+    def __init__(self, cfg: Settings, model: str | None = None) -> None:
         """Store cfg; defer SDK client construction to first ``.complete()`` call.
 
         Lazy SDK init means that downstream pipelines which build the full
@@ -76,13 +76,19 @@ class OpenAIAdapter:
         SP-4 / T-02-05: ``.get_secret_value()`` is still called EXACTLY ONCE,
         but at first ``.complete()`` rather than at construction.
 
+        D-14: the model is resolved from ``model`` arg → ``cfg.openai_model`` →
+        ``_DEFAULT_MODEL``. The factory passes ``model=cfg.judge_model`` to build
+        the second (judge) OpenAIAdapter so generator and judge can run distinct
+        models against the same OpenAI-compatible endpoint (NIM).
+
         Args:
             cfg: Settings instance. ``openai_api_key`` is required only when
                 ``.complete()`` is called; ``__init__`` accepts None.
+            model: Explicit model override. None → ``cfg.openai_model``.
         """
         self._cfg = cfg
         self._client: Any | None = None  # lazy — see _get_client()
-        self._model = _DEFAULT_MODEL
+        self._model = model or cfg.openai_model or _DEFAULT_MODEL
         log.info("openai_adapter_initialized", model=self._model)
 
     def _get_client(self) -> Any:
@@ -94,7 +100,12 @@ class OpenAIAdapter:
         if self._cfg.openai_api_key is None:
             raise ValueError("DOCINTEL_OPENAI_API_KEY is required when llm_provider='real'")
         # SP-4: the ONLY call to .get_secret_value() in this file.
-        self._client = openai.OpenAI(api_key=self._cfg.openai_api_key.get_secret_value())
+        # D-14: base_url=None lets the SDK use its default (api.openai.com); a set
+        # value points the adapter at an OpenAI-compatible gateway (e.g. NIM).
+        self._client = openai.OpenAI(
+            api_key=self._cfg.openai_api_key.get_secret_value(),
+            base_url=self._cfg.openai_base_url,
+        )
         return self._client
 
     @property

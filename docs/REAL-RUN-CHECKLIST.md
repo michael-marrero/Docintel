@@ -273,6 +273,61 @@ storyboarded screen recording. **Claude does not run any of the steps
 below — they all require live API keys + screen recording, which the
 project's offline-first design (ADR-001) explicitly keeps off the agent.**
 
+### NIM path (ADR-014) — read this first if running against NVIDIA NIM
+
+This run targets **NVIDIA NIM's hosted OpenAI-compatible endpoint** serving
+open-weight `openai/gpt-oss-120b` (generator), judged cross-family by
+`meta/llama-3.3-70b-instruct`. The three real-mode `ci.yml` jobs are already
+wired for this (commit lands ADR-014); the differences from the generic
+Anthropic+OpenAI flow above are:
+
+- [ ] **Only ONE secret is required** — the `nvapi-...` key, set as the
+  `OPENAI_API_KEY` repo secret. `ANTHROPIC_API_KEY` is unused on the NIM path
+  (the judge is a second OpenAI adapter), so leave it unset:
+
+   ```bash
+   gh secret set OPENAI_API_KEY        # paste your nvapi-... NIM key
+   gh secret list                      # confirm OPENAI_API_KEY present
+   ```
+
+- [ ] **Run the structured-output probe FIRST (the ADR-014 gate).** Before
+  spending a full eval, confirm the judge model honors strict json_schema —
+  otherwise every verdict silently scores 0. The `real-eval` job runs this
+  automatically as its first step, but run it locally too if you have the env
+  exported (see the `.env.example` ADR-014 block):
+
+   ```bash
+   .venv/bin/python scripts/nim_probe.py    # exit 0 = safe; exit 2 = swap judge model
+   ```
+
+- [ ] **Cost expectations differ.** build.nvidia.com is a free dev-credit
+  tier, so `cost_usd` will be **`0.0`**, NOT the `$1-$2` band quoted in the
+  generic steps below. The manifest/README disclose `nvidia-nim-free-tier` as
+  the cost basis. Eyeball the `judge_structured_output_invalid` rate in the
+  report instead — a high rate means the judge degraded to sentinels.
+
+- [ ] **Manifest adapter names** will read `openai/gpt-oss-120b` (generator)
+  and `meta/llama-3.3-70b-instruct/judge` (judge) — not `gpt-4o` / `claude-*`.
+  This is expected; `make readme-paste` carries them through verbatim.
+
+- [ ] **Trigger ONLY the real-eval job** (the `workflow_dispatch` now takes a
+  `job` input, default `real-eval`, so the 60-min `real-ablation` does NOT run
+  unless asked):
+
+   ```bash
+   gh workflow run ci.yml --ref "$REAL_RUN_BRANCH"                 # job=real-eval (default)
+   gh workflow run ci.yml --ref "$REAL_RUN_BRANCH" -f job=all      # all 3 real jobs
+   gh run watch <run-id>
+   ```
+
+  The `real-eval` job runs `scripts/nim_probe.py` first (fail-fast), then builds
+  its own real index, runs the 32-question eval, validates, and commits the
+  report to `data/eval/reports/<ts>/` with `[skip ci]`.
+
+To revert to the v1.0 cross-PROVIDER eval (Anthropic↔OpenAI), remove the four
+`DOCINTEL_LLM_REAL_PROVIDER` / `_OPENAI_BASE_URL` / `_OPENAI_MODEL` /
+`_JUDGE_MODEL` lines from each real-mode job's `env:` block and set both keys.
+
 ### Prerequisites (macOS only — Pitfall 7)
 
 GitHub Actions Ubuntu runners ship `jq` and `sha256sum` by default. macOS
@@ -448,4 +503,4 @@ uv run pytest \
 All 4 tests must pass with no `xfail-strict` markers remaining. Phase 14's
 final phase-gate plan (14-07) audits against this exact command.
 
-_Last updated: Phase 14 plan 14-05._
+_Last updated: Phase 14 plan 14-06 — added NIM path (ADR-014)._

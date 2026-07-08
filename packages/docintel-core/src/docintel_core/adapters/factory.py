@@ -108,7 +108,16 @@ def make_adapters(cfg: Settings) -> AdapterBundle:
     if cfg.llm_real_provider == "anthropic":
         llm = AnthropicAdapter(cfg)
         judge_inner = OpenAIAdapter(cfg)
+    elif cfg.judge_model is not None:
+        # D-14: distinct-MODEL cross-family judging against a single
+        # OpenAI-compatible gateway (e.g. NIM). Generator runs cfg.openai_model
+        # (e.g. openai/gpt-oss-120b); judge runs cfg.judge_model (e.g.
+        # meta/llama-3.3-70b-instruct). Different weights → no self-rubber-stamp,
+        # preserving the D-04 anti-bias intent without a second provider. See ADR-014.
+        llm = OpenAIAdapter(cfg)
+        judge_inner = OpenAIAdapter(cfg, model=cfg.judge_model)
     else:
+        # v1.0 cross-PROVIDER path (D-04): OpenAI generates, Anthropic judges.
         llm = OpenAIAdapter(cfg)
         judge_inner = AnthropicAdapter(cfg)
 

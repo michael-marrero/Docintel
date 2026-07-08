@@ -245,7 +245,7 @@ def _judge_via_anthropic(client: Any, user_prompt: str) -> JudgeVerdict:
     before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
     reraise=True,
 )
-def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:
+def _judge_via_openai_raw(client: Any, model: str, user_prompt: str) -> dict[str, Any]:
     """Raw OpenAI structured-output SDK call (D-09 + CD-09).
 
     Calls ``client.chat.completions.create`` with ``response_format={"type":
@@ -267,7 +267,7 @@ def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:
         so the caller treats it as a deserialization failure.
     """
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model=model,
         max_tokens=2048,
         messages=[
             {"role": "system", "content": JUDGE_PROMPT},
@@ -294,7 +294,7 @@ def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:
     return decoded
 
 
-def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
+def _judge_via_openai(client: Any, model: str, user_prompt: str) -> JudgeVerdict:
     """OpenAI judge dispatch with sentinel-on-failure (D-09 + Pitfall 6).
 
     Calls ``_judge_via_openai_raw`` (which is ``@retry``-wrapped at the SDK
@@ -304,6 +304,8 @@ def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
 
     Args:
         client: An ``openai.OpenAI`` SDK client instance.
+        model: Judge model id (D-14). v1.0 path = gpt-4o; NIM path = the
+            ``cfg.judge_model`` the factory pinned on the judge adapter.
         user_prompt: The user-side prompt built by ``build_judge_user_prompt``.
 
     Returns:
@@ -311,7 +313,7 @@ def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
         the sentinel verdict from ``_sentinel_judgeverdict`` on failure.
     """
     try:
-        payload = _judge_via_openai_raw(client, user_prompt)
+        payload = _judge_via_openai_raw(client, model, user_prompt)
     except (
         OpenAIRateLimitError,
         OpenAIAPIConnectionError,
@@ -458,7 +460,10 @@ class CrossFamilyJudge:
         if isinstance(self._llm, AnthropicAdapter):
             return _judge_via_anthropic(self._llm._get_client(), user_prompt)
         elif isinstance(self._llm, OpenAIAdapter):
-            return _judge_via_openai(self._llm._get_client(), user_prompt)
+            # D-14: the judge adapter carries its own model (cfg.judge_model when
+            # the factory pinned it; cfg.openai_model otherwise), so distinct
+            # generator/judge models can share one OpenAI-compatible endpoint.
+            return _judge_via_openai(self._llm._get_client(), self._llm._model, user_prompt)
         else:
             raise TypeError(
                 f"unsupported judge adapter type: {type(self._llm).__name__}; "

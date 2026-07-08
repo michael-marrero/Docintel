@@ -542,4 +542,93 @@ freeze MUST execute all four steps below, in order, in the same PR:
 
 ---
 
-*Last updated: 2026-05-31, Phase 14 plan 14-02.*
+## ADR-014: OpenAI-compatible endpoint override + distinct-model cross-family judge (Phase 14 D-14)
+
+**Status:** Accepted
+
+**Context:**
+ADR-002 made every LLM swappable behind a protocol + factory, and ADR-004
+locked BGE for embedding/reranking. But the OpenAI generation path (Phase 6)
+was written against `api.openai.com` and the model `gpt-4o` specifically: the
+SDK client was constructed with no `base_url`, the model id was a module
+constant in both `llm_openai.py` and `judge.py`, and the pricing table keyed
+only `gpt-4o`/`gpt-4.1`. The v1.0 real-eval therefore *required* two metered
+provider accounts (Anthropic + OpenAI) because ADR's cross-family judge (D-04)
+forces the judge onto the complement *provider* to avoid a model
+rubber-stamping its own output.
+
+For the Phase 14 empirical-closure run the operator's available inference is an
+**NVIDIA NIM hosted endpoint** (`https://integrate.api.nvidia.com/v1`, an
+OpenAI-compatible chat-completions gateway) serving the open-weight
+`openai/gpt-oss-120b`. A single gateway, OpenAI-SDK-shaped, free dev-credit
+tier. Two facts collide with the v1.0 assumptions: (1) the OpenAI adapter
+cannot reach a non-OpenAI base URL or run a non-`gpt-4o` model, and (2) the
+cross-family judge's *cross-PROVIDER* mechanism has no second provider to point
+at — both generator and judge would be "the OpenAI adapter."
+
+**Decision:**
+Add three `Settings` knobs (the only env reader, ADR-008): `openai_base_url`
+(→ `openai.OpenAI(base_url=...)`, None = SDK default), `openai_model`
+(generator id, default `gpt-4o` so v1.0 behaviour is unchanged), and
+`judge_model`. When `llm_real_provider='openai'` **and** `judge_model` is set,
+the factory builds the judge as a **second `OpenAIAdapter` pinned to
+`judge_model`** rather than the Anthropic complement. The anti-rubber-stamp
+guarantee shifts from *distinct provider* to **distinct model**: generator
+`openai/gpt-oss-120b` is judged by `meta/llama-3.3-70b-instruct` — different
+weights, different family, no self-judging — both via the one NIM endpoint. The
+`nvapi-...` key reuses `openai_api_key`. When `judge_model` is None the v1.0
+cross-PROVIDER path (Anthropic judges OpenAI) is preserved untouched.
+
+NIM models are registered in `pricing.py` at `(0.00, 0.00)` because
+build.nvidia.com hosted inference is a free dev-credit tier — the eval's
+`$/query` then reflects token volume at zero marginal cost, and the
+manifest/README must say so explicitly so the number is not mistaken for
+metered OpenAI pricing. The `(0,0)` rows exist to clear the ADR-006/D-06
+KeyError gate (an unregistered generator model crashes the eval mid-run), not
+to assert a real price.
+
+**Pre-run gate (load-bearing):** the judge sends
+`response_format={"type":"json_schema","strict":true}`. If the judge model on
+NIM does not honor strict JSON-schema, *every* verdict silently degrades to the
+sentinel `score=0` (Pitfall 6) and faithfulness is garbage-but-green. A live
+one-shot structured-output probe against `judge_model` MUST pass before any
+full real-eval run is trusted; `scripts/nim_probe.py` is that probe.
+
+**Consequences:**
+
+- + The real-eval can run on free open-weight inference, and the headline
+  artifact becomes a *stronger* demonstration of the ADR-002 swappable-seam
+  thesis: a 120B open model behind the identical `LLMClient` protocol, judged
+  cross-family, with zero code paths special-cased for it.
+- + Fully backward compatible. `judge_model=None` + default `openai_model`
+  reproduce the v1.0 Anthropic↔OpenAI cross-provider eval byte-for-byte; the
+  Phase 6 tests and the D-04 contract test are unchanged.
+- − The faithfulness number now rests on *cross-model* rather than
+  *cross-provider* independence. Two models served by the same vendor on the
+  same stack are less independent than two separate providers; the eval report
+  and README must disclose the judge model and this weaker independence claim.
+- − `$/query` is $0 and therefore not comparable to a metered-API cost story.
+  The manifest carries a `cost_basis: "nvidia-nim-free-tier"`-style note so a
+  reviewer does not read it as "gpt-oss-120b costs nothing on OpenAI."
+- − A new silent-failure surface: a NIM model that ignores strict json_schema
+  produces all-sentinel verdicts. Mitigated by the mandatory pre-run probe, but
+  the eval report's `judge_structured_output_invalid` rate must still be
+  eyeballed per run (it already is, per Pitfall 5/6 wiring).
+
+**Coupled fix — the `representative` flag (runner.py / metrics.py):**
+The manifest's `representative` flag was computed as `any(cost_usd > 0.0)` — a
+proxy for "real models ran, not stubs." That proxy breaks for a free-tier real
+endpoint: NIM at $0/token yields `cost_usd == 0` for every question, so the
+report would be `representative: false` and `make baseline-lock` (which hard-
+rejects `representative != true`, Makefile:187) would throw away an otherwise-
+valid real run. The flag is now derived from the authoritative signal —
+`provider != "stub"` (`runner.py` for the manifest; `compute_latency_stats`
+gains an explicit `representative` arg) — matching what `ablate.py:458` already
+did. This only flips the free-tier-real case to its correct value; stub
+(`is_stub → false`) and paid-real (`cost>0 → true`) paths are unchanged. The
+legacy cost>0 heuristic is retained as the default when no flag is passed, so
+existing callers and tests are unaffected.
+
+---
+
+*Last updated: 2026-06-03, Phase 14 plan 14-06 (ADR-014 NIM endpoint).*

@@ -309,7 +309,7 @@ def run_eval(
     )
     faithfulness_result = compute_faithfulness(answers, generator._bundle.judge)
     refusal_result = compute_refusal_matrix(cast(list[object], records), answers)
-    latency_result = compute_latency_stats(timings)
+    latency_result = compute_latency_stats(timings, representative=str(cfg.llm_provider) != "stub")
 
     # Headline citation precision: total hits / total citations across answered qs
     citation_headline: float = (
@@ -336,7 +336,12 @@ def run_eval(
         _STUB_WALL_CLOCK_SECONDS if is_stub else time.perf_counter() - wall_start
     )
     total_cost_usd: float = sum(t.cost_usd for t in timings)
-    is_representative: bool = any(t.cost_usd > 0.0 for t in timings)
+    # ADR-014: representative means "real models ran, not stubs" — NOT "cost > 0".
+    # The legacy cost>0 proxy mislabels free-tier real endpoints (NVIDIA NIM at
+    # $0/token) as non-representative, which would make baseline-lock reject an
+    # otherwise-valid real run. Authoritative signal is the provider, which the
+    # manifest already records on the line below. Matches ablate.py:458.
+    is_representative: bool = not is_stub
 
     manifest: dict[str, Any] = {
         "embedder_name": generator._bundle.embedder.name,

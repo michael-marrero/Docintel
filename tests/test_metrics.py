@@ -69,24 +69,20 @@ def test_wilson_ci_boundary() -> None:
 
     lo_at_zero, hi_at_zero = wilson_ci(k=0, n=5)
     assert lo_at_zero == 0.0, "Wilson CI: lower bound must be 0.0 when k=0"
-    assert 0.43 < hi_at_zero < 0.44, (
-        f"Wilson CI k=0,n=5: expected upper bound ~0.4345, got {hi_at_zero}"
-    )
+    assert (
+        0.43 < hi_at_zero < 0.44
+    ), f"Wilson CI k=0,n=5: expected upper bound ~0.4345, got {hi_at_zero}"
 
     lo_at_full, hi_at_full = wilson_ci(k=5, n=5)
     assert hi_at_full == 1.0, "Wilson CI: upper bound must be 1.0 when k=n"
-    assert 0.56 < lo_at_full < 0.57, (
-        f"Wilson CI k=5,n=5: expected lower bound ~0.5655, got {lo_at_full}"
-    )
+    assert (
+        0.56 < lo_at_full < 0.57
+    ), f"Wilson CI k=5,n=5: expected lower bound ~0.5655, got {lo_at_full}"
 
     # Interior: n=5, k=3 -> rate=0.60 -> [0.2307, 0.8824]
     lo_mid, hi_mid = wilson_ci(k=3, n=5)
-    assert abs(lo_mid - 0.2307) < 0.001, (
-        f"Wilson CI k=3,n=5: expected low≈0.2307, got {lo_mid}"
-    )
-    assert abs(hi_mid - 0.8824) < 0.001, (
-        f"Wilson CI k=3,n=5: expected high≈0.8824, got {hi_mid}"
-    )
+    assert abs(lo_mid - 0.2307) < 0.001, f"Wilson CI k=3,n=5: expected low≈0.2307, got {lo_mid}"
+    assert abs(hi_mid - 0.8824) < 0.001, f"Wilson CI k=3,n=5: expected high≈0.8824, got {hi_mid}"
 
 
 def test_multidoc_coverage_flag() -> None:
@@ -102,7 +98,7 @@ def test_multidoc_coverage_flag() -> None:
     ranking = ["AAPL-chunk", "NVDA-chunk", "TSLA-chunk", "other-1", "other-2"]
     gold_by_company = {
         "AAPL": {"AAPL-chunk"},
-        "MSFT": {"MSFT-chunk"},   # MSFT gold NOT in top-5
+        "MSFT": {"MSFT-chunk"},  # MSFT gold NOT in top-5
         "NVDA": {"NVDA-chunk"},
         "TSLA": {"TSLA-chunk"},
     }
@@ -113,13 +109,13 @@ def test_multidoc_coverage_flag() -> None:
 
     # D-14: coverage_flag = all component companies have >=1 gold in top-K
     # Full gold set {AAPL-chunk, MSFT-chunk, NVDA-chunk, TSLA-chunk}: not all in top-5
-    assert hit_at_k(ranking, all_golds, k=5) == 0, (
-        "D-14: MSFT gold missing from top-5; strict coverage_flag must be False (hit=0)"
-    )
+    assert (
+        hit_at_k(ranking, all_golds, k=5) == 0
+    ), "D-14: MSFT gold missing from top-5; strict coverage_flag must be False (hit=0)"
     # AAPL alone covered (lenient per-company check reference value)
-    assert hit_at_k(ranking, {"AAPL-chunk"}, k=5) == 1, (
-        "D-14: AAPL gold IS in top-5; per-component hit must be 1"
-    )
+    assert (
+        hit_at_k(ranking, {"AAPL-chunk"}, k=5) == 1
+    ), "D-14: AAPL gold IS in top-5; per-component hit must be 1"
 
 
 def test_refusal_dual_signal() -> None:
@@ -136,14 +132,14 @@ def test_refusal_dual_signal() -> None:
     # D-18 dual signal: both conditions required.
     # We verify the sentinel value is importable and non-empty (structural gate).
     assert REFUSAL_TEXT_SENTINEL, "REFUSAL_TEXT_SENTINEL must be a non-empty string"
-    assert "cannot answer" in REFUSAL_TEXT_SENTINEL.lower(), (
-        "REFUSAL_TEXT_SENTINEL must contain the canonical refusal phrase"
-    )
+    assert (
+        "cannot answer" in REFUSAL_TEXT_SENTINEL.lower()
+    ), "REFUSAL_TEXT_SENTINEL must contain the canonical refusal phrase"
 
     # Structural gate: hit_at_k on an empty ranking returns 0 (gold never found)
-    assert hit_at_k([], {"some-chunk"}, k=5) == 0, (
-        "D-18: empty ranking with non-empty gold must return 0"
-    )
+    assert (
+        hit_at_k([], {"some-chunk"}, k=5) == 0
+    ), "D-18: empty ranking with non-empty gold must return 0"
 
 
 # ---------------------------------------------------------------------------
@@ -162,9 +158,7 @@ def test_mrr_first_gold() -> None:
 
     ranking = ["A", "B", "C", "D", "E"]
     gold = {"B", "D"}
-    assert compute_mrr(ranking, gold) == 0.5, (
-        "MET-02: B at rank 2 (1-indexed) -> MRR must be 0.5"
-    )
+    assert compute_mrr(ranking, gold) == 0.5, "MET-02: B at rank 2 (1-indexed) -> MRR must be 0.5"
 
 
 def test_mrr_no_gold() -> None:
@@ -177,9 +171,7 @@ def test_mrr_no_gold() -> None:
 
     ranking = ["A", "C", "E"]
     gold = {"B", "D"}
-    assert compute_mrr(ranking, gold) == 0.0, (
-        "MET-02: no gold in ranking -> MRR must be 0.0"
-    )
+    assert compute_mrr(ranking, gold) == 0.0, "MET-02: no gold in ranking -> MRR must be 0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -206,9 +198,7 @@ def test_faithfulness_denominator_only_answered() -> None:
     result = compute_faithfulness(answers=[], judge=None)  # type: ignore[arg-type]
     # This line will raise ImportError until Wave 1 ships compute_faithfulness;
     # the import above is the actual xfail trigger.
-    assert result is not None, (
-        f"D-05: faithfulness result must not be None (total={total_count})"
-    )
+    assert result is not None, f"D-05: faithfulness result must not be None (total={total_count})"
 
 
 def test_faithfulness_excludes_refusals() -> None:
@@ -222,9 +212,9 @@ def test_faithfulness_excludes_refusals() -> None:
     # Behavioral assertion: calling compute_faithfulness with all-refused answers
     # should yield n_answered=0 (not n_total)
     result = compute_faithfulness(answers=[], judge=None)  # type: ignore[arg-type]
-    assert result is not None, (
-        "D-05: compute_faithfulness must return a result even with 0 answered"
-    )
+    assert (
+        result is not None
+    ), "D-05: compute_faithfulness must return a result even with 0 answered"
 
 
 def test_faithfulness_stub_is_zero() -> None:
@@ -241,9 +231,9 @@ def test_faithfulness_stub_is_zero() -> None:
     bundle = make_adapters(Settings(llm_provider="stub"))
     # Calling with empty list -> faithfulness_pass_rate=0.0, n_answered=0 (no div-by-zero)
     result = compute_faithfulness(answers=[], judge=bundle.judge)
-    assert hasattr(result, "faithfulness_pass_rate"), (
-        "MET-03: result must have faithfulness_pass_rate attribute"
-    )
+    assert hasattr(
+        result, "faithfulness_pass_rate"
+    ), "MET-03: result must have faithfulness_pass_rate attribute"
     assert result.faithfulness_pass_rate == 0.0, (  # type: ignore[union-attr]
         "MET-03 stub: faithfulness_pass_rate must be 0.0 with empty answered list"
     )
@@ -262,7 +252,7 @@ def test_citation_accuracy_rate() -> None:
     from docintel_eval.metrics import compute_citation_accuracy  # ImportError until Wave 1
 
     cited = ["chunk-A", "chunk-B", "chunk-C"]
-    expected = {"chunk-A", "chunk-B"}   # chunk-C not in gold
+    expected = {"chunk-A", "chunk-B"}  # chunk-C not in gold
     result = compute_citation_accuracy(cited_chunk_ids=cited, expected_ids=expected)
     assert abs(result.precision - (2 / 3)) < 0.001, (  # type: ignore[union-attr]
         f"MET-04: 2/3 citations hit gold set; precision must be ≈0.667, got {result}"
@@ -278,12 +268,8 @@ def test_citation_accuracy_wilson_ci() -> None:
     from docintel_eval.metrics import wilson_ci  # ImportError until Wave 1
 
     lo, hi = wilson_ci(k=3, n=5)
-    assert abs(lo - 0.2307) < 0.001, (
-        f"MET-04 Wilson CI n=5,k=3: expected low≈0.2307, got {lo}"
-    )
-    assert abs(hi - 0.8824) < 0.001, (
-        f"MET-04 Wilson CI n=5,k=3: expected high≈0.8824, got {hi}"
-    )
+    assert abs(lo - 0.2307) < 0.001, f"MET-04 Wilson CI n=5,k=3: expected low≈0.2307, got {lo}"
+    assert abs(hi - 0.8824) < 0.001, f"MET-04 Wilson CI n=5,k=3: expected high≈0.8824, got {hi}"
 
 
 def test_refusal_matrix_partition() -> None:
@@ -298,18 +284,14 @@ def test_refusal_matrix_partition() -> None:
     n_should_refuse = 5
     true_refused = 3
     false_answered = 2
-    assert true_refused + false_answered == n_should_refuse, (
-        "D-04: true_refused + false_answered must partition n_should_refuse exactly"
-    )
+    assert (
+        true_refused + false_answered == n_should_refuse
+    ), "D-04: true_refused + false_answered must partition n_should_refuse exactly"
 
     # Wilson CI on true_refusal_rate
     lo, hi = wilson_ci(k=true_refused, n=n_should_refuse)
-    assert abs(lo - 0.2307) < 0.001, (
-        f"D-04 Wilson CI: expected low≈0.2307, got {lo}"
-    )
-    assert abs(hi - 0.8824) < 0.001, (
-        f"D-04 Wilson CI: expected high≈0.8824, got {hi}"
-    )
+    assert abs(lo - 0.2307) < 0.001, f"D-04 Wilson CI: expected low≈0.2307, got {lo}"
+    assert abs(hi - 0.8824) < 0.001, f"D-04 Wilson CI: expected high≈0.8824, got {hi}"
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +323,7 @@ def test_query_timing_record_schema() -> None:
 
     # extra="forbid" gate: extra field must raise
     import pytest as _pytest
+
     with _pytest.raises(Exception):
         QueryTimingRecord(  # type: ignore[call-arg]
             question_id="q-001",
@@ -385,6 +368,32 @@ def test_latency_percentiles_stub() -> None:
     assert result.cost_per_query_usd == pytest.approx(0.0), (  # type: ignore[union-attr]
         "MET-05 stub: cost_per_query_usd must be 0.0"
     )
+
+
+def test_latency_representative_free_tier_real_endpoint() -> None:
+    """ADR-014: a real run at $0 cost (free NIM tier) is still representative.
+
+    Regression for the cost>0 proxy: records with cost_usd == 0.0 but an
+    explicit representative=True (provider != 'stub') must yield a
+    representative LatencyResult. Without the override flag the legacy heuristic
+    would mislabel the run non-representative and baseline-lock would reject it.
+    """
+    from docintel_eval.metrics import QueryTimingRecord, compute_latency_stats
+
+    records = [
+        QueryTimingRecord(
+            question_id=f"q-{i:03d}",
+            total_ms=float(2000 + i),
+            cost_usd=0.0,  # free-tier NIM: real run, zero marginal cost
+            model="openai/gpt-oss-120b",
+            refused=False,
+        )
+        for i in range(5)
+    ]
+    # Provider-derived flag (real) overrides the cost>0 heuristic.
+    assert compute_latency_stats(records, representative=True).representative is True
+    # Default (None) preserves the legacy cost>0 behaviour for existing callers.
+    assert compute_latency_stats(records).representative is False
 
 
 @pytest.mark.real
@@ -432,8 +441,8 @@ def test_bootstrap_delta_determinism() -> None:
     """
     from docintel_eval.metrics import bootstrap_delta_ci  # ImportError until Wave 1
 
-    a = [1.0] * 21 + [0.0] * 11   # with_rerank: 21/32 hit
-    b = [1.0] * 14 + [0.0] * 18   # without_rerank: 14/32 hit
+    a = [1.0] * 21 + [0.0] * 11  # with_rerank: 21/32 hit
+    b = [1.0] * 14 + [0.0] * 18  # without_rerank: 14/32 hit
 
     delta1, lo1, hi1 = bootstrap_delta_ci(a, b, seed=42, n_boot=10_000)
     delta2, lo2, hi2 = bootstrap_delta_ci(a, b, seed=42, n_boot=10_000)
@@ -456,12 +465,8 @@ def test_bootstrap_delta_sign() -> None:
 
     delta, lo, hi = bootstrap_delta_ci(a, b, seed=42, n_boot=10_000)
 
-    assert delta > 0.0, (
-        f"MET-06: observed delta must be positive (arm_a > arm_b), got {delta}"
-    )
-    assert lo > 0.0, (
-        f"MET-06: CI lower bound must exclude 0 (significant improvement), got lo={lo}"
-    )
+    assert delta > 0.0, f"MET-06: observed delta must be positive (arm_a > arm_b), got {delta}"
+    assert lo > 0.0, f"MET-06: CI lower bound must exclude 0 (significant improvement), got lo={lo}"
 
 
 # ---------------------------------------------------------------------------
