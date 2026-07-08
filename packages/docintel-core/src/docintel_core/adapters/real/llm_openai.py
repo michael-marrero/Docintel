@@ -49,7 +49,12 @@ _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
 
 _DEFAULT_MODEL = "gpt-4o"
-_MAX_TOKENS = 2048
+# D-14: reasoning models (e.g. NIM openai/gpt-oss-120b) spend tokens on an internal
+# reasoning pass before emitting the final answer. At 2048 a real corpus question
+# (~1.7k-token prompt + reasoning) exhausted the budget before any citable content
+# was produced → empty message.content → ANS-03 validation crash. 8192 gives the
+# reasoning + answer room to complete.
+_MAX_TOKENS = 8192
 
 
 class OpenAIAdapter:
@@ -162,8 +167,27 @@ class OpenAIAdapter:
         )
         cost = cost_for("openai", self._model, usage.prompt_tokens, usage.completion_tokens)
 
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        if not content:
+            # D-14: gpt-oss-120b is a reasoning model. On empty content, surface WHY
+            # (length-truncation vs. output routed to a reasoning channel) so an empty
+            # answer is diagnosable here rather than a bare ANS-03 crash downstream.
+            reasoning = getattr(choice.message, "reasoning_content", None) or getattr(
+                choice.message, "reasoning", None
+            )
+            log.warning(
+                "openai_empty_content",
+                model=self._model,
+                finish_reason=choice.finish_reason,
+                completion_tokens=usage.completion_tokens,
+                max_tokens=_MAX_TOKENS,
+                reasoning_present=bool(reasoning),
+                reasoning_chars=len(reasoning) if reasoning else 0,
+            )
+
         return CompletionResponse(
-            text=response.choices[0].message.content or "",
+            text=content,
             usage=usage,
             cost_usd=cost,
             latency_ms=latency_ms,
