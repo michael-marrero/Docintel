@@ -58,9 +58,9 @@ def test_citation_html_escaping() -> None:
 
     dangerous = 'R&D rose; "guidance" < prior > target'
     html = render_citation_badges(_answer_with_citation("Margins fell.[1]", dangerous))
-    assert "&amp;" in html and "&lt;" in html and "&gt;" in html and "&quot;" in html, (
-        f"all four of & < > \" must be HTML-escaped in the rendered output: {html!r}"
-    )
+    assert (
+        "&amp;" in html and "&lt;" in html and "&gt;" in html and "&quot;" in html
+    ), f'all four of & < > " must be HTML-escaped in the rendered output: {html!r}'
     assert dangerous not in html, "the raw, unescaped excerpt must NOT appear in the HTML"
 
 
@@ -112,17 +112,17 @@ def test_citation_marker_collision_does_not_corrupt_earlier_badge() -> None:
 
     # The rendered text should contain exactly two opening <abbr tags — one per
     # citation, neither corrupted by the other's marker substitution.
-    assert html.count("<abbr ") == 2, (
-        f"two citations must produce exactly two badges, not more, not nested: {html!r}"
-    )
+    assert (
+        html.count("<abbr ") == 2
+    ), f"two citations must produce exactly two badges, not more, not nested: {html!r}"
     # The numeric marker [2] in citation 1's excerpt should be HTML-escape-safe
     # (it appears verbatim inside the title attribute) and must NOT have been
     # replaced by citation 2's badge HTML.
-    assert "<abbr" not in html.split('">[1]</abbr>')[0].split("title=\"")[1], (
+    assert "<abbr" not in html.split('">[1]</abbr>')[0].split('title="')[1], (
         f"citation 1's title attribute must not contain any nested <abbr> "
         f"(would indicate citation 2's badge was injected into it): {html!r}"
     )
     # Both numbered markers must end up as outermost-rendered badges.
-    assert ">[1]</abbr>" in html and ">[2]</abbr>" in html, (
-        f"both [1] and [2] markers must render as complete badges: {html!r}"
-    )
+    assert (
+        ">[1]</abbr>" in html and ">[2]</abbr>" in html
+    ), f"both [1] and [2] markers must render as complete badges: {html!r}"

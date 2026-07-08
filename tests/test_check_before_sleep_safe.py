@@ -48,9 +48,7 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _GATE_SCRIPT = _REPO_ROOT / "scripts" / "check_before_sleep_safe.sh"
-_NEG_FIXTURE_DIR = (
-    Path(__file__).resolve().parent / "fixtures" / "before_sleep_violations"
-)
+_NEG_FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "before_sleep_violations"
 _POS_FIXTURE_DIR = (
     Path(__file__).resolve().parent / "fixtures" / "before_sleep_violations_with_safe"
 )

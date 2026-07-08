@@ -74,9 +74,9 @@ def test_eval_run_writes_traces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
             if line.strip():
                 records.append(json.loads(line))  # each line must be valid JSON
 
-    assert len(records) == n_questions, (
-        f"A3: expected one trace record per question ({n_questions}); got {len(records)}"
-    )
+    assert (
+        len(records) == n_questions
+    ), f"A3: expected one trace record per question ({n_questions}); got {len(records)}"
     # Shape/presence only — every record carries a trace_id and an ordered spans list.
     for rec in records:
         assert isinstance(rec.get("trace_id"), str) and rec["trace_id"]

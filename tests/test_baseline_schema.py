@@ -89,34 +89,34 @@ def test_baseline_schema_validates() -> None:
         )
 
     # phase_locked: anchors v1.0 baseline identity; literal 14.
-    assert isinstance(manifest["phase_locked"], int), (
-        f"D-07: phase_locked must be int; got {type(manifest['phase_locked']).__name__}"
-    )
+    assert isinstance(
+        manifest["phase_locked"], int
+    ), f"D-07: phase_locked must be int; got {type(manifest['phase_locked']).__name__}"
     assert manifest["phase_locked"] == 14, (
         f"D-07: phase_locked must equal 14 (v1.0 baseline anchor); "
         f"got {manifest['phase_locked']!r}"
     )
 
     # cost_usd: float (per-eval-run total USD; granularity locked by D-09).
-    assert isinstance(manifest["cost_usd"], (int, float)), (
-        f"D-07/D-09: cost_usd must be numeric; got {type(manifest['cost_usd']).__name__}"
-    )
+    assert isinstance(
+        manifest["cost_usd"], (int, float)
+    ), f"D-07/D-09: cost_usd must be numeric; got {type(manifest['cost_usd']).__name__}"
 
     # git_sha: 40-char hex (canonical git object identifier).
     git_sha = manifest["git_sha"]
-    assert isinstance(git_sha, str) and len(git_sha) == 40, (
-        f"D-07: git_sha must be 40-char string; got len={len(git_sha)}"
-    )
-    assert all(c in "0123456789abcdef" for c in git_sha), (
-        f"D-07: git_sha must be lowercase hex; got {git_sha!r}"
-    )
+    assert (
+        isinstance(git_sha, str) and len(git_sha) == 40
+    ), f"D-07: git_sha must be 40-char string; got len={len(git_sha)}"
+    assert all(
+        c in "0123456789abcdef" for c in git_sha
+    ), f"D-07: git_sha must be lowercase hex; got {git_sha!r}"
 
     # eval_set_sha256: 64-char hex (matches EVAL_SET_SHA256 constant in
     # tests/test_eval_set_frozen.py; cross-checked by Phase 17 deltas).
     eval_sha = manifest["eval_set_sha256"]
-    assert isinstance(eval_sha, str) and len(eval_sha) == 64, (
-        f"D-07: eval_set_sha256 must be 64-char string; got len={len(eval_sha)}"
-    )
+    assert (
+        isinstance(eval_sha, str) and len(eval_sha) == 64
+    ), f"D-07: eval_set_sha256 must be 64-char string; got len={len(eval_sha)}"
 
     # prompt_version_hash: 12-char (Phase 6 GEN-02 convention).
     prompt_hash = manifest["prompt_version_hash"]
@@ -128,13 +128,12 @@ def test_baseline_schema_validates() -> None:
     # locked_at: ISO-8601 parseable; tolerate trailing "Z" → "+00:00" for
     # Python 3.11 stdlib.
     locked_at_raw = manifest["locked_at"]
-    assert isinstance(locked_at_raw, str), (
-        f"D-07: locked_at must be string; got {type(locked_at_raw).__name__}"
-    )
+    assert isinstance(
+        locked_at_raw, str
+    ), f"D-07: locked_at must be string; got {type(locked_at_raw).__name__}"
     try:
         datetime.fromisoformat(locked_at_raw.replace("Z", "+00:00"))
     except ValueError as exc:
         raise AssertionError(
-            f"D-07: locked_at must parse as ISO-8601; got {locked_at_raw!r} "
-            f"(error: {exc})"
+            f"D-07: locked_at must parse as ISO-8601; got {locked_at_raw!r} " f"(error: {exc})"
         ) from exc

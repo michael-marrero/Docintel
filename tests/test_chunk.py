@@ -301,6 +301,6 @@ def test_swept_manifest_records_target_tokens(tmp_path: Path) -> None:
     # Default (flag absent) records the production 450 — byte-reproducible.
     default_path = write_manifest(cfg)
     default = json.loads(default_path.read_text(encoding="utf-8"))
-    assert default["chunker"]["target_tokens"] == 450, (
-        "ABL-01 (ING-04): default write_manifest must record the production 450"
-    )
+    assert (
+        default["chunker"]["target_tokens"] == 450
+    ), "ABL-01 (ING-04): default write_manifest must record the production 450"

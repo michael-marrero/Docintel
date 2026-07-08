@@ -31,7 +31,6 @@ from __future__ import annotations
 import pytest
 
 
-
 def _ok_citation_payload() -> dict:
     """Canonical ANS-02 7-field Citation payload — used across tests in this file."""
     return {

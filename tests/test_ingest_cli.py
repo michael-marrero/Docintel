@@ -98,9 +98,9 @@ def test_chunk_help_lists_target_tokens() -> None:
         timeout=20,
     )
     assert result.returncode == 0, f"chunk --help exited {result.returncode}: {result.stderr!r}"
-    assert "--target-tokens" in result.stdout, (
-        "chunk --help must list --target-tokens (Phase 11 chunk-size sweep, ABL-01)"
-    )
+    assert (
+        "--target-tokens" in result.stdout
+    ), "chunk --help must list --target-tokens (Phase 11 chunk-size sweep, ABL-01)"
 
 
 def test_chunk_target_tokens_flag_threads(tmp_path: Path) -> None:
@@ -132,11 +132,13 @@ def test_chunk_target_tokens_flag_threads(tmp_path: Path) -> None:
         cwd=_REPO_ROOT,
         env={**os.environ, "HF_HUB_OFFLINE": "1", "DOCINTEL_LLM_PROVIDER": "stub"},
     )
-    assert result.returncode == 0, (
-        f"chunk --target-tokens 300 exited {result.returncode}: stderr={result.stderr!r}"
-    )
+    assert (
+        result.returncode == 0
+    ), f"chunk --target-tokens 300 exited {result.returncode}: stderr={result.stderr!r}"
     produced = list(out_root.rglob("*.jsonl"))
-    assert produced, "chunk --out-root --target-tokens 300 produced no JSONL under the override root"
+    assert (
+        produced
+    ), "chunk --out-root --target-tokens 300 produced no JSONL under the override root"
 
 
 def test_no_torch_import_on_help() -> None:

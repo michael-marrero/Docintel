@@ -31,7 +31,6 @@ from typing import Any
 
 import pytest
 
-
 # Small fixture maps injected via the optional keyword args of
 # Answer.from_generation_result (D-16 Focus Q4 Option 2 — avoids filesystem
 # coupling in test context; tests inject a small dict rather than reading CSV).

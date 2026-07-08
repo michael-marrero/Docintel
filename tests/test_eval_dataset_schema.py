@@ -73,8 +73,7 @@ def questions_file() -> Path:
     """Return the path to eval_set.jsonl, asserting it exists (GT-03)."""
     p = _EVAL_SET_PATH
     assert p.exists(), (
-        f"GT-03: eval_set.jsonl must exist at {p}. "
-        "Run Plan 01 (Wave 0) to create the seed file."
+        f"GT-03: eval_set.jsonl must exist at {p}. " "Run Plan 01 (Wave 0) to create the seed file."
     )
     return p
 
@@ -179,15 +178,13 @@ def test_question_type_mix(all_records: list[object]) -> None:
     single_doc = sum(1 for r in records if r.question_type == "single_doc")
     multi_doc = sum(1 for r in records if r.question_type == "multi_doc")
     refusal = sum(1 for r in records if r.question_type == "refusal")
-    assert single_doc >= _MIN_SINGLE_DOC, (
-        f"GT-01: need >= {_MIN_SINGLE_DOC} single_doc records; got {single_doc}."
-    )
-    assert multi_doc >= _MIN_MULTI_DOC, (
-        f"GT-01: need >= {_MIN_MULTI_DOC} multi_doc records; got {multi_doc}."
-    )
-    assert refusal >= _MIN_REFUSAL, (
-        f"GT-01: need >= {_MIN_REFUSAL} refusal records; got {refusal}."
-    )
+    assert (
+        single_doc >= _MIN_SINGLE_DOC
+    ), f"GT-01: need >= {_MIN_SINGLE_DOC} single_doc records; got {single_doc}."
+    assert (
+        multi_doc >= _MIN_MULTI_DOC
+    ), f"GT-01: need >= {_MIN_MULTI_DOC} multi_doc records; got {multi_doc}."
+    assert refusal >= _MIN_REFUSAL, f"GT-01: need >= {_MIN_REFUSAL} refusal records; got {refusal}."
 
 
 # --- Model-validator defense-in-depth gates (pass against seed) -------------
@@ -237,9 +234,7 @@ def test_refusal_fields_empty(all_records: list[object]) -> None:
 # --- Corpus resolution gates (the load-bearing test_gold_ids_resolve gate) --
 
 
-def test_gold_ids_resolve(
-    all_records: list[object], corpus_chunk_index: set[str]
-) -> None:
+def test_gold_ids_resolve(all_records: list[object], corpus_chunk_index: set[str]) -> None:
     """GT-02 (T-08-03): every gold_passage_id must resolve to a real corpus chunk.
 
     This is the load-bearing gate that turns a typo'd or imagined chunk_id
@@ -325,9 +320,7 @@ def test_long_gold_tag_consistent(
     records: list[EvalRecord] = all_records  # type: ignore[assignment]
     for rec in records:
         has_long_gold_tag = "long-gold" in rec.tags
-        gold_token_counts = [
-            corpus_chunk_tokens.get(gid, 0) for gid in rec.gold_passage_ids
-        ]
+        gold_token_counts = [corpus_chunk_tokens.get(gid, 0) for gid in rec.gold_passage_ids]
         has_long_chunk = any(t > _LONG_GOLD_TOKEN_THRESHOLD for t in gold_token_counts)
 
         if has_long_gold_tag:
