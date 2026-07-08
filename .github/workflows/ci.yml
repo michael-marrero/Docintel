@@ -433,7 +433,11 @@ jobs:
     # is self-contained — does not depend on the real-index-build job.
     if: github.event_name == 'workflow_dispatch' && (inputs.job == 'real-eval' || inputs.job == 'all')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 50-min budget (was 30): a cold uv-cache miss (GitHub cache service 400s)
+    # adds ~13 min of dep+model download before the index build, and D-14's NIM
+    # gpt-oss-120b reasoning generations at max_tokens=8192 are materially slower
+    # than the v1.0 Anthropic path. 30 min timed out mid-index-build (run 28972634112).
+    timeout-minutes: 50
     permissions:
       contents: write # CR-01: required for the "Commit report (D-10)" git push step
     env:
