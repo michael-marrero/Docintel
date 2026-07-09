@@ -157,6 +157,56 @@ def test_llm_driven_refusal() -> None:
     )
 
 
+def test_uncited_answer_is_refused_not_crash() -> None:
+    """EMP-01 robustness — a non-refusal completion with no valid citations is a refusal.
+
+    A generator that returns content carrying no parseable ``[chunk_id]`` markers
+    (e.g. a reasoning model whose answer is empty or routed to a hidden channel)
+    used to yield ``refused=False`` + ``cited_chunk_ids=[]``, which crashes the
+    entire eval at the ANS-03 ``Answer`` model_validator. Per AD-10 (citations
+    non-empty iff not refused) the honest classification is a refusal: no valid
+    citation ⟹ not grounded ⟹ refused. This guards a whole 32-question real-eval
+    run from aborting on a single uncited response.
+    """
+    from docintel_core.adapters import make_adapters
+    from docintel_core.adapters.types import CompletionResponse, TokenUsage
+    from docintel_core.config import Settings
+    from docintel_core.types import Answer
+    from docintel_generate.generator import Generator
+
+    base_bundle = make_adapters(Settings(llm_provider="stub"))
+
+    class _UncitedLLM:
+        name = "fake-uncited"
+
+        def complete(self, prompt: str, system: str | None = None) -> CompletionResponse:
+            del prompt, system
+            # Non-empty content, but NOT the refusal sentinel and with no
+            # bracketed [chunk_id] markers → cited_chunk_ids resolves to [].
+            return CompletionResponse(
+                text="Apple faces supplier concentration risk.",
+                usage=TokenUsage(prompt_tokens=10, completion_tokens=20),
+                cost_usd=0.0,
+                latency_ms=0.0,
+                model="fake-uncited",
+            )
+
+    bundle = base_bundle.model_copy(update={"llm": _UncitedLLM()})
+    retriever = _FakeRetriever(_stub_retrieved_chunks())  # one chunk → bypass Step B
+    g = Generator(bundle=bundle, retriever=retriever)
+    r = g.generate("question the model answers without citing", k=1)
+
+    assert r.cited_chunk_ids == [], f"no valid citations expected; got {r.cited_chunk_ids!r}"
+    assert r.refused is True, (
+        "EMP-01: a non-refusal completion with zero valid citations must be "
+        f"reclassified as a refusal; got refused={r.refused!r}"
+    )
+    # The whole point: wrapping into an Answer must NOT raise ANS-03 anymore.
+    answer = Answer.from_generation_result(r)
+    assert answer.refused is True
+    assert answer.citations == []
+
+
 def test_zero_chunks_warning() -> None:
     """D-15 Step B + RESEARCH §Pattern 1 line 352 — generator_refused_zero_chunks structlog.
 
