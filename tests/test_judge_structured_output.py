@@ -175,3 +175,23 @@ def test_deserialization_failure_returns_sentinel() -> None:
         f"D-09 sentinel: unsupported_claims must be empty list; "
         f"got {verdict.unsupported_claims!r}"
     )
+
+
+def test_throttle_nim_spaces_calls(monkeypatch) -> None:
+    """EMP-01: _throttle_nim enforces a minimum interval between NIM judge calls.
+
+    Uses a tiny patched interval so the test is fast and deterministic — the
+    second back-to-back call must block until at least one interval has elapsed.
+    """
+    import time
+
+    import docintel_core.adapters.real.judge as judge
+
+    monkeypatch.setattr(judge, "_NIM_MIN_INTERVAL_S", 0.05)
+    monkeypatch.setattr(judge, "_nim_last_call", 0.0)
+
+    judge._throttle_nim()  # first call primes the clock, no wait
+    t0 = time.perf_counter()
+    judge._throttle_nim()  # second call must wait ~one interval
+    elapsed = time.perf_counter() - t0
+    assert elapsed >= 0.045, f"throttle must space calls by ~0.05s; only waited {elapsed:.4f}s"

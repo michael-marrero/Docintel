@@ -49,6 +49,10 @@ _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
 
 _DEFAULT_MODEL = "gpt-4o"
+# EMP-01: per-request timeout (seconds) for the OpenAI-compatible client. Bounds a
+# single hung/throttled NIM call so tenacity's retry can take over instead of the
+# SDK blocking on its ~10-min default.
+_REQUEST_TIMEOUT_S = 60.0
 # D-14: reasoning models (e.g. NIM openai/gpt-oss-120b) spend tokens on an internal
 # reasoning pass before emitting the final answer. At 2048 a real corpus question
 # (~1.7k-token prompt + reasoning) exhausted the budget before any citable content
@@ -110,6 +114,12 @@ class OpenAIAdapter:
         self._client = openai.OpenAI(
             api_key=self._cfg.openai_api_key.get_secret_value(),
             base_url=self._cfg.openai_base_url,
+            # EMP-01: bound each call so a throttled NIM response fails fast (60s)
+            # instead of blocking on the SDK's ~10-min default — a hung judge call
+            # ate the whole 80-min eval budget (run 29041979127). max_retries=0 so
+            # tenacity is the SOLE, logged retry authority (AD-4: no silent retries).
+            timeout=_REQUEST_TIMEOUT_S,
+            max_retries=0,
         )
         return self._client
 

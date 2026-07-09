@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 import structlog
@@ -74,6 +75,26 @@ from ._logging import before_sleep_safe
 # deserialization-failure warning consumes the structlog logger).
 _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
+
+
+# EMP-01: NIM free-tier rate-limit guard. build.nvidia.com throttles ~40 req/min;
+# the eval fires all 32 faithfulness-judge calls back-to-back, tripping it into
+# APIConnectionError storms that (pre-timeout) hung the whole run. Space calls at a
+# fixed floor so the burst stays under the limit. Only judge calls need this — the
+# generation pass is naturally spaced by per-answer latency.
+# ponytail: module-global last-call clock; single-threaded eval, so no lock. If the
+# eval ever judges concurrently, swap for a per-thread or token-bucket limiter.
+_NIM_MIN_INTERVAL_S = 2.0
+_nim_last_call = 0.0
+
+
+def _throttle_nim() -> None:
+    """Sleep just enough to keep NIM judge calls at most 1 per _NIM_MIN_INTERVAL_S."""
+    global _nim_last_call
+    wait = _NIM_MIN_INTERVAL_S - (time.perf_counter() - _nim_last_call)
+    if wait > 0:
+        time.sleep(wait)
+    _nim_last_call = time.perf_counter()
 
 
 _JUDGE_VERDICT_SCHEMA: dict[str, Any] = {
@@ -266,6 +287,7 @@ def _judge_via_openai_raw(client: Any, model: str, user_prompt: str) -> dict[str
         the content is missing or fails to JSON-decode, returns an empty dict
         so the caller treats it as a deserialization failure.
     """
+    _throttle_nim()  # EMP-01: space the judge burst under the NIM free-tier rate limit
     response = client.chat.completions.create(
         model=model,
         max_tokens=2048,
