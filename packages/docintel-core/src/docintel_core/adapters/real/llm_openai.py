@@ -31,7 +31,6 @@ from typing import Any
 import structlog
 from openai import APIConnectionError, APITimeoutError, RateLimitError
 from tenacity import (
-    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -42,13 +41,24 @@ from docintel_core.adapters.types import CompletionResponse, TokenUsage
 from docintel_core.config import Settings
 from docintel_core.pricing import cost_for
 
-# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_log;
+from ._logging import before_sleep_safe
+
+# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_safe;
 # structlog bound logger for all other structured log lines.
 _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
 
 _DEFAULT_MODEL = "gpt-4o"
-_MAX_TOKENS = 2048
+# EMP-01: per-request timeout (seconds) for the OpenAI-compatible client. Bounds a
+# single hung/throttled NIM call so tenacity's retry can take over instead of the
+# SDK blocking on its ~10-min default.
+_REQUEST_TIMEOUT_S = 60.0
+# D-14: reasoning models (e.g. NIM openai/gpt-oss-120b) spend tokens on an internal
+# reasoning pass before emitting the final answer. At 2048 a real corpus question
+# (~1.7k-token prompt + reasoning) exhausted the budget before any citable content
+# was produced → empty message.content → ANS-03 validation crash. 8192 gives the
+# reasoning + answer room to complete.
+_MAX_TOKENS = 8192
 
 
 class OpenAIAdapter:
@@ -63,7 +73,7 @@ class OpenAIAdapter:
     the same LLMClient Protocol — the 'seam is the artifact' demonstration.
     """
 
-    def __init__(self, cfg: Settings) -> None:
+    def __init__(self, cfg: Settings, model: str | None = None) -> None:
         """Store cfg; defer SDK client construction to first ``.complete()`` call.
 
         Lazy SDK init means that downstream pipelines which build the full
@@ -75,13 +85,19 @@ class OpenAIAdapter:
         SP-4 / T-02-05: ``.get_secret_value()`` is still called EXACTLY ONCE,
         but at first ``.complete()`` rather than at construction.
 
+        D-14: the model is resolved from ``model`` arg → ``cfg.openai_model`` →
+        ``_DEFAULT_MODEL``. The factory passes ``model=cfg.judge_model`` to build
+        the second (judge) OpenAIAdapter so generator and judge can run distinct
+        models against the same OpenAI-compatible endpoint (NIM).
+
         Args:
             cfg: Settings instance. ``openai_api_key`` is required only when
                 ``.complete()`` is called; ``__init__`` accepts None.
+            model: Explicit model override. None → ``cfg.openai_model``.
         """
         self._cfg = cfg
         self._client: Any | None = None  # lazy — see _get_client()
-        self._model = _DEFAULT_MODEL
+        self._model = model or cfg.openai_model or _DEFAULT_MODEL
         log.info("openai_adapter_initialized", model=self._model)
 
     def _get_client(self) -> Any:
@@ -93,7 +109,18 @@ class OpenAIAdapter:
         if self._cfg.openai_api_key is None:
             raise ValueError("DOCINTEL_OPENAI_API_KEY is required when llm_provider='real'")
         # SP-4: the ONLY call to .get_secret_value() in this file.
-        self._client = openai.OpenAI(api_key=self._cfg.openai_api_key.get_secret_value())
+        # D-14: base_url=None lets the SDK use its default (api.openai.com); a set
+        # value points the adapter at an OpenAI-compatible gateway (e.g. NIM).
+        self._client = openai.OpenAI(
+            api_key=self._cfg.openai_api_key.get_secret_value(),
+            base_url=self._cfg.openai_base_url,
+            # EMP-01: bound each call so a throttled NIM response fails fast (60s)
+            # instead of blocking on the SDK's ~10-min default — a hung judge call
+            # ate the whole 80-min eval budget (run 29041979127). max_retries=0 so
+            # tenacity is the SOLE, logged retry authority (AD-4: no silent retries).
+            timeout=_REQUEST_TIMEOUT_S,
+            max_retries=0,
+        )
         return self._client
 
     @property
@@ -105,7 +132,7 @@ class OpenAIAdapter:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type((RateLimitError, APIConnectionError, APITimeoutError)),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def complete(
@@ -150,8 +177,27 @@ class OpenAIAdapter:
         )
         cost = cost_for("openai", self._model, usage.prompt_tokens, usage.completion_tokens)
 
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        if not content:
+            # D-14: gpt-oss-120b is a reasoning model. On empty content, surface WHY
+            # (length-truncation vs. output routed to a reasoning channel) so an empty
+            # answer is diagnosable here rather than a bare ANS-03 crash downstream.
+            reasoning = getattr(choice.message, "reasoning_content", None) or getattr(
+                choice.message, "reasoning", None
+            )
+            log.warning(
+                "openai_empty_content",
+                model=self._model,
+                finish_reason=choice.finish_reason,
+                completion_tokens=usage.completion_tokens,
+                max_tokens=_MAX_TOKENS,
+                reasoning_present=bool(reasoning),
+                reasoning_chars=len(reasoning) if reasoning else 0,
+            )
+
         return CompletionResponse(
-            text=response.choices[0].message.content or "",
+            text=content,
             usage=usage,
             cost_usd=cost,
             latency_ms=latency_ms,

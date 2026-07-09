@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 import structlog
@@ -56,7 +57,6 @@ from openai import APIConnectionError as OpenAIAPIConnectionError
 from openai import APITimeoutError as OpenAIAPITimeoutError
 from openai import RateLimitError as OpenAIRateLimitError
 from tenacity import (
-    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -67,12 +67,34 @@ from docintel_core.adapters.protocols import LLMClient
 from docintel_core.adapters.types import JudgeVerdict
 from docintel_core.config import Settings
 
-# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_log;
+from ._logging import before_sleep_safe
+
+# Two-logger pattern (SP-3): stdlib logger for tenacity before_sleep_safe;
 # structlog bound logger for all other structured log lines. Both are used now
-# (the @retry decorator's before_sleep_log consumes _retry_log; the
+# (the @retry decorator's before_sleep_safe consumes _retry_log; the
 # deserialization-failure warning consumes the structlog logger).
 _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
+
+
+# EMP-01: NIM free-tier rate-limit guard. build.nvidia.com throttles ~40 req/min;
+# the eval fires all 32 faithfulness-judge calls back-to-back, tripping it into
+# APIConnectionError storms that (pre-timeout) hung the whole run. Space calls at a
+# fixed floor so the burst stays under the limit. Only judge calls need this — the
+# generation pass is naturally spaced by per-answer latency.
+# ponytail: module-global last-call clock; single-threaded eval, so no lock. If the
+# eval ever judges concurrently, swap for a per-thread or token-bucket limiter.
+_NIM_MIN_INTERVAL_S = 2.0
+_nim_last_call = 0.0
+
+
+def _throttle_nim() -> None:
+    """Sleep just enough to keep NIM judge calls at most 1 per _NIM_MIN_INTERVAL_S."""
+    global _nim_last_call
+    wait = _NIM_MIN_INTERVAL_S - (time.perf_counter() - _nim_last_call)
+    if wait > 0:
+        time.sleep(wait)
+    _nim_last_call = time.perf_counter()
 
 
 _JUDGE_VERDICT_SCHEMA: dict[str, Any] = {
@@ -126,7 +148,7 @@ def _sentinel_judgeverdict() -> JudgeVerdict:
             AnthropicAPITimeoutError,
         )
     ),
-    before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+    before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
     reraise=True,
 )
 def _judge_via_anthropic_raw(client: Any, user_prompt: str) -> dict[str, Any]:
@@ -241,10 +263,10 @@ def _judge_via_anthropic(client: Any, user_prompt: str) -> JudgeVerdict:
             OpenAIAPITimeoutError,
         )
     ),
-    before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+    before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
     reraise=True,
 )
-def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:
+def _judge_via_openai_raw(client: Any, model: str, user_prompt: str) -> dict[str, Any]:
     """Raw OpenAI structured-output SDK call (D-09 + CD-09).
 
     Calls ``client.chat.completions.create`` with ``response_format={"type":
@@ -265,8 +287,9 @@ def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:
         the content is missing or fails to JSON-decode, returns an empty dict
         so the caller treats it as a deserialization failure.
     """
+    _throttle_nim()  # EMP-01: space the judge burst under the NIM free-tier rate limit
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model=model,
         max_tokens=2048,
         messages=[
             {"role": "system", "content": JUDGE_PROMPT},
@@ -293,7 +316,7 @@ def _judge_via_openai_raw(client: Any, user_prompt: str) -> dict[str, Any]:
     return decoded
 
 
-def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
+def _judge_via_openai(client: Any, model: str, user_prompt: str) -> JudgeVerdict:
     """OpenAI judge dispatch with sentinel-on-failure (D-09 + Pitfall 6).
 
     Calls ``_judge_via_openai_raw`` (which is ``@retry``-wrapped at the SDK
@@ -303,6 +326,8 @@ def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
 
     Args:
         client: An ``openai.OpenAI`` SDK client instance.
+        model: Judge model id (D-14). v1.0 path = gpt-4o; NIM path = the
+            ``cfg.judge_model`` the factory pinned on the judge adapter.
         user_prompt: The user-side prompt built by ``build_judge_user_prompt``.
 
     Returns:
@@ -310,7 +335,7 @@ def _judge_via_openai(client: Any, user_prompt: str) -> JudgeVerdict:
         the sentinel verdict from ``_sentinel_judgeverdict`` on failure.
     """
     try:
-        payload = _judge_via_openai_raw(client, user_prompt)
+        payload = _judge_via_openai_raw(client, model, user_prompt)
     except (
         OpenAIRateLimitError,
         OpenAIAPIConnectionError,
@@ -457,7 +482,10 @@ class CrossFamilyJudge:
         if isinstance(self._llm, AnthropicAdapter):
             return _judge_via_anthropic(self._llm._get_client(), user_prompt)
         elif isinstance(self._llm, OpenAIAdapter):
-            return _judge_via_openai(self._llm._get_client(), user_prompt)
+            # D-14: the judge adapter carries its own model (cfg.judge_model when
+            # the factory pinned it; cfg.openai_model otherwise), so distinct
+            # generator/judge models can share one OpenAI-compatible endpoint.
+            return _judge_via_openai(self._llm._get_client(), self._llm._model, user_prompt)
         else:
             raise TypeError(
                 f"unsupported judge adapter type: {type(self._llm).__name__}; "

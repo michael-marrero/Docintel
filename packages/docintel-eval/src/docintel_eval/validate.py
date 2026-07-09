@@ -12,7 +12,7 @@ Six checks (in order):
   3. manifest.n_questions must equal 32.
   4. Recursive NaN/Inf scan — no float NaN or Infinity anywhere in the parsed JSON.
   5. per_question must have exactly 32 rows.
-  6. manifest.dataset_hash must match sha256(questions.jsonl) if the file exists.
+  6. manifest.dataset_hash must match sha256(eval_set.jsonl) if the file exists.
 
 cmd_validate_ablation(ablation_dir) -> int:
   Phase 11 / Plan 11-03 (D-11). Extends EVAL-04 to gate an ablation dir:
@@ -135,8 +135,8 @@ def cmd_validate(report_dir: Path) -> int:
       3. manifest.n_questions must equal 32.
       4. No float NaN or Infinity anywhere in the parsed JSON.
       5. per_question must have exactly 32 rows.
-      6. manifest.dataset_hash must match a fresh sha256 of questions.jsonl
-         (only checked when data/eval/ground_truth/questions.jsonl exists).
+      6. manifest.dataset_hash must match a fresh sha256 of eval_set.jsonl
+         (only checked when data/eval/ground_truth/eval_set.jsonl exists).
 
     Args:
         report_dir: Path to the report directory.  The CLI caller (cli.py)
@@ -230,9 +230,9 @@ def cmd_validate(report_dir: Path) -> int:
         return 1
 
     # ------------------------------------------------------------------
-    # Check 6: dataset_hash must match sha256(questions.jsonl) if the
+    # Check 6: dataset_hash must match sha256(eval_set.jsonl) if the
     # report_dir is inside the canonical data/eval/reports/ tree AND the
-    # questions.jsonl file exists.
+    # eval_set.jsonl file exists.
     #
     # Rationale: tests invoke cmd_validate directly with tmp_path-based
     # dirs that contain synthetic manifests with placeholder hashes.
@@ -245,9 +245,9 @@ def cmd_validate(report_dir: Path) -> int:
     is_under_reports = (
         report_dir_resolved == reports_root or reports_root in report_dir_resolved.parents
     )
-    questions_path = Path("data/eval/ground_truth/questions.jsonl")
-    if is_under_reports and questions_path.exists():
-        actual_hash: str = hashlib.sha256(questions_path.read_bytes()).hexdigest()
+    eval_set_path = Path("data/eval/ground_truth/eval_set.jsonl")
+    if is_under_reports and eval_set_path.exists():
+        actual_hash: str = hashlib.sha256(eval_set_path.read_bytes()).hexdigest()
         declared_hash: object = manifest.get("dataset_hash")
         if declared_hash != actual_hash:
             log.error(

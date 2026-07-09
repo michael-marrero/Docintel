@@ -87,9 +87,9 @@ def test_generates_uuid_when_header_absent(client: TestClient) -> None:
     assert resp.status_code == 200
     bound = _downstream_trace_ids(records)
     assert bound, "V-02: a generated trace_id must be bound on a downstream event"
-    assert any(_is_uuid(tid) for tid in bound), (
-        f"V-02: generated trace_id must parse as a UUID; got {bound!r}"
-    )
+    assert any(
+        _is_uuid(tid) for tid in bound
+    ), f"V-02: generated trace_id must parse as a UUID; got {bound!r}"
 
 
 def test_rejects_non_uuid_header(client: TestClient) -> None:
@@ -106,9 +106,9 @@ def test_rejects_non_uuid_header(client: TestClient) -> None:
     assert resp.status_code == 200
     bound = _downstream_trace_ids(records)
     assert bound, "V-03: a trace_id must still be bound on a downstream event"
-    assert bad not in bound, (
-        "V-03 (Security V5): the raw non-UUID header must NOT be bound verbatim"
-    )
-    assert any(_is_uuid(tid) for tid in bound), (
-        f"V-03: a fresh UUID4 must be bound instead of {bad!r}; got {bound!r}"
-    )
+    assert (
+        bad not in bound
+    ), "V-03 (Security V5): the raw non-UUID header must NOT be bound verbatim"
+    assert any(
+        _is_uuid(tid) for tid in bound
+    ), f"V-03: a fresh UUID4 must be bound instead of {bad!r}; got {bound!r}"

@@ -726,24 +726,32 @@ def compute_refusal_matrix(
 # ---------------------------------------------------------------------------
 
 
-def compute_latency_stats(records: list[QueryTimingRecord]) -> LatencyResult:
+def compute_latency_stats(
+    records: list[QueryTimingRecord],
+    representative: bool | None = None,
+) -> LatencyResult:
     """MET-05: p50/p95 latency + $/query from QueryTimingRecord list (D-06).
 
     Uses ``np.percentile`` for p50/p95 (honest wall-clock aggregation).
     $/query = mean(cost_usd) over all records.
 
     ``representative`` flag (D-06 machine-visible non-representative label):
-    True iff any record has cost_usd > 0.0 (indicating real-model run).
-    In stub CI mode all records have cost_usd == 0.0, so representative==False
-    — clearly labeled. Stub timings are honest CI-runner wall-clock, not
-    model latency; NEVER fabricated. Published real-mode numbers come from
-    workflow_dispatch only (CONTEXT.md D-06).
+    means "these are real-model measurements, not deterministic stubs." The
+    caller passes the authoritative signal (``provider != "stub"``) via the
+    ``representative`` arg. When omitted (``None``) it falls back to the legacy
+    ``any(cost_usd > 0.0)`` heuristic — preserved for existing callers/tests,
+    but note that heuristic mislabels FREE-TIER real endpoints (e.g. NVIDIA NIM
+    at $0/token, ADR-014) as non-representative, which is why the runner now
+    passes the provider-derived flag explicitly. Stub timings are honest
+    CI-runner wall-clock, not model latency; NEVER fabricated.
 
     Args:
         records: List of QueryTimingRecord objects (from Phase 10 harness).
                  Each record carries harness-measured total_ms and
                  GenerationResult.completion.cost_usd (do NOT recompute via
                  cost_for — Pitfall 6 + PATTERNS § cost_for usage).
+        representative: Authoritative real-vs-stub flag from the caller
+                 (``provider != "stub"``). None → legacy cost>0 heuristic.
 
     Returns:
         Frozen LatencyResult.
@@ -755,14 +763,16 @@ def compute_latency_stats(records: list[QueryTimingRecord]) -> LatencyResult:
             p95_ms=0.0,
             cost_per_query_usd=0.0,
             n_queries=0,
-            representative=False,
+            representative=bool(representative) if representative is not None else False,
         )
 
     totals = np.array([r.total_ms for r in records], dtype=float)
     p50_ms = float(np.percentile(totals, 50))
     p95_ms = float(np.percentile(totals, 95))
     cost_per_query = sum(r.cost_usd for r in records) / n
-    is_representative = any(r.cost_usd > 0.0 for r in records)
+    is_representative = (
+        representative if representative is not None else any(r.cost_usd > 0.0 for r in records)
+    )
 
     return LatencyResult(
         p50_ms=p50_ms,

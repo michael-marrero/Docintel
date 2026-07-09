@@ -1,0 +1,54 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-01T12:39:10.062Z",
+  "phase": "14",
+  "phase_name": "empirical-closure",
+  "phase_dir": ".planning/phases/14-empirical-closure",
+  "plan": 6,
+  "task": 1,
+  "total_tasks": 7,
+  "status": "paused",
+  "branch": "phase/14-empirical-closure",
+  "head_sha": "06d1c295cf39e26199d54fe8f1ae443f1f5224ba",
+  "remote_in_sync": true,
+  "completed_tasks": [
+    {"id": "14-01", "name": "Wave 0: Red xfail-strict scaffolds + planted fixtures", "status": "done", "merge_commit": "79e574b"},
+    {"id": "14-02", "name": "EMP-04 rename questions.jsonl -> eval_set.jsonl + EVAL_SET_SHA256 backfill + ADR-013", "status": "done", "merge_commit": "be6a31c", "sha256_constant": "5d9f879207c6b8a0c363804eebb9add4babefaa63beadcea7dc80dbd8db88d82"},
+    {"id": "14-03", "name": "EMP-05 before_sleep_safe sanitizer + 4 redaction tests green", "status": "done", "merge_commit": "be6a31c"},
+    {"id": "14-04", "name": "EMP-05 12-site sweep (qdrant_dense x6 / judge x2 / others x1) + 6th CI grep gate + 3 gate tests green", "status": "done", "merge_commit": "7464f41"},
+    {"id": "14-05", "name": "EMP-01 infra: make baseline-lock + make readme-paste + scripts/readme_paste.py + REAL-RUN-CHECKLIST.md Phase 14 section", "status": "done", "merge_commit": "15d2a25"},
+    {"id": "lint-fix", "name": "Unbreak CI lint (UP037 in _logging.py + auto-fix pre-existing UP035/RUF022/RUF002/RUF003 + black-reformat 9 files)", "status": "done", "commit": "0408d80"},
+    {"id": "ci-wiring", "name": "Wire ANTHROPIC_API_KEY + OPENAI_API_KEY env passthrough to 3 real-mode CI jobs", "status": "done", "commit": "06d1c29"}
+  ],
+  "remaining_tasks": [
+    {"id": "14-06", "name": "EMP-01 + EMP-02 user-trigger chain: real-eval workflow run + make baseline-lock + make readme-paste; executor flips 3 Wave-0 tests green", "status": "blocked_on_user", "autonomous": false},
+    {"id": "14-07", "name": "EMP-03 hero GIF recording + DECISIONS-AUDIT.md write; executor flips final test green", "status": "blocked_on_user", "autonomous": false}
+  ],
+  "blockers": [
+    {"description": "Repo has no API key secrets configured. Real-eval CI job needs ANTHROPIC_API_KEY + OPENAI_API_KEY. User deferred providing these to a later session.", "type": "human_action", "workaround": "gh secret set ANTHROPIC_API_KEY --body 'sk-ant-...' && gh secret set OPENAI_API_KEY --body 'sk-...'"},
+    {"description": "data/eval/baseline.json does not exist yet — needs make baseline-lock TS=<ts> after a representative real-eval report commits.", "type": "external", "workaround": "Run make baseline-lock TS=<ts> after real-eval workflow_dispatch lands a representative:true report under data/eval/reports/<ts>/"},
+    {"description": "docs/hero.gif not recorded — user-owned screen capture per docs/HERO-STORYBOARD.md.", "type": "human_action", "workaround": "Record per storyboard after baseline.json lands"}
+  ],
+  "human_actions_pending": [
+    {"action": "Configure ANTHROPIC_API_KEY and OPENAI_API_KEY repo secrets via gh secret set or GitHub Settings UI", "context": "Without these, the real-eval workflow crashes mid-eval with ValueError: DOCINTEL_ANTHROPIC_API_KEY is required when llm_provider='real'. The Phase 14 ci.yml env-block now references secrets.ANTHROPIC_API_KEY / secrets.OPENAI_API_KEY (commit 06d1c29) so secrets are wired to env once configured.", "blocking": true},
+    {"action": "Run gh workflow run ci.yml --ref phase/14-empirical-closure then gh run watch <run-id>", "context": "Triggers real-eval. ~8-20 min wall time (cold start + corpus index build + 32-question eval over real Anthropic/OpenAI APIs). Workflow commits data/eval/reports/<ts>/ with [skip ci].", "blocking": true},
+    {"action": "Eyeball data/eval/reports/<ts>/report.md before locking baseline", "context": "Per D-08: confirm representative:true, Hit@3 differential on 8 canary cases, cost_usd in $1-$2 sanity band. If anything looks off, re-run before make baseline-lock.", "blocking": true},
+    {"action": "make baseline-lock TS=<ts>", "context": "Writes data/eval/baseline.json with the 7-field D-07 schema, commits as chore(baseline): lock v1.0 baseline @ <ts>. Validation gates: representative=true, eval_set sha256 matches frozen constant, manifest cost telemetry sums correctly.", "blocking": true},
+    {"action": "make readme-paste then commit", "context": "Rewrites README.md PASTE-REAL-NUMBERS HTML-comment anchors with real headline metrics + representative:true. Commit message: docs(README): paste real numbers per EMP-02 / D-10.", "blocking": true},
+    {"action": "Verify UI auto-flip: uv run python -c 'from pathlib import Path; from docintel_ui.eval_view import _find_eval_report; print(_find_eval_report(Path(\"data\")))'", "context": "Pitfall 5 — UI eval_view.py already auto-detects representative:true reports. Output must be (PosixPath('data/eval/reports/<ts>'), True). This is verification, not code change.", "blocking": false},
+    {"action": "Record docs/hero.gif per docs/HERO-STORYBOARD.md, commit, push", "context": "EMP-03 / D-11. Storyboard: multi-hop comparative answer -> hoverable citation tooltips -> out-of-corpus refusal -> Traces Gantt -> Eval-Results tab with representative:true. Must be recorded AFTER baseline.json lands so the UI shows real numbers.", "blocking": true}
+  ],
+  "decisions": [
+    {"decision": "Use --auto chain to drive plan-phase 14 into execute-phase --no-transition", "rationale": "User explicitly invoked /gsd-plan-phase 14 --auto. Plan-phase auto-advanced into execute-phase with no transition (so a parent can chain the next phase if any).", "phase": "14"},
+    {"decision": "Create phase/14-empirical-closure branch off main before dispatching execute-phase", "rationale": "CLAUDE.md project rule: 'One phase = one branch'. The discuss-phase branch-set was 'none' (project quirk per memory), so the branch was created at the plan->execute boundary.", "phase": "14"},
+    {"decision": "Use isolation=worktree parallel agents for Waves 0-2", "rationale": "Wave 0 single plan (auto serial), Wave 1 and Wave 2 each had 2 plans with zero file overlap per plan-checker. Parallel worktrees + sequential Agent() dispatch per #2924 to avoid .git/config.lock race.", "phase": "14"},
+    {"decision": "Auto-fix pre-existing lint debt (UP035/RUF022/RUF002/RUF003 + 9 black reformats in trace.py/types.py/ui/eval) in Phase 14 scope", "rationale": "main's CI was already red on these — surfacing during real-eval dispatch made the pre-existing breakage block EMP-01. Scoping these into Phase 14 (commit 0408d80) was the only way to unblock the real-eval gate. Justified as 'CI-unbreak debt incurred by Phase 13 PR #7 that downstream phases pay'.", "phase": "14"},
+    {"decision": "Wire secrets.ANTHROPIC_API_KEY + secrets.OPENAI_API_KEY env passthrough in all 3 real-mode ci.yml jobs", "rationale": "First real-eval dispatch revealed the v1.0 workflow YAML never wired API keys despite Phase 10's D-10 plan assuming it would work. This is EMP-01 wiring debt — commit 06d1c29 closes it.", "phase": "14"},
+    {"decision": "Defer Wave 3 + Wave 4 user-action work to a later session", "rationale": "User chose to defer providing live API keys. The autonomous parts of Phase 14 (Waves 0-2 + lint + CI wiring) are 5/7 plans done and clean; the remaining 2 plans are entirely user-driven (real-eval trigger + hero GIF recording).", "phase": "14"}
+  ],
+  "uncommitted_files": [
+    ".planning/* (gitignored modifications — commit_docs:false; not part of work product)"
+  ],
+  "next_action": "Configure 2 repo secrets: gh secret set ANTHROPIC_API_KEY --body 'sk-ant-...' && gh secret set OPENAI_API_KEY --body 'sk-...'. Then re-run /gsd-execute-phase 14 OR follow the 4-step user-owned sequence in docs/REAL-RUN-CHECKLIST.md Phase 14 section.",
+  "context_notes": "Phase 14 closes EMPIRICAL-PENDING debt from v1.0. Plans 14-01..14-05 landed all autonomous infrastructure. Plans 14-06 and 14-07 are autonomous:false by design — they need user-owned actions (real-eval CI trigger, baseline lock review, hero GIF recording) per CONTEXT.md D-08 and D-11. The Wave 3 dispatch hit a real-world gap: the v1.0 workflow YAML never wired API key secrets to the real-mode jobs' env blocks. Phase 14 grew to include that wiring fix (commit 06d1c29) plus pre-existing CI lint debt cleanup (commit 0408d80) so the documented EMP-01 sequence (gh workflow run ci.yml -> make baseline-lock -> make readme-paste) can actually work when the user resumes."
+}

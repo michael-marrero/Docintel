@@ -212,13 +212,9 @@ def _render_stage_bars(trace: dict[str, Any]) -> None:
     total_ms = float(trace.get("total_ms", 0.0))
     cost_usd = float(trace.get("cost_usd", 0.0))
     stub_note = (
-        " · stub mode — all durations are 0 ms (non-representative)"
-        if total_ms == 0.0
-        else ""
+        " · stub mode — all durations are 0 ms (non-representative)" if total_ms == 0.0 else ""
     )
-    st.caption(
-        f"Total: {total_ms:.1f} ms · Cost: ${cost_usd:.6f}{stub_note}"
-    )
+    st.caption(f"Total: {total_ms:.1f} ms · Cost: ${cost_usd:.6f}{stub_note}")
 
 
 def _render_traces_tab(settings: Settings) -> None:
@@ -238,9 +234,7 @@ def _render_traces_tab(settings: Settings) -> None:
 
     assert isinstance(body, list)
     if not body:
-        st.info(
-            "No traces yet. Run a query from the Query tab to populate this view."
-        )
+        st.info("No traces yet. Run a query from the Query tab to populate this view.")
         return
 
     # Defensive newest-first slice — the API reverses load_traces, but we
@@ -486,9 +480,7 @@ def main() -> None:
             with st.spinner("Querying..."):
                 # Store the (ok, payload) tuple in session_state so it survives
                 # Streamlit reruns + tab switches (RESEARCH Pitfall 1).
-                st.session_state["query_result"] = _call_query(
-                    settings.api_url, question
-                )
+                st.session_state["query_result"] = _call_query(settings.api_url, question)
 
         if "query_result" in st.session_state:
             _render_query_result(st.session_state["query_result"])

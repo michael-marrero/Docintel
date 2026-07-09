@@ -41,15 +41,13 @@ def test_parse_confidence() -> None:
     from docintel_generate.parse import parse_confidence
 
     stripped, conf = parse_confidence("Some answer text.\n[confidence: high]")
-    assert conf == "high", (
-        f"D-04: parse_confidence must extract 'high'; got conf={conf!r}"
-    )
-    assert "[confidence:" not in stripped, (
-        f"D-04: stripped text must not contain the marker; got stripped={stripped!r}"
-    )
-    assert stripped.endswith("text."), (
-        f"D-04: stripped text must end with 'text.' (rstripped); got {stripped!r}"
-    )
+    assert conf == "high", f"D-04: parse_confidence must extract 'high'; got conf={conf!r}"
+    assert (
+        "[confidence:" not in stripped
+    ), f"D-04: stripped text must not contain the marker; got stripped={stripped!r}"
+    assert stripped.endswith(
+        "text."
+    ), f"D-04: stripped text must end with 'text.' (rstripped); got {stripped!r}"
 
 
 def test_parse_confidence_missing() -> None:
@@ -63,12 +61,12 @@ def test_parse_confidence_missing() -> None:
 
     text = "Some answer with no marker."
     stripped, conf = parse_confidence(text)
-    assert conf is None, (
-        f"D-04: parse_confidence with no marker must return conf=None; got {conf!r}"
-    )
-    assert stripped == text, (
-        f"D-04: stripped text must equal original when no marker; got {stripped!r}"
-    )
+    assert (
+        conf is None
+    ), f"D-04: parse_confidence with no marker must return conf=None; got {conf!r}"
+    assert (
+        stripped == text
+    ), f"D-04: stripped text must equal original when no marker; got {stripped!r}"
 
 
 def test_parse_confidence_uses_trailing_marker() -> None:
@@ -83,9 +81,7 @@ def test_parse_confidence_uses_trailing_marker() -> None:
 
     text = "We rate it [confidence: low] internally, but here is the answer.\n[confidence: high]"
     stripped, conf = parse_confidence(text)
-    assert conf == "high", (
-        f"D-04: the trailing marker must win; got conf={conf!r}"
-    )
+    assert conf == "high", f"D-04: the trailing marker must win; got conf={conf!r}"
     assert stripped.endswith("here is the answer."), (
         f"D-04: body before the trailing marker must be preserved (no truncation "
         f"at the first stray marker); got stripped={stripped!r}"

@@ -159,13 +159,15 @@ def run_eval(
     # identical per arm.
     if generator is None:
         generator = make_generator(cfg)
-    retriever = generator._retriever  # reuse warm retriever (Pitfall 2 — never make_retriever again)
+    retriever = (
+        generator._retriever
+    )  # reuse warm retriever (Pitfall 2 — never make_retriever again)
 
     # ------------------------------------------------------------------
     # Step 3: load ground-truth questions
     # ------------------------------------------------------------------
-    questions_path = Path("data/eval/ground_truth/questions.jsonl")
-    records: list[EvalRecord] = load_questions(questions_path)
+    eval_set_path = Path("data/eval/ground_truth/eval_set.jsonl")
+    records: list[EvalRecord] = load_questions(eval_set_path)
 
     # ------------------------------------------------------------------
     # Step 4: per-question loop
@@ -258,9 +260,7 @@ def run_eval(
             gold_set: set[str] = set(record.gold_passage_ids)
             if not refused_flag:
                 cited_ids: list[str] = [cit.chunk_id for cit in answer.citations]
-                cit_result = compute_citation_accuracy(
-                    cited_ids, set(record.expected_citation_ids)
-                )
+                cit_result = compute_citation_accuracy(cited_ids, set(record.expected_citation_ids))
                 citation_hits_total += sum(
                     1 for cid in cited_ids if cid in set(record.expected_citation_ids)
                 )
@@ -309,7 +309,7 @@ def run_eval(
     )
     faithfulness_result = compute_faithfulness(answers, generator._bundle.judge)
     refusal_result = compute_refusal_matrix(cast(list[object], records), answers)
-    latency_result = compute_latency_stats(timings)
+    latency_result = compute_latency_stats(timings, representative=str(cfg.llm_provider) != "stub")
 
     # Headline citation precision: total hits / total citations across answered qs
     citation_headline: float = (
@@ -336,7 +336,12 @@ def run_eval(
         _STUB_WALL_CLOCK_SECONDS if is_stub else time.perf_counter() - wall_start
     )
     total_cost_usd: float = sum(t.cost_usd for t in timings)
-    is_representative: bool = any(t.cost_usd > 0.0 for t in timings)
+    # ADR-014: representative means "real models ran, not stubs" — NOT "cost > 0".
+    # The legacy cost>0 proxy mislabels free-tier real endpoints (NVIDIA NIM at
+    # $0/token) as non-representative, which would make baseline-lock reject an
+    # otherwise-valid real run. Authoritative signal is the provider, which the
+    # manifest already records on the line below. Matches ablate.py:458.
+    is_representative: bool = not is_stub
 
     manifest: dict[str, Any] = {
         "embedder_name": generator._bundle.embedder.name,
@@ -350,7 +355,7 @@ def run_eval(
         ),
         "provider": str(cfg.llm_provider),
         "n_questions": len(records),
-        "dataset_hash": _dataset_hash(questions_path),
+        "dataset_hash": _dataset_hash(eval_set_path),
         "total_cost_usd": total_cost_usd,
         "wall_clock_seconds": wall_clock_seconds,
         "representative": is_representative,
@@ -361,7 +366,7 @@ def run_eval(
     # ------------------------------------------------------------------
     if hero_record is None:
         if not records:
-            log.error("eval_run_no_questions", questions_path=str(questions_path))
+            log.error("eval_run_no_questions", eval_set_path=str(eval_set_path))
             return 1
         hero_record = records[0]
         hero_result_text = answers[0].text if answers else ""

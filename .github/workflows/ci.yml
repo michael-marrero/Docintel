@@ -15,6 +15,16 @@ on:
   # services with `profiles: ['real']`). The real-index-build job is gated on
   # `if: github.event_name == 'workflow_dispatch'` so it never runs on PR.
   workflow_dispatch:
+    inputs:
+      job:
+        description: "Which real-mode job(s) to run (each builds its own index — they are independent)."
+        type: choice
+        default: real-eval
+        options:
+          - real-eval
+          - real-index-build
+          - real-ablation
+          - all
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -166,6 +176,15 @@ jobs:
         # escape. Phase 12 D-06/D-07/D-08 structural enforcement of OBS-03.
         run: bash scripts/check_no_print.sh
 
+      - name: Check before_sleep_safe (EMP-05 / P-EMP-04)
+        # Real adapters must use the sanitizing before_sleep_safe wrapper, not
+        # tenacity's raw before_sleep_log (which leaks API-key patterns in
+        # retry-path exception strings into committed CI logs). Two-sided:
+        # (a) no raw before_sleep_log in adapters/real/;
+        # (b) every @retry-using file imports before_sleep_safe.
+        # Phase 14 D-06 structural enforcement of EMP-05.
+        run: bash scripts/check_before_sleep_safe.sh
+
       - name: Chunk-idempotency gate (ING-04)
         # ING-04 byte-identity acceptance gate. Re-runs the chunker on the
         # committed normalized JSON and asserts byte-identity vs. committed
@@ -315,7 +334,9 @@ jobs:
   # timeout caps the entire job (T-4-V5-02 DoS mitigation).
   real-index-build:
     name: real-mode index build (manual trigger only)
-    if: github.event_name == 'workflow_dispatch'
+    # Runs only when explicitly selected via the workflow_dispatch `job` input
+    # (or job=all). Default dispatch (job=real-eval) skips this.
+    if: github.event_name == 'workflow_dispatch' && (inputs.job == 'real-index-build' || inputs.job == 'all')
     runs-on: ubuntu-latest
     # 30-min budget: Phase 4's index build is ~7 min, Phase 5's canary adds
     # bge-reranker-base download (~250 MB) + 8-case reranking (~10-15 min).
@@ -323,6 +344,22 @@ jobs:
     timeout-minutes: 30
     env:
       DOCINTEL_LLM_PROVIDER: real
+      # ADR-014 / D-14: real-mode runs against NVIDIA NIM's OpenAI-compatible
+      # endpoint serving open-weight gpt-oss-120b, judged cross-family by
+      # Llama-3.3-70B (distinct-model — see ADR-014). The nvapi-... key lives in
+      # the OPENAI_API_KEY repo secret; ANTHROPIC_API_KEY is unused on this path
+      # (judge_model set → judge is a 2nd OpenAI adapter) but retained so a revert
+      # to cross-PROVIDER eval needs only these four DOCINTEL_ lines removed.
+      DOCINTEL_LLM_REAL_PROVIDER: openai
+      DOCINTEL_OPENAI_BASE_URL: https://integrate.api.nvidia.com/v1
+      DOCINTEL_OPENAI_MODEL: nvidia/llama-3.3-nemotron-super-49b-v1
+      DOCINTEL_JUDGE_MODEL: meta/llama-3.3-70b-instruct
+      # EMP-01 (Phase 14): pass through real provider API-key secrets so the
+      # llm_anthropic / llm_openai adapters can initialize when DOCINTEL_LLM_PROVIDER=real.
+      # The secret names on the repo side are unprefixed (ANTHROPIC_API_KEY,
+      # OPENAI_API_KEY); the adapter-side names are DOCINTEL_-prefixed.
+      DOCINTEL_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DOCINTEL_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       # The python process runs on the runner host, NOT inside the docker
       # network — so the default ``qdrant`` service hostname (from
       # docker-compose.yml D-05) cannot be resolved. Override to localhost
@@ -392,13 +429,32 @@ jobs:
   # never commits (D-09); only this job and the one canonical stub-sample commit.
   real-eval:
     name: real-mode eval run (manual trigger only)
-    if: github.event_name == 'workflow_dispatch'
+    # Default dispatch target (job=real-eval). Builds its own index inline, so it
+    # is self-contained — does not depend on the real-index-build job.
+    if: github.event_name == 'workflow_dispatch' && (inputs.job == 'real-eval' || inputs.job == 'all')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 80-min budget (was 30→50): cold uv-cache miss adds ~13 min of dep+model
+    # download, and D-14's NIM nemotron-super-49b generations are slow (~30s each
+    # on some questions), so the 32-question loop alone is ~45 min. Run 29038049421
+    # completed 21/32 cleanly (robustness fix working, incl. 4 refusals) then hit
+    # the 50-min cap at question ~21. 80 min covers cold setup + index + full eval.
+    timeout-minutes: 80
     permissions:
       contents: write # CR-01: required for the "Commit report (D-10)" git push step
     env:
       DOCINTEL_LLM_PROVIDER: real
+      # ADR-014 / D-14: real-eval runs against NVIDIA NIM (gpt-oss-120b generator,
+      # Llama-3.3-70B cross-family judge). nvapi-... key in the OPENAI_API_KEY
+      # secret; ANTHROPIC_API_KEY unused on this path. Remove these four lines to
+      # revert to the v1.0 cross-PROVIDER eval. See ADR-014.
+      DOCINTEL_LLM_REAL_PROVIDER: openai
+      DOCINTEL_OPENAI_BASE_URL: https://integrate.api.nvidia.com/v1
+      DOCINTEL_OPENAI_MODEL: nvidia/llama-3.3-nemotron-super-49b-v1
+      DOCINTEL_JUDGE_MODEL: meta/llama-3.3-70b-instruct
+      # EMP-01 (Phase 14): pass through real provider API-key secrets — see
+      # the matching block in the real-mode index build job for the rationale.
+      DOCINTEL_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DOCINTEL_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       # The python process runs on the runner host, NOT inside the docker
       # network — override to localhost since qdrant maps port 6333 to host.
       DOCINTEL_QDRANT_URL: http://localhost:6333
@@ -416,6 +472,14 @@ jobs:
 
       - name: Sync workspace (frozen)
         run: uv sync --all-packages --frozen
+
+      - name: ADR-014 NIM endpoint probe (fail fast before the full eval)
+        # ADR-014 gate: two raw adapter calls (generate + judge) confirm the NIM
+        # endpoint/key/model resolve AND the judge model honors strict json_schema
+        # BEFORE the ~15-min index build + 32-question eval. A judge that ignores
+        # the schema silently scores every answer 0 (Pitfall 6); this catches it
+        # for the cost of two API calls. No qdrant/corpus needed.
+        run: uv run python scripts/nim_probe.py
 
       - name: Pre-create data/indices/ as runner-owned
         # Pre-create before docker starts so the runner user owns the dirs
@@ -481,7 +545,9 @@ jobs:
   # the one canonical committed stub-sample.
   real-ablation:
     name: real-mode ablation run (manual trigger only)
-    if: github.event_name == 'workflow_dispatch'
+    # 60-min job — runs only when explicitly selected (job=real-ablation or all).
+    # Default dispatch (job=real-eval) skips this.
+    if: github.event_name == 'workflow_dispatch' && (inputs.job == 'real-ablation' || inputs.job == 'all')
     runs-on: ubuntu-latest
     # 60-min budget (vs real-eval's 30): this job does the production index build
     # PLUS the chunk-size sweep — re-chunk + re-embed + re-index at sizes 300 and 600
@@ -495,6 +561,18 @@ jobs:
       contents: write # required for the "Commit ablation report (D-09)" git push step
     env:
       DOCINTEL_LLM_PROVIDER: real
+      # ADR-014 / D-14: real-ablation runs against NVIDIA NIM (gpt-oss-120b
+      # generator, Llama-3.3-70B cross-family judge). nvapi-... key in the
+      # OPENAI_API_KEY secret; ANTHROPIC_API_KEY unused on this path. Remove these
+      # four lines to revert to the v1.0 cross-PROVIDER eval. See ADR-014.
+      DOCINTEL_LLM_REAL_PROVIDER: openai
+      DOCINTEL_OPENAI_BASE_URL: https://integrate.api.nvidia.com/v1
+      DOCINTEL_OPENAI_MODEL: nvidia/llama-3.3-nemotron-super-49b-v1
+      DOCINTEL_JUDGE_MODEL: meta/llama-3.3-70b-instruct
+      # EMP-01 (Phase 14): pass through real provider API-key secrets — see
+      # the matching block in the real-mode index build job for the rationale.
+      DOCINTEL_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DOCINTEL_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       # The python process runs on the runner host, NOT inside the docker
       # network — override to localhost since qdrant maps port 6333 to host.
       DOCINTEL_QDRANT_URL: http://localhost:6333

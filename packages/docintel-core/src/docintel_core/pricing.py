@@ -24,6 +24,15 @@ PRICING: dict[tuple[str, str], tuple[float, float]] = {
     # OpenAI — verified 2026-05-12
     ("openai", "gpt-4o"): (2.50, 10.00),
     ("openai", "gpt-4.1"): (2.00, 8.00),
+    # NVIDIA NIM hosted catalog via the OpenAI-compatible endpoint (D-14, ADR-014).
+    # build.nvidia.com hosted inference is a free developer-credit tier, so the
+    # honest marginal $/token is 0.00 — the eval's $/query then reflects token
+    # volume at zero unit cost. The manifest/README note this explicitly so the
+    # cost number is not mistaken for metered OpenAI pricing. Keyed under the
+    # "openai" provider because the adapter family is the OpenAI SDK.
+    ("openai", "openai/gpt-oss-120b"): (0.00, 0.00),
+    ("openai", "meta/llama-3.3-70b-instruct"): (0.00, 0.00),
+    ("openai", "nvidia/llama-3.3-nemotron-super-49b-v1"): (0.00, 0.00),
     # Stub — zero cost, deterministic
     ("stub", "stub"): (0.00, 0.00),
 }

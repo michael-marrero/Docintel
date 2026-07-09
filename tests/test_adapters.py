@@ -237,6 +237,66 @@ def test_make_adapters_real_dispatch() -> None:
     assert type(bundle.judge).__name__ == "CrossFamilyJudge"
 
 
+@pytest.mark.skipif(
+    not _can_import("anthropic", "openai"),
+    reason="anthropic + openai SDKs not in lockfile",
+)
+def test_make_adapters_nim_distinct_model_judge() -> None:
+    """D-14 / ADR-014: judge_model diverts the judge to a 2nd OpenAIAdapter.
+
+    When llm_real_provider='openai' AND cfg.judge_model is set, generator and
+    judge are BOTH OpenAIAdapters pinned to distinct models against the same
+    OpenAI-compatible endpoint (NIM). The base_url + models thread through; no
+    real API call is made (lazy client; .complete() never invoked).
+    """
+    from docintel_core.adapters import make_adapters
+    from docintel_core.config import Settings
+    from pydantic import SecretStr
+
+    bundle = make_adapters(
+        Settings(
+            llm_provider="real",
+            llm_real_provider="openai",
+            openai_base_url="https://integrate.api.nvidia.com/v1",
+            openai_model="openai/gpt-oss-120b",
+            judge_model="meta/llama-3.3-70b-instruct",
+            openai_api_key=SecretStr("nvapi-dummy-key-for-test"),
+        )
+    )
+    # Generator: OpenAIAdapter pinned to the gpt-oss model.
+    assert type(bundle.llm).__name__ == "OpenAIAdapter"
+    assert bundle.llm.name == "openai/gpt-oss-120b"
+    # Judge: CrossFamilyJudge wrapping a SECOND OpenAIAdapter on the llama model.
+    assert type(bundle.judge).__name__ == "CrossFamilyJudge"
+    assert bundle.judge.name == "meta/llama-3.3-70b-instruct/judge"
+    # base_url threads into the lazily-constructed SDK client.
+    client = bundle.llm._get_client()
+    assert str(client.base_url).rstrip("/") == "https://integrate.api.nvidia.com/v1"
+
+
+@pytest.mark.skipif(
+    not _can_import("anthropic", "openai"),
+    reason="anthropic + openai SDKs not in lockfile",
+)
+def test_make_adapters_openai_without_judge_model_keeps_anthropic_complement() -> None:
+    """Backward-compat: judge_model=None preserves the v1.0 cross-PROVIDER judge (D-04)."""
+    from docintel_core.adapters import make_adapters
+    from docintel_core.config import Settings
+    from pydantic import SecretStr
+
+    bundle = make_adapters(
+        Settings(
+            llm_provider="real",
+            llm_real_provider="openai",
+            anthropic_api_key=SecretStr("dummy-anthropic-key-for-test"),
+            openai_api_key=SecretStr("dummy-openai-key-for-test"),
+        )
+    )
+    assert type(bundle.llm).__name__ == "OpenAIAdapter"
+    # Judge complement is still the Anthropic adapter (cross-provider, not cross-model).
+    assert bundle.judge.name.startswith("claude-")
+
+
 # ---------------------------------------------------------------------------
 # ADP-07: Stub determinism — 100-call fuzz across all four adapters
 # ---------------------------------------------------------------------------
