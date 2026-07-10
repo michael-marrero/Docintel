@@ -115,7 +115,12 @@ def make_adapters(cfg: Settings) -> AdapterBundle:
         # meta/llama-3.3-70b-instruct). Different weights → no self-rubber-stamp,
         # preserving the D-04 anti-bias intent without a second provider. See ADR-014.
         llm = OpenAIAdapter(cfg)
-        judge_inner = OpenAIAdapter(cfg, model=cfg.judge_model)
+        # EMP-01: if a separate judge key is configured, the judge runs on its own
+        # nvapi key (independent NIM worker budget) so gen(32) + judge(32) don't
+        # exhaust one key's ~32-request cap. None → reuses cfg.openai_api_key.
+        judge_inner = OpenAIAdapter(
+            cfg, model=cfg.judge_model, api_key_override=cfg.judge_openai_api_key
+        )
     else:
         # v1.0 cross-PROVIDER path (D-04): OpenAI generates, Anthropic judges.
         llm = OpenAIAdapter(cfg)

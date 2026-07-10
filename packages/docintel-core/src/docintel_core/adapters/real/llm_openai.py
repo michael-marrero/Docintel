@@ -30,6 +30,7 @@ from typing import Any
 
 import structlog
 from openai import APIConnectionError, APITimeoutError, RateLimitError
+from pydantic import SecretStr
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -74,7 +75,9 @@ class OpenAIAdapter:
     the same LLMClient Protocol — the 'seam is the artifact' demonstration.
     """
 
-    def __init__(self, cfg: Settings, model: str | None = None) -> None:
+    def __init__(
+        self, cfg: Settings, model: str | None = None, api_key_override: SecretStr | None = None
+    ) -> None:
         """Store cfg; defer SDK client construction to first ``.complete()`` call.
 
         Lazy SDK init means that downstream pipelines which build the full
@@ -98,6 +101,9 @@ class OpenAIAdapter:
         """
         self._cfg = cfg
         self._client: Any | None = None  # lazy — see _get_client()
+        # EMP-01: optional per-adapter key so the judge can run on a SECOND nvapi
+        # key (independent NIM worker budget). None → fall back to cfg.openai_api_key.
+        self._api_key_override = api_key_override
         self._model = model or cfg.openai_model or _DEFAULT_MODEL
         log.info("openai_adapter_initialized", model=self._model)
 
@@ -107,13 +113,14 @@ class OpenAIAdapter:
             return self._client
         import openai  # lazy module import — only executed when real .complete() runs
 
-        if self._cfg.openai_api_key is None:
+        key = self._api_key_override or self._cfg.openai_api_key
+        if key is None:
             raise ValueError("DOCINTEL_OPENAI_API_KEY is required when llm_provider='real'")
         # SP-4: the ONLY call to .get_secret_value() in this file.
         # D-14: base_url=None lets the SDK use its default (api.openai.com); a set
         # value points the adapter at an OpenAI-compatible gateway (e.g. NIM).
         self._client = openai.OpenAI(
-            api_key=self._cfg.openai_api_key.get_secret_value(),
+            api_key=key.get_secret_value(),
             base_url=self._cfg.openai_base_url,
             # EMP-01: bound each call so a throttled NIM response fails fast (60s)
             # instead of blocking on the SDK's ~10-min default — a hung judge call
