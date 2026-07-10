@@ -290,7 +290,11 @@ def _judge_via_openai_raw(client: Any, model: str, user_prompt: str) -> dict[str
     _throttle_nim()  # EMP-01: space the judge burst under the NIM free-tier rate limit
     response = client.chat.completions.create(
         model=model,
-        max_tokens=2048,
+        # EMP-01: nemotron-3-ultra-550b is a reasoning model — its own NIM example
+        # uses max_tokens=16384; the prior 2048 truncated the reasoning before the
+        # strict-json verdict could be emitted. The json_schema response_format still
+        # constrains message.content to the verdict object.
+        max_tokens=16384,
         messages=[
             {"role": "system", "content": JUDGE_PROMPT},
             {"role": "user", "content": user_prompt},

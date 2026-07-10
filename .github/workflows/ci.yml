@@ -433,12 +433,11 @@ jobs:
     # is self-contained — does not depend on the real-index-build job.
     if: github.event_name == 'workflow_dispatch' && (inputs.job == 'real-eval' || inputs.job == 'all')
     runs-on: ubuntu-latest
-    # 80-min budget (was 30→50): cold uv-cache miss adds ~13 min of dep+model
-    # download, and D-14's NIM nemotron-super-49b generations are slow (~30s each
-    # on some questions), so the 32-question loop alone is ~45 min. Run 29038049421
-    # completed 21/32 cleanly (robustness fix working, incl. 4 refusals) then hit
-    # the 50-min cap at question ~21. 80 min covers cold setup + index + full eval.
-    timeout-minutes: 80
+    # 120-min budget (30→50→80→120): cold setup ~13 min + index ~7 min + 32 slow
+    # nemotron generations + 32 nemotron-3-ultra-550b reasoning-judge calls (the
+    # judge is a 550B reasoning model, materially slower than the prior llama judge).
+    # The nim_probe (step 6) reveals the real per-judge latency before the full loop.
+    timeout-minutes: 120
     permissions:
       contents: write # CR-01: required for the "Commit report (D-10)" git push step
     env:

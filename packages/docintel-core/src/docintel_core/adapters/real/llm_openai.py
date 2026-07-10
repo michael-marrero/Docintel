@@ -51,8 +51,9 @@ log = structlog.stdlib.get_logger(__name__)
 _DEFAULT_MODEL = "gpt-4o"
 # EMP-01: per-request timeout (seconds) for the OpenAI-compatible client. Bounds a
 # single hung/throttled NIM call so tenacity's retry can take over instead of the
-# SDK blocking on its ~10-min default.
-_REQUEST_TIMEOUT_S = 60.0
+# SDK blocking on its ~10-min default. 180s (up from 60): the nemotron-3-ultra-550b
+# reasoning judge is slow — a full 16384-token reasoning pass can run well past 60s.
+_REQUEST_TIMEOUT_S = 180.0
 # D-14: reasoning models (e.g. NIM openai/gpt-oss-120b) spend tokens on an internal
 # reasoning pass before emitting the final answer. At 2048 a real corpus question
 # (~1.7k-token prompt + reasoning) exhausted the budget before any citable content
