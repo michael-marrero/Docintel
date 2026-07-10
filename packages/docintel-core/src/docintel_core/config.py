@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     # cross-PROVIDER behaviour (D-04). See ADR-014.
     judge_model: str | None = Field(default=None)
 
+    # EMP-01: optional SEPARATE API key for the judge adapter. NIM free-tier caps
+    # total requests per worker (~32); a 32-question eval makes 64 calls (gen+judge)
+    # and exhausts one key. Putting the judge on a SECOND nvapi key gives it an
+    # independent worker budget so the full frozen benchmark runs on free NIM.
+    # None → judge reuses openai_api_key (single-key behaviour, unchanged).
+    judge_openai_api_key: SecretStr | None = Field(default=None)
+
     # Where ingestion artifacts land (Phase 3+ will use this).
     data_dir: str = Field(default="data")
 
