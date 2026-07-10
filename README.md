@@ -39,42 +39,32 @@ and the same UI renders an amber refusal card.
 
 ## Eval Results
 
-<!-- PASTE-REAL-NUMBERS: replace this block after running `gh workflow run ci.yml --ref main` -->
-> **`representative: false` — these numbers are non-representative**
-> (stub-mode bundle: deterministic hash-based embedder, hash-based reranker,
-> templated stub LLM with `cost_usd=0.0` and `latency_ms=0.0`).
-> They exist so the eval surface renders on a fresh clone; they are **not**
-> a claim about retrieval or generation quality. Run the real-mode workflow
-> to populate this block with real measurements — see
-> [`docs/REAL-RUN-CHECKLIST.md`](docs/REAL-RUN-CHECKLIST.md).
+<!-- PASTE-REAL-NUMBERS: real numbers from baseline.json @ 2026-07-10T22:23:58Z (git_sha=8278e8a9ebff) -->
+> **`representative: true` — real-mode measurements**
+> from the v1.0 baseline run committed at 2026-07-10T21:39:26Z
+> (`data/eval/reports/20260710_213926_942457Z/`, locked via `make baseline-lock`).
 
-**Headline metrics (stub-sample, n=32):**
+**Headline metrics (real-mode, n=32):**
 
 | Metric                | Value | 95% Wilson CI    |
 | --------------------- | ----- | ---------------- |
-| Hit@5                 | 0.000 | [0.000, 0.125]   |
-| Hit@3                 | 0.000 | [0.000, 0.125]   |
-| MRR                   | 0.057 | —                |
-| Faithfulness (pass)   | 0.000 | [0.000, 0.107]   |
-| Latency p50           | 0.0 ms (stub)   | — |
-| Latency p95           | 0.0 ms (stub)   | — |
-| $/query               | $0.000000 (stub) | — |
+| Hit@5                 | 0.556 | [0.373, 0.724]   |
+| Hit@3                 | 0.481 | [0.307, 0.660]   |
+| MRR                   | 0.474 | —                |
+| Faithfulness (pass)   | 0.893 | [0.728, 0.963]   |
+| Latency p50           | 21167.4 ms   | — |
+| Latency p95           | 58615.0 ms   | — |
+| $/query               | $0.000000 | — |
 
-**Ablation deltas (stub-sample, n=32, paired bootstrap, seed=42, n_boot=10000):**
-
-| Arm         | Hit@5  | Δ vs baseline (Hit@5)         | Components                  |
-| ----------- | ------ | ----------------------------- | --------------------------- |
-| baseline    | 0.000  | (baseline)                    | bm25s + stub-reranker       |
-| no-rerank   | 0.188  | +0.188 [+0.063, +0.344]       | bm25s + null-reranker       |
-| dense-only  | 0.000  | +0.000 [0.000, 0.000]         | null-bm25 + stub-reranker   |
-
-_The stub-mode `dense-only` arm is structurally a no-op vs baseline — both_
-_reduce to a hash function over the chunk text (see [ADR-006](DECISIONS.md))._
-_The `no-rerank` arm's positive Δ is also a stub artifact (the stub reranker_
-_actively re-orders by a different hash than dense retrieval orders by, so_
-_removing it leaves dense-order rankings intact)._
-_**Real-mode** swaps these numbers for meaningful component-causal deltas._
 <!-- END-PASTE-REAL-NUMBERS -->
+
+> **Baseline, not launch-ready.** These are the v1.0 **baseline** measurements on
+> free-tier NIM models (generator `llama-3.3-nemotron-super-49b`, judge `glm-5.2`) —
+> committed as the fixed reference point to optimize against with stronger models or
+> fine-tuning. They sit **below the PRD launch gates** (citation accuracy ≥ 0.90,
+> faithfulness ≥ 0.95, Hit@5 ≥ 0.85), which remain the bar for PRD-readiness and are
+> **not** relaxed to match the baseline. The artifact here is the eval harness and
+> its honest numbers, not a launch claim.
 
 ---
 

@@ -33,8 +33,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 
 def _repo_root() -> Path:
     """Walk up from this file to the dir containing ``pyproject.toml`` / ``.git``.
@@ -50,10 +48,6 @@ def _repo_root() -> Path:
     return here.parents[1]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="xfail until 14-06: README real-numbers paste via `make readme-paste` flips representative:false -> representative:true in PASTE-REAL-NUMBERS block",
-)
 def test_readme_paste_block_has_no_stub_banner() -> None:
     """EMP-02 / D-10: PASTE-REAL-NUMBERS block has no ``representative: false`` and gains ``representative: true``.
 

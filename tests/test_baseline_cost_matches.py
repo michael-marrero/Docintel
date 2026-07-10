@@ -37,10 +37,6 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _BASELINE_PATH = _REPO_ROOT / "data" / "eval" / "baseline.json"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="xfail until 14-06: user runs `make baseline-lock` (cost_usd cross-check requires baseline.json + results.json)",
-)
 def test_baseline_cost_matches_manifest_and_per_question_sum() -> None:
     """EMP-01 / D-09: baseline.cost_usd == manifest.total_cost_usd == sum(per-question cost_usd).
 

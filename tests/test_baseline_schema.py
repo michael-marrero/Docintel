@@ -43,8 +43,6 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _BASELINE_PATH = _REPO_ROOT / "data" / "eval" / "baseline.json"
 
@@ -60,10 +58,6 @@ _D07_REQUIRED_FIELDS: tuple[str, ...] = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="xfail until 14-06: user runs `make baseline-lock TS=<ts>` after real-eval commits report",
-)
 def test_baseline_schema_validates() -> None:
     """EMP-01 / D-07: ``data/eval/baseline.json`` validates against the 7-field schema.
 
