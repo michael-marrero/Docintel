@@ -33,6 +33,7 @@ PRICING: dict[tuple[str, str], tuple[float, float]] = {
     ("openai", "openai/gpt-oss-120b"): (0.00, 0.00),
     ("openai", "meta/llama-3.3-70b-instruct"): (0.00, 0.00),
     ("openai", "nvidia/llama-3.3-nemotron-super-49b-v1"): (0.00, 0.00),
+    ("openai", "nvidia/nemotron-3-ultra-550b-a55b"): (0.00, 0.00),
     # Stub — zero cost, deterministic
     ("stub", "stub"): (0.00, 0.00),
 }
