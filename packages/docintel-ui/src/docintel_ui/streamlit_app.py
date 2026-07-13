@@ -401,11 +401,13 @@ def _render_query_result(payload: tuple[bool, dict[str, Any] | str]) -> None:
         return
 
     # ---- Answer card (D-03) ----
-    # Inline hoverable numbered badges via the pure citations.py helper. The
-    # badges' title attributes are HTML-escaped (V5 / T-13-01) inside the
-    # helper, so unsafe_allow_html=True is safe here — no user input flows
-    # raw into the HTML.
-    st.markdown(render_citation_badges(answer_obj), unsafe_allow_html=True)
+    # Inline hoverable numbered badges via the pure citations.py helper. Render
+    # with st.html (raw HTML, NO markdown pass) — st.markdown(unsafe_allow_html=True)
+    # runs the string through markdown first, which (a) treats the `[N]` badge
+    # labels as link-reference syntax and (b) sanitizes/splits the <abbr> tags,
+    # leaking raw `<abbr title=... style=...>` markup onto the page (the hero-demo
+    # bug). st.html emits the escaped HTML verbatim so the tooltips render clean.
+    st.html(render_citation_badges(answer_obj))
 
     # Confidence + cost/latency meter row.
     col_conf, col_cost, col_latency = st.columns(3)
