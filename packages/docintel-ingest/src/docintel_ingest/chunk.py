@@ -143,19 +143,45 @@ def _sha256_short(text: str) -> str:
 
 
 def _item_code_to_filename(item_code: str) -> str:
-    """``Item 1A`` -> ``Item-1A`` (hyphenated for chunk_id / filename safety per D-14)."""
-    return item_code.replace(" ", "-")
+    """``Item 1A`` -> ``Item-1A``; ``Part I Item 2`` -> ``PtI-Item-2`` (D-14 / Story 1.1).
 
-
-def _chunk_id(ticker: str, fiscal_year: int, item_code: str, ordinal: int) -> str:
-    """Format ``{ticker}-FY{year}-{item_code_hyphenated}-{ordinal:03d}`` per D-14.
-
-    Example: ``AAPL-FY2024-Item-1A-007``. The format is byte-stable as
-    long as Item detection is stable (D-12 + D-13 keep the same paragraph-
-    greedy split behaviour for the same input section text). ING-04
-    idempotency depends on this stability.
+    Hyphenated for chunk_id / filename safety. The 10-Q PART prefix is
+    abbreviated (``Part I`` -> ``PtI``, ``Part II`` -> ``PtII``) so the id stays
+    compact and the "Part"/"Item" words don't inflate the segment. 10-K item
+    codes never contain "Part", so the abbreviation is a no-op for them
+    (byte-stable).
     """
-    return f"{ticker}-FY{fiscal_year}-{_item_code_to_filename(item_code)}-{ordinal:03d}"
+    return (
+        item_code.replace("Part II ", "PtII ").replace("Part I ", "PtI ").replace(" ", "-")
+    )
+
+
+def _period_token(fiscal_year: int, fiscal_period: str) -> str:
+    """``FY`` -> ``FY2024``; ``Q3`` -> ``Q3FY2024`` (Story 1.1 chunk_id/path segment).
+
+    10-K carries ``fiscal_period="FY"`` and keeps the bare ``FY{year}`` token,
+    so 10-K chunk_ids and paths are byte-identical. 10-Q prefixes the quarter.
+    """
+    return f"FY{fiscal_year}" if fiscal_period == "FY" else f"{fiscal_period}FY{fiscal_year}"
+
+
+def _chunk_id(
+    ticker: str,
+    fiscal_year: int,
+    item_code: str,
+    ordinal: int,
+    fiscal_period: str = "FY",
+) -> str:
+    """Format ``{ticker}-{period}-{item_code_hyphenated}-{ordinal:03d}`` per D-14.
+
+    Examples: ``AAPL-FY2024-Item-1A-007`` (10-K), ``AAPL-Q3FY2024-PtI-Item-2-003``
+    (10-Q). The format is byte-stable as long as Item detection is stable
+    (D-12 + D-13 keep the same paragraph-greedy split behaviour for the same
+    input section text). ING-04 idempotency depends on this stability. The
+    ``fiscal_period`` default keeps every existing 10-K call byte-identical.
+    """
+    period = _period_token(fiscal_year, fiscal_period)
+    return f"{ticker}-{period}-{_item_code_to_filename(item_code)}-{ordinal:03d}"
 
 
 def _derive_item_title(section_text: str, item_code: str) -> str:
@@ -242,6 +268,8 @@ def _emit_chunk(
     char_start: int = 0,
     char_end: int | None = None,
     ordinal: int = 0,
+    filing_type: str = "10-K",
+    fiscal_period: str = "FY",
 ) -> Chunk:
     """Build a ``Chunk`` from ``text`` + metadata; enforces HARD_CAP loud-fail (Pitfall 10).
 
@@ -290,7 +318,7 @@ def _emit_chunk(
         slipping through to the embedder).
     """
     n_tokens = count_tokens(text)
-    chunk_id = _chunk_id(ticker, fiscal_year, item_code, ordinal)
+    chunk_id = _chunk_id(ticker, fiscal_year, item_code, ordinal, fiscal_period=fiscal_period)
     if n_tokens > HARD_CAP_TOKENS:
         # The literal message contains "exceeds" — the canary test
         # matches ``pytest.raises(ValueError, match=r"exceeds")``.
@@ -310,6 +338,8 @@ def _emit_chunk(
         prev_chunk_id=None,
         next_chunk_id=None,
         sha256_of_text=_sha256_short(text),
+        filing_type=filing_type,
+        fiscal_period=fiscal_period,
     )
 
 
@@ -423,6 +453,8 @@ def _chunk_section(
     ticker: str,
     fiscal_year: int,
     accession: str,
+    filing_type: str = "10-K",
+    fiscal_period: str = "FY",
     target_tokens: int = TARGET_TOKENS,
 ) -> list[Chunk]:
     """Paragraph-greedy splitter for one Item's section text (D-13).
@@ -533,6 +565,8 @@ def _chunk_section(
                 char_start=cur_start,
                 char_end=cur_start + len(text),
                 ordinal=len(chunks),
+                filing_type=filing_type,
+                fiscal_period=fiscal_period,
             )
             chunks.append(chunk)
 
@@ -595,6 +629,8 @@ def _chunk_section(
             char_start=cur_start,
             char_end=cur_start + len(text),
             ordinal=len(chunks),
+            filing_type=filing_type,
+            fiscal_period=fiscal_period,
         )
         chunks.append(chunk)
 
@@ -675,6 +711,8 @@ def chunk_filing(normalized_path: Path, *, target_tokens: int = TARGET_TOKENS) -
             ticker=nf.ticker,
             fiscal_year=nf.fiscal_year,
             accession=nf.accession,
+            filing_type=nf.filing_type,
+            fiscal_period=nf.fiscal_period,
             target_tokens=target_tokens,
         )
         chunks.extend(item_chunks)

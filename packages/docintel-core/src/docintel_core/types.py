@@ -112,6 +112,10 @@ class NormalizedFiling(BaseModel):
     # missing Item shows up as an absent key here AND in manifest.items_missing.
     sections: dict[str, str]
     manifest: NormalizedFilingManifest
+    # Story 1.1 / FR-A6: form-type + fiscal-period provenance (see Chunk).
+    # Appended with 10-K defaults so the re-baseline diff is a clean +2 keys.
+    filing_type: Literal["10-K", "10-Q", "8-K"] = "10-K"
+    fiscal_period: Literal["FY", "Q1", "Q2", "Q3"] = "FY"
 
 
 class Chunk(BaseModel):
@@ -155,6 +159,14 @@ class Chunk(BaseModel):
     next_chunk_id: str | None
     # CD-02: 16-char truncated hex of sha256(text).
     sha256_of_text: str
+    # Story 1.1 / FR-A6: form-type + fiscal-period provenance. Appended (not
+    # inserted) so the 10-K re-baseline diff is a clean +2 keys per line.
+    # Default to the 10-K values so pre-Story-1.1 10-K construction is
+    # byte-identical after re-baseline (AC-4). 8-K has no fiscal quarter — it
+    # carries ``fiscal_period="FY"`` and is disambiguated by accession/date in
+    # the chunk_id and path, not by period.
+    filing_type: Literal["10-K", "10-Q", "8-K"] = "10-K"
+    fiscal_period: Literal["FY", "Q1", "Q2", "Q3"] = "FY"
 
 
 class RetrievedChunk(BaseModel):

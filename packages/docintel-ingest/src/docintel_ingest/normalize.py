@@ -206,7 +206,96 @@ def find_item_boundaries(text: str) -> list[tuple[str, int, int]]:
     return boundaries
 
 
-def _validate_ordering(found_codes: list[str]) -> bool:
+# ---------------------------------------------------------------------------
+# 10-Q segmentation (Story 1.1). A 10-Q repeats item NUMBERS across PART I
+# (financial) and PART II (other) — e.g. "Item 2" is MD&A in Part I and
+# "Unregistered Sales" in Part II. The 10-K last-match dedup would MERGE
+# them and drop MD&A, so 10-Q boundaries are keyed by the PART-prefixed code
+# ("Part I Item 2"). Gated behind form so the 10-K path is byte-identical.
+# ---------------------------------------------------------------------------
+
+# ``PART I`` / ``PART II`` headers. Alternation ``I{1,2}`` + ``\b`` matches
+# the longer roman ("II") before falling back to "I". Em-dash / hyphen / colon
+# after the roman is optional (filers use "PART I—FINANCIAL INFORMATION",
+# "PART I - ...", or a bare newline).
+PART_RE = re.compile(
+    r"^[ \t]*PART[ \t]+(I{1,2})\b",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+# Canonical 10-Q item sequence, PART-prefixed. Titles are the SEC-standard
+# item titles (Part I = financial/MD&A; Part II = legal/other). Item 1A
+# (Risk Factors) lives only in Part II for 10-Q.
+CANONICAL_ITEMS_10Q: list[str] = [
+    "Part I Item 1",
+    "Part I Item 2",
+    "Part I Item 3",
+    "Part I Item 4",
+    "Part II Item 1",
+    "Part II Item 1A",
+    "Part II Item 2",
+    "Part II Item 3",
+    "Part II Item 4",
+    "Part II Item 5",
+    "Part II Item 6",
+]
+
+# Roman-numeral → "Part N" label. Only I and II occur in a 10-Q.
+_ROMAN_TO_PART = {"I": "Part I", "II": "Part II"}
+
+
+def find_item_boundaries_10q(text: str) -> list[tuple[str, int, int]]:
+    """Slice 10-Q text into ``(part_item_code, char_start, char_end)`` tuples.
+
+    Like :func:`find_item_boundaries` but PART-aware: every ``Item N`` heading
+    is prefixed with the most recent ``PART I`` / ``PART II`` header so the
+    Part I and Part II items sharing a number stay distinct. Item headings that
+    appear BEFORE the first PART header (typically the table-of-contents block
+    at the top of the filing) are dropped — they carry no part context and the
+    real body headings under a PART header supersede them.
+
+    Returns the boundaries in document order; ``char_end`` is the start of the
+    next Item heading OR the next PART header (whichever comes first), or
+    ``len(text)`` for the last item. The caller applies last-match dedup on the
+    part-prefixed code to collapse any ToC-vs-body duplicate that sits under
+    the same PART.
+
+    Args:
+        text: Visible filing text after NFC + nbsp + whitespace normalization
+            (same input contract as :func:`find_item_boundaries`).
+
+    Returns:
+        ``list[tuple[part_item_code, char_start, char_end]]`` where
+        ``part_item_code`` is e.g. ``"Part I Item 2"``. Empty list if no
+        PART-scoped Item heading is detected.
+    """
+    # Merge PART and ITEM matches into one document-ordered stream.
+    events: list[tuple[int, str, str]] = []  # (pos, kind, payload)
+    for m in PART_RE.finditer(text):
+        events.append((m.start(), "part", m.group(1).upper()))
+    for m in ITEM_RE.finditer(text):
+        events.append((m.start(), "item", m.group(1).upper()))
+    events.sort(key=lambda e: e[0])
+
+    # First pass: assign each item to its current part, recording heading start.
+    current_part: str | None = None
+    scoped: list[tuple[str, int]] = []  # (part_item_code, start)
+    for pos, kind, payload in events:
+        if kind == "part":
+            current_part = _ROMAN_TO_PART.get(payload)
+        elif current_part is not None:  # drop pre-PART (ToC) items
+            scoped.append((f"{current_part} Item {payload}", pos))
+
+    # Second pass: char_end is the next heading start (item OR part boundary),
+    # captured as the next scoped start; last item runs to len(text).
+    boundaries: list[tuple[str, int, int]] = []
+    for i, (code, start) in enumerate(scoped):
+        end = scoped[i + 1][1] if i + 1 < len(scoped) else len(text)
+        boundaries.append((code, start, end))
+    return boundaries
+
+
+def _validate_ordering(found_codes: list[str], canonical: list[str] | None = None) -> bool:
     """Verify ``found_codes`` is a SUBSEQUENCE of the canonical Item order.
 
     Subsequence (NOT strict equality): a filing that detects Items
@@ -220,12 +309,17 @@ def _validate_ordering(found_codes: list[str]) -> bool:
     all found codes, the ordering is INVALID (out-of-order or duplicate).
 
     Args:
-        found_codes: List of ``"Item N[X]"`` strings in the order detected.
+        found_codes: List of item-code strings in the order detected
+            (``"Item N[X]"`` for 10-K, ``"Part I Item N"`` for 10-Q).
+        canonical: Canonical ordered code list to validate against. Defaults
+            to the 10-K ``CANONICAL_ITEMS`` sequence; 10-Q passes
+            ``CANONICAL_ITEMS_10Q`` (already full part-prefixed codes).
 
     Returns:
         True iff ``found_codes`` is a subsequence of the canonical sequence.
     """
-    canonical = [f"Item {c}" for c in CANONICAL_ITEMS]
+    if canonical is None:
+        canonical = [f"Item {c}" for c in CANONICAL_ITEMS]
     i = 0  # canonical pointer
     for code in found_codes:
         while i < len(canonical) and canonical[i] != code:
@@ -465,6 +559,8 @@ def normalize_html(
     ticker: str,
     fiscal_year: int,
     accession: str,
+    form: str = "10-K",
+    fiscal_period: str = "FY",
 ) -> NormalizedFiling:
     """Normalize one HTML filing into a ``NormalizedFiling``. Pure function.
 
@@ -507,20 +603,29 @@ def normalize_html(
     raw_text = _extract_visible_text(html)
     text = _normalize_whitespace(raw_text)
 
-    boundaries = find_item_boundaries(text)
+    # Form-gated segmentation: 10-Q needs PART-awareness (Item numbers repeat
+    # across Part I / Part II); 10-K uses the flat Item finder. Gating keeps
+    # the 10-K path byte-identical.
+    if form == "10-Q":
+        boundaries = find_item_boundaries_10q(text)
+    else:
+        boundaries = find_item_boundaries(text)
 
     # If the same item code appears multiple times (e.g. table-of-contents
     # PLUS actual heading), keep the LAST occurrence — that's the one with
     # the full body text in its span. The boundaries list preserves document
-    # order, so a simple last-wins dict assignment captures this.
+    # order, so a simple last-wins dict assignment captures this. (For 10-Q,
+    # codes are PART-prefixed so Part I Item 2 and Part II Item 2 don't merge.)
     sections: dict[str, str] = {}
     for code, start, end in boundaries:
         sections[code] = text[start:end].strip()
 
     # Re-order sections by canonical Item sequence so the on-disk JSON is
-    # human-scannable (Item 1 -> Item 16). Items detected outside the
-    # canonical list (extremely rare) are appended in document order.
-    canonical_codes = [f"Item {c}" for c in CANONICAL_ITEMS]
+    # human-scannable. Items detected outside the canonical list (extremely
+    # rare) are appended in document order.
+    canonical_codes = (
+        CANONICAL_ITEMS_10Q if form == "10-Q" else [f"Item {c}" for c in CANONICAL_ITEMS]
+    )
     items_found: list[str] = [c for c in canonical_codes if c in sections]
     extras = [c for c in sections if c not in canonical_codes]
     items_found.extend(extras)
@@ -540,7 +645,7 @@ def normalize_html(
     for idx, code in enumerate(ordering_codes_in_doc_order):
         seen[code] = idx
     deduped_ordering = sorted(seen.keys(), key=lambda c: seen[c])
-    ordering_valid = _validate_ordering(deduped_ordering)
+    ordering_valid = _validate_ordering(deduped_ordering, canonical_codes)
     if not ordering_valid:
         log.warning(
             "filing_ordering_invalid",
@@ -568,7 +673,10 @@ def normalize_html(
 
     # ``raw_path`` is a relative-to-repo-root string by convention so the
     # committed JSON files are portable across machines (no absolute paths).
-    raw_path = f"data/corpus/raw/{ticker}/FY{fiscal_year}.html"
+    # 10-K keeps the bare ``FY{year}`` segment (byte-identical); 10-Q prefixes
+    # the quarter (``Q3FY{year}``).
+    period = f"FY{fiscal_year}" if fiscal_period == "FY" else f"{fiscal_period}FY{fiscal_year}"
+    raw_path = f"data/corpus/raw/{ticker}/{period}.html"
 
     return NormalizedFiling(
         ticker=ticker,
@@ -578,6 +686,8 @@ def normalize_html(
         raw_path=raw_path,
         sections=sections,
         manifest=manifest,
+        filing_type=form,
+        fiscal_period=fiscal_period,
     )
 
 
