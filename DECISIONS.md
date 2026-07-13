@@ -631,4 +631,72 @@ existing callers and tests are unaffected.
 
 ---
 
-*Last updated: 2026-06-03, Phase 14 plan 14-06 (ADR-014 NIM endpoint).*
+## ADR-015: Corpus re-baseline for 10-Q provenance fields (Story 1.1, AD-13)
+
+**Status:** Accepted
+
+**Context:**
+Story 1.1 (extend ingestion to 10-Q) adds `filing_type` and `fiscal_period`
+provenance to the `Chunk` and `NormalizedFiling` schemas (FR-A6). Both models
+serialize every declared field — the committed corpus at
+`data/corpus/chunks/**/*.jsonl` and `data/corpus/normalized/**/*.json` is
+produced by `model_dump_json()` / `json.dumps(model_dump(), sort_keys=True)`,
+so adding two serialized fields necessarily changes every committed 10-K file
+and every per-filing sha256 in `MANIFEST.json`. There is no field-exclusion
+trick that also satisfies AC-1 ("every chunk carries filing type"). The
+byte-identity gate `tests/test_chunk_idempotency.py` and the golden-fixture
+gate `tests/test_normalize.py::test_normalize_golden_matches` therefore went
+red the moment the fields landed — the sanctioned signal that a re-baseline
+is required (AC-4). Per ARCHITECTURE-SPINE AD-13, a corpus re-baseline is a
+deliberate, ADR-gated event, never a silent regeneration.
+
+**Decision:**
+Re-baseline the committed 10-K corpus as a mechanical `+2 keys` migration,
+gated by a reproducibility proof:
+
+1. **Safety gate (proven before touching committed data):** re-running
+   `normalize_html` + `chunk_filing` over all 45 committed filings reproduces
+   them byte-for-byte *except* `{filing_type, fiscal_period}` (and the
+   never-hashed `fetched_at`). 45/45 normalized and 45/45 chunk files
+   reproduced; zero non-key diffs. This proves the migration changes nothing
+   but the two new keys.
+2. **Normalized:** inject `filing_type="10-K"` / `fiscal_period="FY"` into each
+   committed normalized JSON via the same `json.dumps(…, indent=2,
+   sort_keys=True)` writer — preserves `fetched_at`, inserts the two keys
+   alphabetically, byte-identical otherwise.
+3. **Chunks:** re-chunk each updated normalized JSON with the current chunker
+   and overwrite the committed JSONL via the exact `chunk_all` writer
+   (`"\n".join(model_dump_json()) + "\n"`; empty filings stay zero-byte). 6053
+   chunks over 45 files. 10-K `chunk_id`s are unchanged (the Q-keyed segment is
+   non-10-K only; `fiscal_period="FY"` keeps the bare `FY{year}` token).
+4. **Manifest:** bump `MANIFEST_VERSION` 1 → 2 (adds per-filing `filing_type` /
+   `fiscal_period`) and regenerate `MANIFEST.json` so every sha256 matches the
+   new bytes.
+5. **Golden fixtures:** same injection + re-chunk for `tests/fixtures/sample_10k/`.
+
+No API budget or network is required — the 10-K re-baseline is fully offline
+(re-normalize committed raw HTML + re-chunk). The distinct 10-Q *addition*
+(new filings) is a separate, live-fetch-dependent step (Story 1.1 fetch
+dispatch + Story 1.6 for 8-K).
+
+**Consequences:**
+
+- + The byte-identity and golden gates are green again; the full offline suite
+  is 298 passed / 0 failed (1 hero-gif xfail). 10-K chunk text, ordering, and
+  `chunk_id`s are unchanged — only two provenance keys were added.
+- + The reproducibility gate makes the migration auditable: it is provably a
+  `+2 keys` change, not an opaque regeneration that could mask a normalizer or
+  chunker drift.
+- + `MANIFEST.json` v2 now carries form/period provenance, so downstream
+  consumers (index manifest, eval-report provenance) can filter by form
+  without re-parsing every normalized JSON.
+- − The git diff touches all 45 normalized + 45 chunk files + MANIFEST — a
+  large but mechanical change reviewers verify via the reproducibility script
+  (`+2 keys` only), not by reading every line.
+- − Any future schema field on `Chunk` / `NormalizedFiling` incurs the same
+  re-baseline cycle. This is the intended cost of committing the corpus as a
+  byte-identity-gated artifact.
+
+---
+
+*Last updated: 2026-07-13, Story 1.1 (ADR-015 10-Q re-baseline).*

@@ -76,8 +76,9 @@ log = structlog.stdlib.get_logger(__name__)
 # MANIFEST.json schema version. Bump if the schema changes in a way that
 # would force consumers (tests/test_chunk_idempotency.py, Phase 4 index
 # manifest) to update their parsing. V1 is the schema from RESEARCH.md
-# lines 668-713.
-MANIFEST_VERSION = 1
+# lines 668-713. V2 (Story 1.1) adds per-filing ``filing_type`` +
+# ``fiscal_period`` provenance.
+MANIFEST_VERSION = 2
 
 
 class Discrepancy(NamedTuple):
@@ -184,6 +185,11 @@ def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int) -> dict[str, Any
         "items_missing": normalized_obj["manifest"]["items_missing"],
         "ordering_valid": normalized_obj["manifest"]["ordering_valid"],
         "tables_dropped": normalized_obj["manifest"]["tables_dropped"],
+        # Story 1.1 (MANIFEST v2): form-type + fiscal-period provenance, read
+        # from the normalized JSON. ``.get`` defaults keep the reader resilient
+        # to any pre-re-baseline normalized file still lacking the keys.
+        "filing_type": normalized_obj.get("filing_type", "10-K"),
+        "fiscal_period": normalized_obj.get("fiscal_period", "FY"),
     }
 
 

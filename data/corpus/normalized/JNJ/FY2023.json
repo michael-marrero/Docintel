@@ -1,6 +1,8 @@
 {
   "accession": "0000200406-24-000013",
   "fetched_at": "2026-05-14T03:30:06.277908+00:00",
+  "filing_type": "10-K",
+  "fiscal_period": "FY",
   "fiscal_year": 2023,
   "manifest": {
     "items_found": [
