@@ -300,7 +300,7 @@ def trim_to_body(html: str) -> str:
     before_sleep=before_sleep_log(_retry_log, logging.WARNING),
     reraise=True,
 )
-def _fetch_one(dl: Downloader, ticker: str, after: str, before: str) -> int:
+def _fetch_one(dl: Downloader, ticker: str, form: str, after: str, before: str) -> int:
     """Single SEC fetch via sec-edgar-downloader; retried on network transients only.
 
     The decorator parameters mirror CD-05 / D-03 (Plan 03-04 verification):
@@ -335,13 +335,34 @@ def _fetch_one(dl: Downloader, ticker: str, after: str, before: str) -> int:
         OSError / TimeoutError / ConnectionError: After 4 retry attempts.
     """
     return dl.get(
-        "10-K",
+        form,
         ticker,
         after=after,
         before=before,
         download_details=True,  # we want primary-document.html, the clean body
-        include_amends=False,  # Pitfall 2 — only canonical 10-K, not 10-K/A
+        include_amends=False,  # Pitfall 2 — only canonical filing, not the /A amendment
     )
+
+
+# ``dei:DocumentFiscalPeriodFocus`` in the inline-XBRL cover page carries the
+# quarter ("Q1"/"Q2"/"Q3") for a 10-Q. Parsed from the RAW primary document
+# BEFORE ``trim_to_body`` strips the ix: wrappers. Validated against a live
+# AAPL 10-Q (Q2 FY2026). 10-K filings carry "FY" and don't need extraction.
+_FISCAL_PERIOD_RE = re.compile(
+    r'name="dei:DocumentFiscalPeriodFocus"[^>]*>\s*(Q[1-3]|FY)\s*<',
+    flags=re.IGNORECASE,
+)
+
+
+def _extract_fiscal_period(raw_html: str) -> str | None:
+    """Return the 10-Q quarter (``"Q1"``/``"Q2"``/``"Q3"``) from iXBRL, or None.
+
+    Reads ``dei:DocumentFiscalPeriodFocus`` from the raw primary document. A
+    10-Q's cover page always carries it; if absent (malformed filing) the
+    caller falls back and logs rather than guessing the quarter.
+    """
+    m = _FISCAL_PERIOD_RE.search(raw_html)
+    return m.group(1).upper() if m else None
 
 
 def _idempotent_skip(target: Path) -> bool:
@@ -404,8 +425,8 @@ def _locate_primary_doc(cache_root: Path, ticker: str, fresh_dirs: set[Path]) ->
     return candidates[0]
 
 
-def _ticker_accession_dirs(cache_root: Path, ticker: str) -> set[Path]:
-    """List accession-number subdirectories under `{cache_root}/.../{ticker}/10-K/`.
+def _ticker_accession_dirs(cache_root: Path, ticker: str, form: str) -> set[Path]:
+    """List accession-number subdirectories under `{cache_root}/.../{ticker}/{form}/`.
 
     Used to capture before/after snapshots so `_locate_primary_doc()` can
     identify which accessions were freshly downloaded by `_fetch_one()`.
@@ -413,15 +434,17 @@ def _ticker_accession_dirs(cache_root: Path, ticker: str) -> set[Path]:
     Args:
         cache_root: SDK working dir.
         ticker: Stock ticker (uppercase).
+        form: SEC form type (``"10-K"``, ``"10-Q"``) — the SDK caches under a
+            per-form subdirectory.
 
     Returns:
         Set of `Path` objects pointing to per-accession directories. Empty
-        set if the ticker has no prior cached filings.
+        set if the ticker has no prior cached filings of that form.
     """
-    ten_k_dir = cache_root / "sec-edgar-filings" / ticker / "10-K"
-    if not ten_k_dir.is_dir():
+    form_dir = cache_root / "sec-edgar-filings" / ticker / form
+    if not form_dir.is_dir():
         return set()
-    return {p for p in ten_k_dir.iterdir() if p.is_dir()}
+    return {p for p in form_dir.iterdir() if p.is_dir()}
 
 
 def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
@@ -466,7 +489,9 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
     # time; reusing the instance avoids one API call per ticker.
     dl = Downloader(name, email, download_folder=cache_root)
 
-    total_filings = sum(len(c.fiscal_years) for c in companies)
+    # Log stat only. 10-K is 1 filing/year; 10-Q is up to ~3 (Q1–Q3), so this
+    # is a lower bound for multi-form tickers — not load-bearing.
+    total_filings = sum(len(c.fiscal_years) * len(c.forms) for c in companies)
     log.info(
         "fetch_started",
         n_companies=len(companies),
@@ -480,82 +505,125 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
     n_not_found = 0
     n_failed = 0
 
+    def _write_trimmed(primary_doc_path: Path, target_path: Path, *, fiscal_year: int) -> None:
+        raw_html = primary_doc_path.read_text(encoding="utf-8", errors="replace")
+        trimmed_html = trim_to_body(raw_html)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(trimmed_html, encoding="utf-8")
+        log.info(
+            "filing_fetched",
+            ticker=target_path.parent.name,
+            fiscal_year=fiscal_year,
+            accession=primary_doc_path.parent.name,
+            raw_bytes=len(raw_html),
+            trimmed_bytes=len(trimmed_html),
+            trim_ratio=round(len(trimmed_html) / max(len(raw_html), 1), 3),
+            target=str(target_path),
+        )
+
     for entry in companies:
-        for year in entry.fiscal_years:
-            target_path = raw_root / entry.ticker / f"FY{year}.html"
+        for form in entry.forms:
+            for year in entry.fiscal_years:
+                # 10-K is one filing/year at FY{year}.html — short-circuit the
+                # network on the idempotent re-run. 10-Q is multiple filings/year
+                # (Q1–Q3) whose quarters aren't known until the filing is read,
+                # so its per-quarter idempotency is handled after download.
+                # ponytail: 10-Q re-runs re-list via the SDK cache (cheap, no
+                # re-download); per-quarter target checks keep writes idempotent.
+                ten_k_target = raw_root / entry.ticker / f"FY{year}.html"
+                if form == "10-K" and _idempotent_skip(ten_k_target):
+                    n_skipped_idempotent += 1
+                    log.info(
+                        "filing_skipped_idempotent",
+                        ticker=entry.ticker,
+                        fiscal_year=year,
+                        form=form,
+                        target=str(ten_k_target),
+                    )
+                    continue
 
-            if _idempotent_skip(target_path):
-                n_skipped_idempotent += 1
-                log.info(
-                    "filing_skipped_idempotent",
-                    ticker=entry.ticker,
-                    fiscal_year=year,
-                    target=str(target_path),
-                )
-                continue
+                after, before = _year_window(year)
+                dirs_before = _ticker_accession_dirs(cache_root, entry.ticker, form)
 
-            after, before = _year_window(year)
-            dirs_before = _ticker_accession_dirs(cache_root, entry.ticker)
+                try:
+                    n_downloaded = _fetch_one(dl, entry.ticker, form, after, before)
+                except Exception as exc:  # partial-failure aggregator — re-raise via exit code
+                    n_failed += 1
+                    log.error(
+                        "filing_fetch_failed",
+                        ticker=entry.ticker,
+                        fiscal_year=year,
+                        form=form,
+                        after=after,
+                        before=before,
+                        error_type=type(exc).__name__,
+                        error=str(exc),
+                    )
+                    continue
 
-            try:
-                n_downloaded = _fetch_one(dl, entry.ticker, after, before)
-            except Exception as exc:  # partial-failure aggregator — re-raise via summary exit code
-                n_failed += 1
-                log.error(
-                    "filing_fetch_failed",
-                    ticker=entry.ticker,
-                    fiscal_year=year,
-                    after=after,
-                    before=before,
-                    error_type=type(exc).__name__,
-                    error=str(exc),
-                )
-                continue
+                if n_downloaded == 0:
+                    n_not_found += 1
+                    log.warning(
+                        "filing_not_found",
+                        ticker=entry.ticker,
+                        fiscal_year=year,
+                        form=form,
+                        after=after,
+                        before=before,
+                    )
+                    continue
 
-            if n_downloaded == 0:
-                n_not_found += 1
-                log.warning(
-                    "filing_not_found",
-                    ticker=entry.ticker,
-                    fiscal_year=year,
-                    after=after,
-                    before=before,
-                )
-                continue
+                dirs_after = _ticker_accession_dirs(cache_root, entry.ticker, form)
+                fresh = dirs_after - dirs_before
 
-            dirs_after = _ticker_accession_dirs(cache_root, entry.ticker)
-            fresh = dirs_after - dirs_before
-            primary_doc_path = _locate_primary_doc(cache_root, entry.ticker, fresh)
+                if form == "10-K":
+                    primary = _locate_primary_doc(cache_root, entry.ticker, fresh)
+                    if primary is None:
+                        n_failed += 1
+                        log.error(
+                            "primary_doc_missing",
+                            ticker=entry.ticker,
+                            fiscal_year=year,
+                            form=form,
+                            fresh_accessions=[p.name for p in fresh],
+                        )
+                        continue
+                    _write_trimmed(primary, ten_k_target, fiscal_year=year)
+                    n_succeeded += 1
+                    continue
 
-            if primary_doc_path is None:
-                n_failed += 1
-                log.error(
-                    "primary_doc_missing",
-                    ticker=entry.ticker,
-                    fiscal_year=year,
-                    fresh_accessions=[p.name for p in fresh],
-                )
-                continue
-
-            raw_html = primary_doc_path.read_text(encoding="utf-8", errors="replace")
-            trimmed_html = trim_to_body(raw_html)
-
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(trimmed_html, encoding="utf-8")
-
-            n_succeeded += 1
-            raw_bytes = len(raw_html)
-            trimmed_bytes = len(trimmed_html)
-            log.info(
-                "filing_fetched",
-                ticker=entry.ticker,
-                fiscal_year=year,
-                accession=primary_doc_path.parent.name,
-                raw_bytes=raw_bytes,
-                trimmed_bytes=trimmed_bytes,
-                trim_ratio=round(trimmed_bytes / max(raw_bytes, 1), 3),
-                target=str(target_path),
-            )
+                # 10-Q: one primary doc per fresh accession; key by the quarter
+                # read from the raw iXBRL cover page.
+                for acc_dir in sorted(fresh, key=lambda p: p.name):
+                    primary = _locate_primary_doc(cache_root, entry.ticker, {acc_dir})
+                    if primary is None:
+                        n_failed += 1
+                        log.error(
+                            "primary_doc_missing",
+                            ticker=entry.ticker,
+                            fiscal_year=year,
+                            form=form,
+                            fresh_accessions=[acc_dir.name],
+                        )
+                        continue
+                    raw_html = primary.read_text(encoding="utf-8", errors="replace")
+                    quarter = _extract_fiscal_period(raw_html)
+                    if quarter is None or quarter == "FY":
+                        n_failed += 1
+                        log.error(
+                            "fiscal_period_missing",
+                            ticker=entry.ticker,
+                            fiscal_year=year,
+                            form=form,
+                            accession=acc_dir.name,
+                        )
+                        continue
+                    q_target = raw_root / entry.ticker / f"{quarter}FY{year}.html"
+                    if _idempotent_skip(q_target):
+                        n_skipped_idempotent += 1
+                        continue
+                    _write_trimmed(primary, q_target, fiscal_year=year)
+                    n_succeeded += 1
 
     log.info(
         "fetch_complete",

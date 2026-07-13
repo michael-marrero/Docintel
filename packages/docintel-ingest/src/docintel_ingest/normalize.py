@@ -484,7 +484,22 @@ def _load_accession_map(cfg: Settings) -> dict[str, dict[str, str]]:
     return data
 
 
-def _resolve_accession(cfg: Settings, ticker: str, fiscal_year: int) -> str:
+# iXBRL cover-page tags for matching a cached 10-Q to its (quarter, FY).
+_QUARTER_FOCUS_RE = re.compile(
+    r'name="dei:DocumentFiscalPeriodFocus"[^>]*>\s*(Q[1-3]|FY)\s*<', flags=re.IGNORECASE
+)
+_FY_FOCUS_RE = re.compile(
+    r'name="dei:DocumentFiscalYearFocus"[^>]*>\s*(\d{4})\s*<', flags=re.IGNORECASE
+)
+
+
+def _resolve_accession(
+    cfg: Settings,
+    ticker: str,
+    fiscal_year: int,
+    form: str = "10-K",
+    fiscal_period: str = "FY",
+) -> str:
     """Resolve the SEC accession number for one (ticker, fiscal_year).
 
     Two-tier lookup, sidecar first:
@@ -523,34 +538,49 @@ def _resolve_accession(cfg: Settings, ticker: str, fiscal_year: int) -> str:
     """
     # Tier 1: sidecar
     mapping = _load_accession_map(cfg)
-    if ticker in mapping and str(fiscal_year) in mapping[ticker]:
-        return mapping[ticker][str(fiscal_year)]
+    # Tier 1: sidecar. 10-K keys by year; 10-Q keys by "{Qn}FY{year}" (the
+    # regenerated sidecar carries per-quarter keys). 10-K format unchanged.
+    sidecar_key = str(fiscal_year) if form == "10-K" else f"{fiscal_period}FY{fiscal_year}"
+    if ticker in mapping and sidecar_key in mapping[ticker]:
+        return mapping[ticker][sidecar_key]
 
-    # Tier 2: SDK cache (developer-machine fallback)
-    cache_root = Path(cfg.data_dir) / "corpus" / ".cache" / "sec-edgar-filings" / ticker / "10-K"
+    # Tier 2: SDK cache (developer-machine fallback), per-form subdirectory.
+    cache_root = Path(cfg.data_dir) / "corpus" / ".cache" / "sec-edgar-filings" / ticker / form
     if cache_root.is_dir():
-        target_year = str(fiscal_year)
         for accession_dir in sorted(cache_root.iterdir()):
             if not accession_dir.is_dir():
                 continue
-            submission = accession_dir / "full-submission.txt"
-            if not submission.is_file():
-                continue
-            with submission.open(encoding="utf-8", errors="replace") as fh:
-                header = fh.read(4096)
-            for line in header.splitlines():
-                if "CONFORMED PERIOD OF REPORT" in line:
-                    period = line.rsplit(maxsplit=1)[-1].strip()
-                    if period.startswith(target_year):
-                        return accession_dir.name
-                    break
+            if form == "10-K":
+                submission = accession_dir / "full-submission.txt"
+                if not submission.is_file():
+                    continue
+                with submission.open(encoding="utf-8", errors="replace") as fh:
+                    header = fh.read(4096)
+                for line in header.splitlines():
+                    if "CONFORMED PERIOD OF REPORT" in line:
+                        period = line.rsplit(maxsplit=1)[-1].strip()
+                        if period.startswith(str(fiscal_year)):
+                            return accession_dir.name
+                        break
+            else:
+                # 10-Q: match the cached filing's quarter + FY from its iXBRL
+                # cover page (DocumentFiscalPeriodFocus / DocumentFiscalYearFocus).
+                primary = next(iter(accession_dir.glob("primary-document.*")), None)
+                if primary is None:
+                    continue
+                raw = primary.read_text(encoding="utf-8", errors="replace")
+                q = _QUARTER_FOCUS_RE.search(raw)
+                y = _FY_FOCUS_RE.search(raw)
+                if q and q.group(1).upper() == fiscal_period and (
+                    y is None or y.group(1) == str(fiscal_year)
+                ):
+                    return accession_dir.name
 
     raise FileNotFoundError(
-        f"accession lookup failed for {ticker} FY{fiscal_year}: not in "
-        f"sidecar (data/corpus/.accession-map.json) and SDK cache either "
+        f"accession lookup failed for {ticker} {form} {fiscal_period}FY{fiscal_year}: "
+        f"not in sidecar (data/corpus/.accession-map.json) and SDK cache either "
         f"absent or missing this entry. Run `docintel-ingest fetch` on a "
-        f"machine with sec.gov access and regenerate the sidecar from "
-        f"the cache."
+        f"machine with sec.gov access and regenerate the sidecar from the cache."
     )
 
 
@@ -743,60 +773,78 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
     n_skipped_raw_missing = 0
     n_failed = 0
 
-    for entry in companies:
-        for year in entry.fiscal_years:
-            raw_path = raw_root / entry.ticker / f"FY{year}.html"
-            if not raw_path.exists():
-                n_skipped_raw_missing += 1
-                log.warning(
-                    "filing_normalize_skip",
-                    ticker=entry.ticker,
-                    fiscal_year=year,
-                    raw_path=str(raw_path),
-                    reason="raw_missing",
-                )
-                continue
-
-            try:
-                accession = _resolve_accession(cfg, entry.ticker, year)
-                html = raw_path.read_text(encoding="utf-8")
-                nf = normalize_html(html, entry.ticker, year, accession)
-            except Exception as exc:
-                n_failed += 1
-                log.error(
-                    "filing_normalize_failed",
-                    ticker=entry.ticker,
-                    fiscal_year=year,
-                    raw_path=str(raw_path),
-                    error_type=type(exc).__name__,
-                    error=str(exc),
-                )
-                continue
-
-            out_path = out_root / entry.ticker / f"FY{year}.json"
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            # ``sort_keys=True`` is the byte-identity guarantor across Python
-            # dict-ordering differences and Pydantic v2's model_dump iteration
-            # order (PATTERNS.md line 461; mirrors the MANIFEST.json convention).
-            out_path.write_text(
-                json.dumps(nf.model_dump(), indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-
-            n_succeeded += 1
-            section_chars_total = sum(len(s) for s in nf.sections.values())
-            log.info(
-                "filing_normalized",
-                ticker=entry.ticker,
+    def _normalize_one(
+        ticker: str, raw_path: Path, form: str, fiscal_period: str, year: int, stem: str
+    ) -> None:
+        nonlocal n_succeeded, n_skipped_raw_missing, n_failed
+        if not raw_path.exists():
+            n_skipped_raw_missing += 1
+            log.warning(
+                "filing_normalize_skip",
+                ticker=ticker,
                 fiscal_year=year,
-                accession=accession,
-                items_found_count=len(nf.manifest.items_found),
-                items_missing_count=len(nf.manifest.items_missing),
-                tables_dropped=nf.manifest.tables_dropped,
-                ordering_valid=nf.manifest.ordering_valid,
-                section_chars_total=section_chars_total,
-                out_path=str(out_path),
+                form=form,
+                raw_path=str(raw_path),
+                reason="raw_missing",
             )
+            return
+        try:
+            accession = _resolve_accession(cfg, ticker, year, form, fiscal_period)
+            html = raw_path.read_text(encoding="utf-8")
+            nf = normalize_html(
+                html, ticker, year, accession, form=form, fiscal_period=fiscal_period
+            )
+        except Exception as exc:
+            n_failed += 1
+            log.error(
+                "filing_normalize_failed",
+                ticker=ticker,
+                fiscal_year=year,
+                form=form,
+                raw_path=str(raw_path),
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+            return
+
+        out_path = out_root / ticker / f"{stem}.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        # ``sort_keys=True`` is the byte-identity guarantor (mirrors MANIFEST.json).
+        out_path.write_text(
+            json.dumps(nf.model_dump(), indent=2, sort_keys=True), encoding="utf-8"
+        )
+        n_succeeded += 1
+        log.info(
+            "filing_normalized",
+            ticker=ticker,
+            fiscal_year=year,
+            form=form,
+            accession=accession,
+            items_found_count=len(nf.manifest.items_found),
+            out_path=str(out_path),
+        )
+
+    for entry in companies:
+        for form in entry.forms:
+            for year in entry.fiscal_years:
+                if form == "10-K":
+                    _normalize_one(
+                        entry.ticker,
+                        raw_root / entry.ticker / f"FY{year}.html",
+                        "10-K",
+                        "FY",
+                        year,
+                        f"FY{year}",
+                    )
+                else:
+                    # 10-Q: discover the Q-keyed raw files fetch produced
+                    # (Q1FY{year}.html … Q3FY{year}.html); derive the quarter
+                    # from each stem. Missing quarters are simply absent.
+                    for raw_path in sorted((raw_root / entry.ticker).glob(f"Q?FY{year}.html")):
+                        stem = raw_path.stem  # e.g. "Q3FY2024"
+                        _normalize_one(
+                            entry.ticker, raw_path, "10-Q", stem.split("FY")[0], year, stem
+                        )
 
     log.info(
         "normalize_complete",
