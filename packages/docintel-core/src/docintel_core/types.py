@@ -492,6 +492,11 @@ class CompanyEntry(BaseModel):
     fiscal_years: list[int]
     # ISO-8601 date (``YYYY-MM-DD``). Validated via ``date.fromisoformat``.
     snapshot_date: str
+    # Story 1.1: which SEC forms to ingest for this ticker. The scope source of
+    # truth (snapshot-driven, NOT env-driven — FND-11 / AD-5). Defaults to the
+    # 10-K-only pre-Story-1.1 behaviour so a snapshot CSV with no ``forms``
+    # column parses unchanged (byte-stable). 10-Q/8-K are opt-in per ticker.
+    forms: list[str] = ["10-K"]
 
     @field_validator("ticker")
     @classmethod
@@ -542,6 +547,17 @@ class CompanyEntry(BaseModel):
             raise ValueError(
                 f"snapshot_date {v!r} is not ISO-8601 YYYY-MM-DD format: {exc}"
             ) from exc
+        return v
+
+    @field_validator("forms")
+    @classmethod
+    def _forms_valid(cls, v: list[str]) -> list[str]:
+        allowed = {"10-K", "10-Q", "8-K"}
+        if not v:
+            raise ValueError("forms must be non-empty (default is ['10-K']).")
+        bad = [f for f in v if f not in allowed]
+        if bad:
+            raise ValueError(f"forms {bad!r} not in {sorted(allowed)} (Story 1.1 scope).")
         return v
 
 

@@ -71,7 +71,7 @@ def load_snapshot(cfg: Settings, path: Path | None = None) -> list[CompanyEntry]
         reader = csv.DictReader(fh)
         for row in reader:
             fiscal_years = json.loads(row["fiscal_years"])
-            entry = CompanyEntry(
+            fields: dict[str, object] = dict(
                 ticker=row["ticker"],
                 name=row["name"],
                 sector=row["sector"],
@@ -79,7 +79,12 @@ def load_snapshot(cfg: Settings, path: Path | None = None) -> list[CompanyEntry]
                 fiscal_years=fiscal_years,
                 snapshot_date=row["snapshot_date"],
             )
-            rows.append(entry)
+            # Story 1.1: optional ``forms`` column (JSON list). Absent or blank
+            # → CompanyEntry's ["10-K"] default (byte-stable for pre-1.1 CSVs).
+            forms_cell = (row.get("forms") or "").strip()
+            if forms_cell:
+                fields["forms"] = json.loads(forms_cell)
+            rows.append(CompanyEntry(**fields))
 
     log.info(
         "snapshot_loaded",
