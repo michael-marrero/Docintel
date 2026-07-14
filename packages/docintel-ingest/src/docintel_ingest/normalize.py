@@ -286,11 +286,15 @@ def find_item_boundaries_10q(text: str) -> list[tuple[str, int, int]]:
         elif current_part is not None:  # drop pre-PART (ToC) items
             scoped.append((f"{current_part} Item {payload}", pos))
 
-    # Second pass: char_end is the next heading start (item OR part boundary),
-    # captured as the next scoped start; last item runs to len(text).
+    # Second pass: char_end is the start of the next heading of ANY kind
+    # (Item OR Part). Using only the next *item* start would fold a trailing
+    # PART header — and any prose between it and that Part's first Item — into
+    # the previous Part's last item (e.g. Part I Item 4 swallowing
+    # "PART II — OTHER INFORMATION").
+    heading_starts = sorted(pos for pos, _, _ in events)
     boundaries: list[tuple[str, int, int]] = []
-    for i, (code, start) in enumerate(scoped):
-        end = scoped[i + 1][1] if i + 1 < len(scoped) else len(text)
+    for code, start in scoped:
+        end = next((p for p in heading_starts if p > start), len(text))
         boundaries.append((code, start, end))
     return boundaries
 
@@ -571,8 +575,15 @@ def _resolve_accession(
                 raw = primary.read_text(encoding="utf-8", errors="replace")
                 q = _QUARTER_FOCUS_RE.search(raw)
                 y = _FY_FOCUS_RE.search(raw)
-                if q and q.group(1).upper() == fiscal_period and (
-                    y is None or y.group(1) == str(fiscal_year)
+                # Require BOTH quarter AND fiscal-year focus to match. Matching
+                # on quarter alone (when the FY-focus tag is absent) can bind the
+                # wrong accession when the cache holds the same quarter for two
+                # fiscal years, mislabeling every chunk's provenance.
+                if (
+                    q
+                    and y
+                    and q.group(1).upper() == fiscal_period
+                    and y.group(1) == str(fiscal_year)
                 ):
                     return accession_dir.name
 
@@ -826,6 +837,12 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
 
     for entry in companies:
         for form in entry.forms:
+            if form not in ("10-K", "10-Q"):
+                # 8-K is schema-valid (shared Story 1.1 foundation) but its
+                # segmentation lands in Story 1.6 — skip rather than glob for
+                # non-existent Q-keyed files and silently no-op.
+                log.warning("filing_normalize_skip", ticker=entry.ticker, form=form, reason="form_not_supported")
+                continue
             for year in entry.fiscal_years:
                 if form == "10-K":
                     _normalize_one(

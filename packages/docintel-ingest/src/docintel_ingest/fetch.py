@@ -365,6 +365,23 @@ def _extract_fiscal_period(raw_html: str) -> str | None:
     return m.group(1).upper() if m else None
 
 
+# ``dei:DocumentFiscalYearFocus`` carries the true fiscal year for a 10-Q. The
+# fetch date-window (`_year_window`) is an 18-month span, so one year's window
+# also catches the NEXT fiscal year's early quarters; keying the output file by
+# this focus tag (not the loop year) keeps fetch consistent with
+# ``normalize._resolve_accession`` and avoids `Q1FY{n+1}` -> `Q1FY{n}` collisions.
+_FISCAL_YEAR_RE = re.compile(
+    r'name="dei:DocumentFiscalYearFocus"[^>]*>\s*(\d{4})\s*<',
+    flags=re.IGNORECASE,
+)
+
+
+def _extract_fiscal_year(raw_html: str) -> int | None:
+    """Return the 10-Q fiscal year from iXBRL ``DocumentFiscalYearFocus``, or None."""
+    m = _FISCAL_YEAR_RE.search(raw_html)
+    return int(m.group(1)) if m else None
+
+
 def _idempotent_skip(target: Path) -> bool:
     """Return True if the target file is already on disk with non-zero size.
 
@@ -523,6 +540,18 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
 
     for entry in companies:
         for form in entry.forms:
+            if form not in ("10-K", "10-Q"):
+                # 8-K is schema-valid (shared Story 1.1 foundation) but its
+                # fetch/segmentation lands in Story 1.6. Reject clearly rather
+                # than routing it into the 10-Q branch (which mislabels it).
+                n_failed += 1
+                log.error(
+                    "form_not_supported",
+                    ticker=entry.ticker,
+                    form=form,
+                    reason="8-K ingestion arrives in Story 1.6",
+                )
+                continue
             for year in entry.fiscal_years:
                 # 10-K is one filing/year at FY{year}.html — short-circuit the
                 # network on the idempotent re-run. 10-Q is multiple filings/year
@@ -562,6 +591,21 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
                     continue
 
                 if n_downloaded == 0:
+                    # 10-Q has no pre-network idempotent short-circuit (quarters
+                    # aren't known until the filing is read), so a re-run reaches
+                    # here with nothing new to download. If the ticker already has
+                    # Q-keyed output on disk, that's an idempotent skip — not a
+                    # genuine "filing not found".
+                    if form == "10-Q" and any((raw_root / entry.ticker).glob("Q?FY*.html")):
+                        n_skipped_idempotent += 1
+                        log.info(
+                            "filing_skipped_idempotent",
+                            ticker=entry.ticker,
+                            fiscal_year=year,
+                            form=form,
+                            reason="10-Q already fetched (cache re-list)",
+                        )
+                        continue
                     n_not_found += 1
                     log.warning(
                         "filing_not_found",
@@ -618,11 +662,27 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
                             accession=acc_dir.name,
                         )
                         continue
-                    q_target = raw_root / entry.ticker / f"{quarter}FY{year}.html"
+                    # Key the file by the filing's OWN fiscal year (iXBRL focus),
+                    # not the loop/window year — the 18-month window catches
+                    # next-FY quarters too. Fall back to the loop year only when
+                    # the tag is absent (malformed filing).
+                    true_fy = _extract_fiscal_year(raw_html) or year
+                    if true_fy not in entry.fiscal_years:
+                        # In-window but outside this ticker's scoped years — skip
+                        # so we don't write orphan raw files normalize will ignore.
+                        log.info(
+                            "filing_out_of_scope",
+                            ticker=entry.ticker,
+                            fiscal_year=true_fy,
+                            form=form,
+                            accession=acc_dir.name,
+                        )
+                        continue
+                    q_target = raw_root / entry.ticker / f"{quarter}FY{true_fy}.html"
                     if _idempotent_skip(q_target):
                         n_skipped_idempotent += 1
                         continue
-                    _write_trimmed(primary, q_target, fiscal_year=year)
+                    _write_trimmed(primary, q_target, fiscal_year=true_fy)
                     n_succeeded += 1
 
     log.info(

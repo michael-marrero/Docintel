@@ -70,5 +70,15 @@ def test_part_ii_item_1a_present() -> None:
     assert "Part II Item 1A" in _codes(_SYNTHETIC_10Q)
 
 
+def test_part_i_last_item_does_not_swallow_the_part_ii_header() -> None:
+    """Part I's last item stops at the PART II header, not the next Item."""
+    boundaries = {code: (s, e) for code, s, e in find_item_boundaries_10q(_SYNTHETIC_10Q)}
+    start, end = boundaries["Part I Item 4"]
+    body = _SYNTHETIC_10Q[start:end]
+    assert "Controls and Procedures" in body  # its own heading/body kept
+    assert "PART II" not in body  # the trailing PART header is NOT folded in
+    assert "OTHER INFORMATION" not in body
+
+
 def test_empty_text_yields_no_boundaries() -> None:
     assert find_item_boundaries_10q("") == []
