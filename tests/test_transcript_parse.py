@@ -38,6 +38,59 @@ def test_empty_turns_list_raises(tmp_path: Path) -> None:
         parse_transcript(p)
 
 
+def test_null_fields_coerced_not_stringified(tmp_path: Path) -> None:
+    # Review fix: a JSON null must coerce to empty, not the string "None".
+    p = tmp_path / "t.json"
+    p.write_text(
+        json.dumps(
+            {
+                "ticker": "AAPL",
+                "fiscal_year": 2024,
+                "fiscal_period": "Q1",
+                "turns": [
+                    {"speaker": None, "role": None, "text": None},  # all-null → dropped
+                    {"speaker": None, "role": None, "text": "hi"},  # null speaker → Unknown
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    nf = parse_transcript(p)
+    assert list(nf.sections.keys()) == ["Turn 001"]
+    assert nf.sections["Turn 001"].startswith("Unknown Speaker")
+    assert "None" not in nf.sections["Turn 001"]
+
+
+def test_non_dict_turn_raises_valueerror(tmp_path: Path) -> None:
+    p = tmp_path / "t.json"
+    p.write_text(
+        json.dumps(
+            {"ticker": "AAPL", "fiscal_year": 2024, "fiscal_period": "Q1", "turns": ["not a dict"]}
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        parse_transcript(p)
+
+
+def test_bad_fiscal_period_raises_valueerror(tmp_path: Path) -> None:
+    # Honors the documented ValueError contract (was a Pydantic ValidationError).
+    p = tmp_path / "t.json"
+    p.write_text(
+        json.dumps(
+            {
+                "ticker": "AAPL",
+                "fiscal_year": 2024,
+                "fiscal_period": "Q5",
+                "turns": [{"speaker": "A", "text": "hi"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        parse_transcript(p)
+
+
 def test_empty_text_turns_dropped_index_preserved(tmp_path: Path) -> None:
     p = tmp_path / "t.json"
     p.write_text(

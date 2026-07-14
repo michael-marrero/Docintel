@@ -386,18 +386,22 @@ def write_manifest(cfg: Settings, *, target_tokens: int = TARGET_TOKENS) -> Path
                     reason="one or more transcript artifacts missing on disk",
                 )
                 continue
+            # Guard the whole entry build: the transcript raw is the JSON under
+            # transcripts/ (resolved inside _filing_entry). A missing raw file
+            # (FileNotFoundError) or a non-``data/`` raw_path (ValueError from
+            # relative_to) must skip that one transcript, not abort the manifest.
             try:
                 fy = json.loads(normalized_fp.read_text(encoding="utf-8"))["fiscal_year"]
-            except (json.JSONDecodeError, KeyError, OSError) as exc:
+                filings.append(_filing_entry(cfg, entry.ticker, fy, stem))
+            except (json.JSONDecodeError, KeyError, OSError, ValueError) as exc:
                 n_skipped += 1
                 log.warning(
                     "manifest_filing_skipped",
                     ticker=entry.ticker,
                     stem=stem,
-                    reason=f"unreadable transcript JSON: {type(exc).__name__}",
+                    reason=f"unbuildable transcript entry: {type(exc).__name__}",
                 )
                 continue
-            filings.append(_filing_entry(cfg, entry.ticker, fy, stem))
 
     manifest: dict[str, Any] = {
         "version": MANIFEST_VERSION,

@@ -32,6 +32,7 @@ from docintel_ingest.snapshot import load_snapshot
 log = structlog.stdlib.get_logger(__name__)
 
 _REQUIRED_KEYS = {"ticker", "fiscal_year", "fiscal_period", "turns"}
+_ALLOWED_PERIODS = {"FY", "Q1", "Q2", "Q3", "Q4"}
 
 
 def parse_transcript(path: Path) -> NormalizedFiling:
@@ -50,6 +51,11 @@ def parse_transcript(path: Path) -> NormalizedFiling:
     missing = _REQUIRED_KEYS - data.keys()
     if missing:
         raise ValueError(f"transcript {path.name}: missing required keys {sorted(missing)}")
+    period = str(data["fiscal_period"] or "").strip()
+    if period not in _ALLOWED_PERIODS:
+        raise ValueError(
+            f"transcript {path.name}: fiscal_period {period!r} not in {sorted(_ALLOWED_PERIODS)}"
+        )
     turns = data["turns"]
     if not isinstance(turns, list) or not turns:
         raise ValueError(f"transcript {path.name}: 'turns' must be a non-empty list")
@@ -57,11 +63,14 @@ def parse_transcript(path: Path) -> NormalizedFiling:
     sections: dict[str, str] = {}
     items_found: list[str] = []
     for n, turn in enumerate(turns):
-        text = str(turn.get("text", "")).strip()
+        if not isinstance(turn, dict):
+            raise ValueError(f"transcript {path.name}: turn {n} is not an object")
+        # ``or ""`` coerces an explicit JSON null to empty (str(None) would be "None").
+        text = str(turn.get("text") or "").strip()
         if not text:
             continue
-        speaker = str(turn.get("speaker", "")).strip() or "Unknown Speaker"
-        role = str(turn.get("role", "")).strip()
+        speaker = str(turn.get("speaker") or "").strip() or "Unknown Speaker"
+        role = str(turn.get("role") or "").strip()
         heading = f"{speaker} ({role})" if role else speaker
         code = f"Turn {n:03d}"
         sections[code] = f"{heading}\n\n{text}"
@@ -70,7 +79,7 @@ def parse_transcript(path: Path) -> NormalizedFiling:
     if not sections:
         raise ValueError(f"transcript {path.name}: no non-empty turns")
 
-    call_date = str(data.get("call_date", "")).strip()
+    call_date = str(data.get("call_date") or "").strip()
     # 8-K uses accession as the per-filing identity; a transcript uses call_date.
     accession = f"CALL-{call_date}" if call_date else "CALL"
     manifest = NormalizedFilingManifest(
@@ -90,7 +99,7 @@ def parse_transcript(path: Path) -> NormalizedFiling:
         sections=sections,
         manifest=manifest,
         filing_type="transcript",
-        fiscal_period=str(data["fiscal_period"]),
+        fiscal_period=period,
     )
 
 
@@ -116,6 +125,7 @@ def normalize_transcripts_all(cfg: Settings, transcripts_root: Path | None = Non
         tdir = transcripts_root / entry.ticker
         if not tdir.is_dir():
             continue
+        seen_stems: set[str] = set()
         for path in sorted(tdir.glob("*.json")):
             try:
                 nf = parse_transcript(path)
@@ -129,7 +139,31 @@ def normalize_transcripts_all(cfg: Settings, transcripts_root: Path | None = Non
                     error=str(exc),
                 )
                 continue
+            if nf.ticker != entry.ticker:
+                # The JSON's ticker must agree with its directory, or its raw_path
+                # (built from the JSON ticker) would point at a nonexistent file.
+                n_failed += 1
+                log.error(
+                    "transcript_ticker_mismatch",
+                    dir_ticker=entry.ticker,
+                    file_ticker=nf.ticker,
+                    path=str(path),
+                )
+                continue
             stem = f"CALL-{nf.fiscal_period}FY{nf.fiscal_year}"
+            if stem in seen_stems:
+                # Two files map to the same (period, year) output — a duplicate.
+                # Skip the second loudly rather than silently clobbering the first.
+                n_failed += 1
+                log.error(
+                    "transcript_stem_collision",
+                    ticker=entry.ticker,
+                    stem=stem,
+                    path=str(path),
+                    note="another transcript already produced this output; second skipped",
+                )
+                continue
+            seen_stems.add(stem)
             out_path = out_root / entry.ticker / f"{stem}.json"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             # sort_keys=True is the byte-identity guarantor (mirrors normalize_all).

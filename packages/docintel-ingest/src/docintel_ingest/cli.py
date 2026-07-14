@@ -171,13 +171,17 @@ def _cmd_all(cfg: Settings) -> int:
     if rc != 0:
         log.error("all_step_failed", step="normalize", rc=rc)
         return rc
-    # Transcripts (Story 1.2): optional firm-supplied source, normalized before
+    # Transcripts (Story 1.2): OPTIONAL firm-supplied source, normalized before
     # chunk so chunk_all picks up the CALL-*.json alongside the filings. A no-op
-    # when no transcripts/ dir is present.
-    rc = normalize_transcripts_all(cfg)
-    if rc != 0:
-        log.error("all_step_failed", step="transcripts", rc=rc)
-        return rc
+    # when no transcripts/ dir is present. Unlike fetch/normalize, a non-zero rc
+    # (one bad transcript, already logged + skipped per-file) must NOT abort the
+    # corpus build — warn and continue so filings + good transcripts still land.
+    if normalize_transcripts_all(cfg) != 0:
+        log.warning(
+            "all_step_partial",
+            step="transcripts",
+            note="one or more transcripts failed; continuing with filings + good transcripts",
+        )
     rc = chunk_all(cfg)
     if rc != 0:
         # chunk_all is all-or-nothing: a non-zero rc means it wrote NOTHING
