@@ -241,7 +241,8 @@ def _derive_item_title(section_text: str, item_code: str) -> str:
     line (``ITEM 1A. Risk Factors``) followed by the body. We attempt a
     one-line match against the same heading regex the normalizer used;
     if that fails (e.g. heading text was lost to whitespace collapse),
-    fall back to the canonical 10-K item-title table.
+    fall back to the canonical item-title table (10-K items plus the merged
+    8-K event titles).
     """
     # Try the first non-empty line as a heading. The code group accepts an
     # OPTIONAL dotted 8-K suffix (``2.02``) in addition to the 10-K/10-Q

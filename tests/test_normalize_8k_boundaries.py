@@ -8,7 +8,7 @@ The 10-K/10-Q paths are unaffected (separate regex + finder).
 
 from __future__ import annotations
 
-from docintel_ingest.normalize import find_item_boundaries_8k
+from docintel_ingest.normalize import _fiscal_year_from_accession, find_item_boundaries_8k
 
 # Synthetic 8-K: a cover/header block BEFORE the first Item, then three dotted
 # event items. No PART structure (8-K is a flat item list).
@@ -60,3 +60,16 @@ def test_no_part_prefix_on_8k_codes() -> None:
 
 def test_empty_text_yields_no_boundaries() -> None:
     assert find_item_boundaries_8k("") == []
+
+
+def test_fiscal_year_from_accession_century_pivot() -> None:
+    assert _fiscal_year_from_accession("0000320193-24-000075") == 2024
+    assert _fiscal_year_from_accession("0000320193-00-000001") == 2000
+    assert _fiscal_year_from_accession("0000320193-98-000001") == 1998  # >=70 -> 19xx
+
+
+def test_fiscal_year_from_accession_malformed_returns_none() -> None:
+    # None (not a crash) so normalize_all skips the one bad file, not the whole run.
+    assert _fiscal_year_from_accession("garbage") is None
+    assert _fiscal_year_from_accession("0000320193-XX-000001") is None
+    assert _fiscal_year_from_accession("0000320193") is None

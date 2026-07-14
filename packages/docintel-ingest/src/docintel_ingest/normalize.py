@@ -365,6 +365,21 @@ def find_item_boundaries_8k(text: str) -> list[tuple[str, int, int]]:
     return boundaries
 
 
+def _fiscal_year_from_accession(accession: str) -> int | None:
+    """Derive the filing year from a SEC accession's ``{cik}-{yy}-{seq}`` middle segment.
+
+    EDGAR electronic filings start ~1993, so a 2-digit year ``>= 70`` maps to
+    ``19xx`` and otherwise to ``20xx``. Returns ``None`` when the accession is not
+    the expected dash-delimited shape with a numeric year — the caller logs and
+    skips that one file rather than crashing the whole normalize run.
+    """
+    parts = accession.split("-")
+    if len(parts) < 3 or not parts[1].isdigit():
+        return None
+    yy = int(parts[1])
+    return (1900 if yy >= 70 else 2000) + yy
+
+
 def _validate_ordering(found_codes: list[str], canonical: list[str] | None = None) -> bool:
     """Verify ``found_codes`` is a SUBSEQUENCE of the canonical Item order.
 
@@ -729,6 +744,16 @@ def normalize_html(
     for code, start, end in boundaries:
         sections[code] = text[start:end].strip()
 
+    # 8-K forces items_missing=[] / ordering_valid=True below (event-driven), so
+    # a total heading-detection failure would otherwise be silent. Surface it.
+    if form == "8-K" and not sections:
+        log.warning(
+            "filing_no_sections_detected",
+            ticker=ticker,
+            accession=accession,
+            note="8-K produced zero sections — no heading matched ITEM_RE_8K",
+        )
+
     # Re-order sections by canonical Item sequence so the on-disk JSON is
     # human-scannable. Items detected outside the canonical list (extremely
     # rare) are appended in document order.
@@ -939,7 +964,17 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
                 # {cik}-{yy}-{seq}).
                 for raw_path in sorted((raw_root / entry.ticker).glob("8K-*.html")):
                     accession = raw_path.stem[len("8K-") :]
-                    fy = 2000 + int(accession.split("-")[1])
+                    fy = _fiscal_year_from_accession(accession)
+                    if fy is None:
+                        n_failed += 1
+                        log.error(
+                            "filing_normalize_failed",
+                            ticker=entry.ticker,
+                            form="8-K",
+                            raw_path=str(raw_path),
+                            reason="unparseable_accession",
+                        )
+                        continue
                     _normalize_one(
                         entry.ticker, raw_path, "8-K", "FY", fy, raw_path.stem, accession=accession
                     )

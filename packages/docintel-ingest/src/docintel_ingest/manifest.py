@@ -312,7 +312,18 @@ def write_manifest(cfg: Settings, *, target_tokens: int = TARGET_TOKENS) -> Path
                             reason="one or more artifacts missing on disk",
                         )
                         continue
-                    fy = json.loads(normalized_fp.read_text(encoding="utf-8"))["fiscal_year"]
+                    try:
+                        fy = json.loads(normalized_fp.read_text(encoding="utf-8"))["fiscal_year"]
+                    except (json.JSONDecodeError, KeyError, OSError) as exc:
+                        n_skipped += 1
+                        log.warning(
+                            "manifest_filing_skipped",
+                            ticker=entry.ticker,
+                            form=form,
+                            stem=stem,
+                            reason=f"unreadable normalized JSON: {type(exc).__name__}",
+                        )
+                        continue
                     filings.append(_filing_entry(cfg, entry.ticker, fy, stem))
                 continue
             for year in entry.fiscal_years:

@@ -113,3 +113,18 @@ def test_8k_normalize_and_manifest_are_form_aware(tmp_path: Path) -> None:
     entry = k_entries[0]
     assert entry["accession"] == _FIXTURE_8K_ACC
     assert entry["chunks_path"].endswith(f"AAPL/8K-{_FIXTURE_8K_ACC}.jsonl")
+
+
+def test_8k_malformed_filename_is_skipped_not_fatal(tmp_path: Path) -> None:
+    """A malformed 8-K stem must skip that one file, not crash the whole run (review P1)."""
+    cfg = _seed_8k_corpus(tmp_path)
+    corpus = tmp_path / "corpus"
+    # An accession that has no numeric year segment — an unguarded int() parse
+    # would have raised and aborted normalization of every ticker/form.
+    (corpus / "raw" / "AAPL" / "8K-garbage.html").write_text("<html></html>", encoding="utf-8")
+
+    rc = normalize_all(cfg)
+    assert rc == 1  # the bad file is counted as a failure
+    # ...but the good 8-K still normalized — the run did not crash.
+    assert (corpus / "normalized" / "AAPL" / f"8K-{_FIXTURE_8K_ACC}.json").is_file()
+    assert not (corpus / "normalized" / "AAPL" / "8K-garbage.json").exists()
