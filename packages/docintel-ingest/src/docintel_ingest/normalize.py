@@ -299,6 +299,72 @@ def find_item_boundaries_10q(text: str) -> list[tuple[str, int, int]]:
     return boundaries
 
 
+# 8-K heading regex — dotted event codes (``Item 2.02``, ``Item 5.02``). The
+# 10-K ``ITEM_RE`` captures ``\d{1,2}[A-C]?`` and does NOT match a dotted code,
+# so 8-K needs its own pattern. Kept SEPARATE (not a loosened shared regex) so
+# 10-K/10-Q detection is unaffected.
+ITEM_RE_8K = re.compile(
+    r"^[ \t]*ITEM[ \t]+(\d{1,2}\.\d{2})(?:[.—\-:]|[ \t])[ \t]*(.+?)[ \t]*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+
+# Canonical 8-K event-item sequence (SEC Form 8-K General Instructions). Used
+# for human-scannable section ordering only — 8-K items are event-driven, so a
+# given filing reports just the one or two that occurred (items_missing is not
+# meaningful and ordering is never a fixed subsequence; see normalize_html).
+CANONICAL_ITEMS_8K: list[str] = [
+    "Item 1.01",
+    "Item 1.02",
+    "Item 1.03",
+    "Item 1.04",
+    "Item 1.05",
+    "Item 2.01",
+    "Item 2.02",
+    "Item 2.03",
+    "Item 2.04",
+    "Item 2.05",
+    "Item 2.06",
+    "Item 3.01",
+    "Item 3.02",
+    "Item 3.03",
+    "Item 4.01",
+    "Item 4.02",
+    "Item 5.01",
+    "Item 5.02",
+    "Item 5.03",
+    "Item 5.04",
+    "Item 5.05",
+    "Item 5.06",
+    "Item 5.07",
+    "Item 5.08",
+    "Item 6.01",
+    "Item 6.02",
+    "Item 6.03",
+    "Item 6.04",
+    "Item 6.05",
+    "Item 7.01",
+    "Item 8.01",
+    "Item 9.01",
+]
+
+
+def find_item_boundaries_8k(text: str) -> list[tuple[str, int, int]]:
+    """Slice 8-K text into ``(item_code, char_start, char_end)`` tuples.
+
+    8-K is a FLAT event-item list (no PART structure), with dotted item codes
+    (``Item 2.02``). ``char_end`` is the start of the next Item heading (or
+    ``len(text)`` for the last) — mirrors :func:`find_item_boundaries` but with
+    the dotted :data:`ITEM_RE_8K`. Empty list if no 8-K Item heading is found.
+    """
+    matches = [(m.start(), f"Item {m.group(1)}") for m in ITEM_RE_8K.finditer(text)]
+    boundaries: list[tuple[str, int, int]] = []
+    for i, (start, code) in enumerate(matches):
+        end = matches[i + 1][0] if i + 1 < len(matches) else len(text)
+        boundaries.append((code, start, end))
+    return boundaries
+
+
 def _validate_ordering(found_codes: list[str], canonical: list[str] | None = None) -> bool:
     """Verify ``found_codes`` is a SUBSEQUENCE of the canonical Item order.
 
@@ -649,6 +715,8 @@ def normalize_html(
     # the 10-K path byte-identical.
     if form == "10-Q":
         boundaries = find_item_boundaries_10q(text)
+    elif form == "8-K":
+        boundaries = find_item_boundaries_8k(text)
     else:
         boundaries = find_item_boundaries(text)
 
@@ -664,17 +732,21 @@ def normalize_html(
     # Re-order sections by canonical Item sequence so the on-disk JSON is
     # human-scannable. Items detected outside the canonical list (extremely
     # rare) are appended in document order.
-    canonical_codes = (
-        CANONICAL_ITEMS_10Q if form == "10-Q" else [f"Item {c}" for c in CANONICAL_ITEMS]
-    )
+    if form == "10-Q":
+        canonical_codes = CANONICAL_ITEMS_10Q
+    elif form == "8-K":
+        canonical_codes = CANONICAL_ITEMS_8K
+    else:
+        canonical_codes = [f"Item {c}" for c in CANONICAL_ITEMS]
     items_found: list[str] = [c for c in canonical_codes if c in sections]
     extras = [c for c in sections if c not in canonical_codes]
     items_found.extend(extras)
 
     # Items in the canonical sequence that are NOT detected. Pitfall 5
     # legitimizes pre-2024 missing Item 1C; the validator records and
-    # surfaces, but does not flag as fatal.
-    items_missing = [c for c in canonical_codes if c not in sections]
+    # surfaces, but does not flag as fatal. 8-K is event-driven — a filing
+    # reports only the events that occurred, so "missing" is not meaningful.
+    items_missing = [] if form == "8-K" else [c for c in canonical_codes if c not in sections]
 
     # Order validation runs over the document-order codes (not the
     # re-sorted items_found) so a real ordering violation surfaces. We
@@ -686,8 +758,12 @@ def normalize_html(
     for idx, code in enumerate(ordering_codes_in_doc_order):
         seen[code] = idx
     deduped_ordering = sorted(seen.keys(), key=lambda c: seen[c])
-    ordering_valid = _validate_ordering(deduped_ordering, canonical_codes)
-    if not ordering_valid:
+    # 8-K items are event-ordered, not a fixed subsequence — ordering is always
+    # "valid" (there is nothing to violate). 10-K/10-Q use the subsequence check.
+    ordering_valid = (
+        True if form == "8-K" else _validate_ordering(deduped_ordering, canonical_codes)
+    )
+    if form != "8-K" and not ordering_valid:
         log.warning(
             "filing_ordering_invalid",
             ticker=ticker,
@@ -716,8 +792,12 @@ def normalize_html(
     # committed JSON files are portable across machines (no absolute paths).
     # 10-K keeps the bare ``FY{year}`` segment (byte-identical); 10-Q prefixes
     # the quarter (``Q3FY{year}``).
-    period = f"FY{fiscal_year}" if fiscal_period == "FY" else f"{fiscal_period}FY{fiscal_year}"
-    raw_path = f"data/corpus/raw/{ticker}/{period}.html"
+    if form == "8-K":
+        # 8-K is accession-keyed (many per year); no fiscal period in the path.
+        raw_path = f"data/corpus/raw/{ticker}/8K-{accession}.html"
+    else:
+        period = f"FY{fiscal_year}" if fiscal_period == "FY" else f"{fiscal_period}FY{fiscal_year}"
+        raw_path = f"data/corpus/raw/{ticker}/{period}.html"
 
     return NormalizedFiling(
         ticker=ticker,
@@ -785,7 +865,13 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
     n_failed = 0
 
     def _normalize_one(
-        ticker: str, raw_path: Path, form: str, fiscal_period: str, year: int, stem: str
+        ticker: str,
+        raw_path: Path,
+        form: str,
+        fiscal_period: str,
+        year: int,
+        stem: str,
+        accession: str | None = None,
     ) -> None:
         nonlocal n_succeeded, n_skipped_raw_missing, n_failed
         if not raw_path.exists():
@@ -800,7 +886,10 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
             )
             return
         try:
-            accession = _resolve_accession(cfg, ticker, year, form, fiscal_period)
+            # 8-K passes the accession explicitly (parsed from the stem);
+            # 10-K/10-Q resolve it via the sidecar/cache.
+            if accession is None:
+                accession = _resolve_accession(cfg, ticker, year, form, fiscal_period)
             html = raw_path.read_text(encoding="utf-8")
             nf = normalize_html(
                 html, ticker, year, accession, form=form, fiscal_period=fiscal_period
@@ -821,9 +910,7 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
         out_path = out_root / ticker / f"{stem}.json"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         # ``sort_keys=True`` is the byte-identity guarantor (mirrors MANIFEST.json).
-        out_path.write_text(
-            json.dumps(nf.model_dump(), indent=2, sort_keys=True), encoding="utf-8"
-        )
+        out_path.write_text(json.dumps(nf.model_dump(), indent=2, sort_keys=True), encoding="utf-8")
         n_succeeded += 1
         log.info(
             "filing_normalized",
@@ -837,11 +924,25 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
 
     for entry in companies:
         for form in entry.forms:
-            if form not in ("10-K", "10-Q"):
-                # 8-K is schema-valid (shared Story 1.1 foundation) but its
-                # segmentation lands in Story 1.6 — skip rather than glob for
-                # non-existent Q-keyed files and silently no-op.
-                log.warning("filing_normalize_skip", ticker=entry.ticker, form=form, reason="form_not_supported")
+            if form not in ("10-K", "10-Q", "8-K"):
+                log.warning(
+                    "filing_normalize_skip",
+                    ticker=entry.ticker,
+                    form=form,
+                    reason="form_not_supported",
+                )
+                continue
+            if form == "8-K":
+                # 8-K raw files are accession-keyed (8K-{accession}.html), not
+                # year-keyed. The accession parses straight from the stem; the
+                # fiscal year is the filing year (accession middle segment of
+                # {cik}-{yy}-{seq}).
+                for raw_path in sorted((raw_root / entry.ticker).glob("8K-*.html")):
+                    accession = raw_path.stem[len("8K-") :]
+                    fy = 2000 + int(accession.split("-")[1])
+                    _normalize_one(
+                        entry.ticker, raw_path, "8-K", "FY", fy, raw_path.stem, accession=accession
+                    )
                 continue
             for year in entry.fiscal_years:
                 if form == "10-K":

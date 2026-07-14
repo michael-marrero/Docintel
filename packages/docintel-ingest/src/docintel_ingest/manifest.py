@@ -289,6 +289,32 @@ def write_manifest(cfg: Settings, *, target_tokens: int = TARGET_TOKENS) -> Path
     n_skipped = 0
     for entry in companies:
         for form in entry.forms:
+            if form == "8-K":
+                # 8-K is accession-keyed (8K-{accession}.json), NOT year-keyed —
+                # discover per ticker (globbing per year would double-count). The
+                # fiscal year is read from the normalized JSON. 10-K-only tickers
+                # never reach this branch, so the committed manifest is byte-stable.
+                ndir = corpus / "normalized" / entry.ticker
+                for stem in sorted(p.stem for p in ndir.glob("8K-*.json")):
+                    raw_fp = corpus / "raw" / entry.ticker / f"{stem}.html"
+                    normalized_fp = ndir / f"{stem}.json"
+                    chunks_fp = corpus / "chunks" / entry.ticker / f"{stem}.jsonl"
+                    if not (raw_fp.is_file() and normalized_fp.is_file() and chunks_fp.is_file()):
+                        n_skipped += 1
+                        log.warning(
+                            "manifest_filing_skipped",
+                            ticker=entry.ticker,
+                            form=form,
+                            stem=stem,
+                            raw_present=raw_fp.is_file(),
+                            normalized_present=normalized_fp.is_file(),
+                            chunks_present=chunks_fp.is_file(),
+                            reason="one or more artifacts missing on disk",
+                        )
+                        continue
+                    fy = json.loads(normalized_fp.read_text(encoding="utf-8"))["fiscal_year"]
+                    filings.append(_filing_entry(cfg, entry.ticker, fy, stem))
+                continue
             for year in entry.fiscal_years:
                 if form == "10-K":
                     stems = [f"FY{year}"]

@@ -129,6 +129,45 @@ _CANONICAL_ITEM_TITLES: dict[str, str] = {
     "Item 16": "Form 10-K Summary",
 }
 
+# 8-K event-item titles (SEC Form 8-K General Instructions). Distinct dotted
+# keys, merged into the lookup so 8-K chunks/citations resolve a human title.
+# Story 1.6. Keep in sync with docintel_core.types._ITEM_CODE_TITLE_MAP_8K.
+_CANONICAL_ITEM_TITLES_8K: dict[str, str] = {
+    "Item 1.01": "Entry into a Material Definitive Agreement",
+    "Item 1.02": "Termination of a Material Definitive Agreement",
+    "Item 1.03": "Bankruptcy or Receivership",
+    "Item 1.04": "Mine Safety - Reporting of Shutdowns and Patterns of Violations",
+    "Item 1.05": "Material Cybersecurity Incidents",
+    "Item 2.01": "Completion of Acquisition or Disposition of Assets",
+    "Item 2.02": "Results of Operations and Financial Condition",
+    "Item 2.03": "Creation of a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement",
+    "Item 2.04": "Triggering Events That Accelerate or Increase a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement",
+    "Item 2.05": "Costs Associated with Exit or Disposal Activities",
+    "Item 2.06": "Material Impairments",
+    "Item 3.01": "Notice of Delisting or Failure to Satisfy a Continued Listing Rule or Standard; Transfer of Listing",
+    "Item 3.02": "Unregistered Sales of Equity Securities",
+    "Item 3.03": "Material Modification to Rights of Security Holders",
+    "Item 4.01": "Changes in Registrant's Certifying Accountant",
+    "Item 4.02": "Non-Reliance on Previously Issued Financial Statements or a Related Audit Report or Completed Interim Review",
+    "Item 5.01": "Changes in Control of Registrant",
+    "Item 5.02": "Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers",
+    "Item 5.03": "Amendments to Articles of Incorporation or Bylaws; Change in Fiscal Year",
+    "Item 5.04": "Temporary Suspension of Trading Under Registrant's Employee Benefit Plans",
+    "Item 5.05": "Amendments to the Registrant's Code of Ethics, or Waiver of a Provision of the Code of Ethics",
+    "Item 5.06": "Change in Shell Company Status",
+    "Item 5.07": "Submission of Matters to a Vote of Security Holders",
+    "Item 5.08": "Shareholder Director Nominations",
+    "Item 6.01": "ABS Informational and Computational Material",
+    "Item 6.02": "Change of Servicer or Trustee",
+    "Item 6.03": "Change in Credit Enhancement or Other External Support",
+    "Item 6.04": "Failure to Make a Required Distribution",
+    "Item 6.05": "Securities Act Updating Disclosure",
+    "Item 7.01": "Regulation FD Disclosure",
+    "Item 8.01": "Other Events",
+    "Item 9.01": "Financial Statements and Exhibits",
+}
+_CANONICAL_ITEM_TITLES.update(_CANONICAL_ITEM_TITLES_8K)
+
 
 def _sha256_short(text: str) -> str:
     """16-char truncated sha256 hex of UTF-8 bytes (CD-02).
@@ -152,7 +191,10 @@ def _item_code_to_filename(item_code: str) -> str:
     (byte-stable).
     """
     return (
-        item_code.replace("Part II ", "PtII ").replace("Part I ", "PtI ").replace(" ", "-")
+        item_code.replace("Part II ", "PtII ")
+        .replace("Part I ", "PtI ")
+        .replace(".", "-")  # 8-K dotted codes: "Item 2.02" -> "Item 2-02" (delimiter-clean)
+        .replace(" ", "-")
     )
 
 
@@ -171,17 +213,25 @@ def _chunk_id(
     item_code: str,
     ordinal: int,
     fiscal_period: str = "FY",
+    filing_type: str = "10-K",
+    accession: str = "",
 ) -> str:
-    """Format ``{ticker}-{period}-{item_code_hyphenated}-{ordinal:03d}`` per D-14.
+    """Format ``{ticker}-{segment}-{item_code_hyphenated}-{ordinal:03d}`` per D-14.
 
     Examples: ``AAPL-FY2024-Item-1A-007`` (10-K), ``AAPL-Q3FY2024-PtI-Item-2-003``
-    (10-Q). The format is byte-stable as long as Item detection is stable
-    (D-12 + D-13 keep the same paragraph-greedy split behaviour for the same
-    input section text). ING-04 idempotency depends on this stability. The
-    ``fiscal_period`` default keeps every existing 10-K call byte-identical.
+    (10-Q), ``AAPL-8K-000032019324000123-Item-2-02-000`` (8-K). The format is
+    byte-stable as long as Item detection is stable (D-12 + D-13 keep the same
+    paragraph-greedy split behaviour for the same input section text). ING-04
+    idempotency depends on this stability. The ``filing_type``/``fiscal_period``
+    defaults keep every existing 10-K/10-Q call byte-identical.
     """
-    period = _period_token(fiscal_year, fiscal_period)
-    return f"{ticker}-{period}-{_item_code_to_filename(item_code)}-{ordinal:03d}"
+    if filing_type == "8-K":
+        # 8-K is accession-keyed (many filings/year, no fiscal period). Dashes
+        # are stripped from the accession so the hyphen stays the id delimiter.
+        segment = f"8K-{accession.replace('-', '')}"
+    else:
+        segment = _period_token(fiscal_year, fiscal_period)
+    return f"{ticker}-{segment}-{_item_code_to_filename(item_code)}-{ordinal:03d}"
 
 
 def _derive_item_title(section_text: str, item_code: str) -> str:
@@ -193,11 +243,13 @@ def _derive_item_title(section_text: str, item_code: str) -> str:
     if that fails (e.g. heading text was lost to whitespace collapse),
     fall back to the canonical 10-K item-title table.
     """
-    # Try the first non-empty line as a heading. The normalize.py regex
-    # is ``^[ \t]*ITEM[ \t]+(\d{1,2}[A-C]?)(?:[.—\-:]|[ \t])[ \t]*(.+?)[ \t]*$``;
-    # we re-run a relaxed variant against the first line only.
+    # Try the first non-empty line as a heading. The code group accepts an
+    # OPTIONAL dotted 8-K suffix (``2.02``) in addition to the 10-K/10-Q
+    # ``\d{1,2}[A-C]?`` form — otherwise a 8-K heading "ITEM 2.02 Results…"
+    # captures code "2" and leaks "02" into the title. The dotted group is
+    # optional, so 10-K/10-Q titles are byte-identical.
     heading_re = re.compile(
-        r"^[ \t]*ITEM[ \t]+(\d{1,2}[A-C]?)(?:[.—\-:]|[ \t])[ \t]*(.+?)[ \t]*$",
+        r"^[ \t]*ITEM[ \t]+(\d{1,2}(?:\.\d{2})?[A-C]?)(?:[.—\-:]|[ \t])[ \t]*(.+?)[ \t]*$",
         flags=re.IGNORECASE,
     )
     for raw_line in section_text.splitlines():
@@ -318,7 +370,15 @@ def _emit_chunk(
         slipping through to the embedder).
     """
     n_tokens = count_tokens(text)
-    chunk_id = _chunk_id(ticker, fiscal_year, item_code, ordinal, fiscal_period=fiscal_period)
+    chunk_id = _chunk_id(
+        ticker,
+        fiscal_year,
+        item_code,
+        ordinal,
+        fiscal_period=fiscal_period,
+        filing_type=filing_type,
+        accession=accession,
+    )
     if n_tokens > HARD_CAP_TOKENS:
         # The literal message contains "exceeds" — the canary test
         # matches ``pytest.raises(ValueError, match=r"exceeds")``.

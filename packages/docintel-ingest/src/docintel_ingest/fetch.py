@@ -506,7 +506,7 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
     # time; reusing the instance avoids one API call per ticker.
     dl = Downloader(name, email, download_folder=cache_root)
 
-    # Log stat only. 10-K is 1 filing/year; 10-Q is up to ~3 (Q1–Q3), so this
+    # Log stat only. 10-K is 1 filing/year; 10-Q is up to ~3 (Q1-Q3), so this
     # is a lower bound for multi-form tickers — not load-bearing.
     total_filings = sum(len(c.fiscal_years) * len(c.forms) for c in companies)
     log.info(
@@ -540,22 +540,19 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
 
     for entry in companies:
         for form in entry.forms:
-            if form not in ("10-K", "10-Q"):
-                # 8-K is schema-valid (shared Story 1.1 foundation) but its
-                # fetch/segmentation lands in Story 1.6. Reject clearly rather
-                # than routing it into the 10-Q branch (which mislabels it).
+            if form not in ("10-K", "10-Q", "8-K"):
                 n_failed += 1
                 log.error(
                     "form_not_supported",
                     ticker=entry.ticker,
                     form=form,
-                    reason="8-K ingestion arrives in Story 1.6",
+                    reason="only 10-K, 10-Q, 8-K are ingestible",
                 )
                 continue
             for year in entry.fiscal_years:
                 # 10-K is one filing/year at FY{year}.html — short-circuit the
                 # network on the idempotent re-run. 10-Q is multiple filings/year
-                # (Q1–Q3) whose quarters aren't known until the filing is read,
+                # (Q1-Q3) whose quarters aren't known until the filing is read,
                 # so its per-quarter idempotency is handled after download.
                 # ponytail: 10-Q re-runs re-list via the SDK cache (cheap, no
                 # re-download); per-quarter target checks keep writes idempotent.
@@ -591,19 +588,20 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
                     continue
 
                 if n_downloaded == 0:
-                    # 10-Q has no pre-network idempotent short-circuit (quarters
-                    # aren't known until the filing is read), so a re-run reaches
-                    # here with nothing new to download. If the ticker already has
-                    # Q-keyed output on disk, that's an idempotent skip — not a
-                    # genuine "filing not found".
-                    if form == "10-Q" and any((raw_root / entry.ticker).glob("Q?FY*.html")):
+                    # 10-Q / 8-K have no pre-network idempotent short-circuit
+                    # (their per-filing keys aren't known until the filing is
+                    # read), so a re-run reaches here with nothing new to
+                    # download. If the ticker already has output on disk for this
+                    # form, that's an idempotent skip — not "filing not found".
+                    _existing_glob = {"10-Q": "Q?FY*.html", "8-K": "8K-*.html"}.get(form)
+                    if _existing_glob and any((raw_root / entry.ticker).glob(_existing_glob)):
                         n_skipped_idempotent += 1
                         log.info(
                             "filing_skipped_idempotent",
                             ticker=entry.ticker,
                             fiscal_year=year,
                             form=form,
-                            reason="10-Q already fetched (cache re-list)",
+                            reason=f"{form} already fetched (cache re-list)",
                         )
                         continue
                     n_not_found += 1
@@ -636,8 +634,9 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
                     n_succeeded += 1
                     continue
 
-                # 10-Q: one primary doc per fresh accession; key by the quarter
-                # read from the raw iXBRL cover page.
+                # Multi-filing forms (10-Q, 8-K): one primary doc per fresh
+                # accession. 10-Q keys by the quarter from the iXBRL cover page;
+                # 8-K keys by the accession itself (many per year, no quarter).
                 for acc_dir in sorted(fresh, key=lambda p: p.name):
                     primary = _locate_primary_doc(cache_root, entry.ticker, {acc_dir})
                     if primary is None:
@@ -650,6 +649,17 @@ def fetch_all(cfg: Settings, snapshot_path: Path | None = None) -> int:
                             fresh_accessions=[acc_dir.name],
                         )
                         continue
+
+                    if form == "8-K":
+                        # Accession-keyed: one file per accession, no iXBRL read.
+                        k_target = raw_root / entry.ticker / f"8K-{acc_dir.name}.html"
+                        if _idempotent_skip(k_target):
+                            n_skipped_idempotent += 1
+                            continue
+                        _write_trimmed(primary, k_target, fiscal_year=year)
+                        n_succeeded += 1
+                        continue
+
                     raw_html = primary.read_text(encoding="utf-8", errors="replace")
                     quarter = _extract_fiscal_period(raw_html)
                     if quarter is None or quarter == "FY":
