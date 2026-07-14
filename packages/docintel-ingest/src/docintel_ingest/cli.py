@@ -60,6 +60,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("fetch", help="download 10-Ks from SEC EDGAR")
     sub.add_parser("normalize", help="parse raw HTML to per-Item JSON")
+    sub.add_parser(
+        "transcripts", help="normalize firm-supplied earnings-call transcripts (Story 1.2)"
+    )
     # chunk: optional overrides for the normalized-root and chunks-out-root
     # so tests/test_chunk_idempotency.py::test_chunks_byte_identical can
     # re-chunk into a tmpdir for byte-identity diffing against committed
@@ -91,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override greedy split point in tokens (default 450; Phase 11 chunk-size sweep {300,450,600}, ABL-01)",
     )
-    sub.add_parser("all", help="fetch + normalize + chunk + manifest")
+    sub.add_parser("all", help="fetch + normalize + transcripts + chunk + manifest")
     sub.add_parser("verify", help="re-chunk normalized; assert byte-identity")
 
     args = parser.parse_args(argv)
@@ -108,6 +111,10 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_ingest.normalize import normalize_all
 
         return int(normalize_all(cfg))
+    if args.cmd == "transcripts":
+        from docintel_ingest.transcript import normalize_transcripts_all
+
+        return int(normalize_transcripts_all(cfg))
     if args.cmd == "chunk":
         from pathlib import Path
 
@@ -154,6 +161,7 @@ def _cmd_all(cfg: Settings) -> int:
     from docintel_ingest.fetch import fetch_all
     from docintel_ingest.manifest import write_manifest
     from docintel_ingest.normalize import normalize_all
+    from docintel_ingest.transcript import normalize_transcripts_all
 
     rc = fetch_all(cfg)
     if rc != 0:
@@ -162,6 +170,13 @@ def _cmd_all(cfg: Settings) -> int:
     rc = normalize_all(cfg)
     if rc != 0:
         log.error("all_step_failed", step="normalize", rc=rc)
+        return rc
+    # Transcripts (Story 1.2): optional firm-supplied source, normalized before
+    # chunk so chunk_all picks up the CALL-*.json alongside the filings. A no-op
+    # when no transcripts/ dir is present.
+    rc = normalize_transcripts_all(cfg)
+    if rc != 0:
+        log.error("all_step_failed", step="transcripts", rc=rc)
         return rc
     rc = chunk_all(cfg)
     if rc != 0:

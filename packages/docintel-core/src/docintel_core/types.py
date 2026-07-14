@@ -114,8 +114,8 @@ class NormalizedFiling(BaseModel):
     manifest: NormalizedFilingManifest
     # Story 1.1 / FR-A6: form-type + fiscal-period provenance (see Chunk).
     # Appended with 10-K defaults so the re-baseline diff is a clean +2 keys.
-    filing_type: Literal["10-K", "10-Q", "8-K"] = "10-K"
-    fiscal_period: Literal["FY", "Q1", "Q2", "Q3"] = "FY"
+    filing_type: Literal["10-K", "10-Q", "8-K", "transcript"] = "10-K"
+    fiscal_period: Literal["FY", "Q1", "Q2", "Q3", "Q4"] = "FY"
 
 
 class Chunk(BaseModel):
@@ -165,8 +165,8 @@ class Chunk(BaseModel):
     # byte-identical after re-baseline (AC-4). 8-K has no fiscal quarter — it
     # carries ``fiscal_period="FY"`` and is disambiguated by accession/date in
     # the chunk_id and path, not by period.
-    filing_type: Literal["10-K", "10-Q", "8-K"] = "10-K"
-    fiscal_period: Literal["FY", "Q1", "Q2", "Q3"] = "FY"
+    filing_type: Literal["10-K", "10-Q", "8-K", "transcript"] = "10-K"
+    fiscal_period: Literal["FY", "Q1", "Q2", "Q3", "Q4"] = "FY"
 
 
 class RetrievedChunk(BaseModel):

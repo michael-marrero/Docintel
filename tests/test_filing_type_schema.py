@@ -79,5 +79,7 @@ def test_chunk_rejects_unknown_form_type() -> None:
 
 
 def test_normalized_rejects_unknown_period() -> None:
+    # Q4 became valid in Story 1.2 (earnings calls happen for all four quarters);
+    # assert rejection of a genuinely-unknown period instead.
     with pytest.raises(ValidationError):
-        _normalized(fiscal_period="Q4")
+        _normalized(fiscal_period="Q5")

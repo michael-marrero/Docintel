@@ -153,11 +153,9 @@ def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int, stem: str) -> di
         ``json.dumps(..., sort_keys=True)`` re-orders keys deterministically
         at the writer.
     """
-    raw_rel = f"data/corpus/raw/{ticker}/{stem}.html"
     normalized_rel = f"data/corpus/normalized/{ticker}/{stem}.json"
     chunks_rel = f"data/corpus/chunks/{ticker}/{stem}.jsonl"
 
-    raw_fp = Path(cfg.data_dir) / "corpus" / "raw" / ticker / f"{stem}.html"
     normalized_fp = Path(cfg.data_dir) / "corpus" / "normalized" / ticker / f"{stem}.json"
     chunks_fp = Path(cfg.data_dir) / "corpus" / "chunks" / ticker / f"{stem}.jsonl"
 
@@ -166,6 +164,17 @@ def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int, stem: str) -> di
     # provenance) read out of MANIFEST.json directly rather than re-parsing
     # every normalized JSON.
     normalized_obj = json.loads(normalized_fp.read_text(encoding="utf-8"))
+
+    # Raw location: SEC filings live under raw/{stem}.html; a firm-supplied
+    # transcript's raw IS the JSON under transcripts/ (its repo-relative path is
+    # carried on the normalized JSON). Filings keep the exact same value → the
+    # committed manifest stays byte-identical.
+    if normalized_obj.get("filing_type") == "transcript":
+        raw_rel = normalized_obj["raw_path"]
+        raw_fp = Path(cfg.data_dir) / Path(raw_rel).relative_to("data")
+    else:
+        raw_rel = f"data/corpus/raw/{ticker}/{stem}.html"
+        raw_fp = Path(cfg.data_dir) / "corpus" / "raw" / ticker / f"{stem}.html"
 
     # Chunk count = newline-separated JSONL lines. Empty filings
     # (AMZN/META/XOM x 3 FYs — Wave 3 styled-span outcome) have a
@@ -357,6 +366,38 @@ def write_manifest(cfg: Settings, *, target_tokens: int = TARGET_TOKENS) -> Path
                         )
                         continue
                     filings.append(_filing_entry(cfg, entry.ticker, year, stem))
+
+        # Transcripts (Story 1.2): firm-supplied, NOT in entry.forms — discover
+        # by the CALL- prefix per ticker (call-date-keyed, not year-keyed). Only
+        # fires when a ticker has committed transcript output; filing-only tickers
+        # never enter this branch, so the committed manifest stays byte-stable.
+        tdir_norm = corpus / "normalized" / entry.ticker
+        for stem in sorted(p.stem for p in tdir_norm.glob("CALL-*.json")):
+            normalized_fp = tdir_norm / f"{stem}.json"
+            chunks_fp = corpus / "chunks" / entry.ticker / f"{stem}.jsonl"
+            if not (normalized_fp.is_file() and chunks_fp.is_file()):
+                n_skipped += 1
+                log.warning(
+                    "manifest_filing_skipped",
+                    ticker=entry.ticker,
+                    stem=stem,
+                    normalized_present=normalized_fp.is_file(),
+                    chunks_present=chunks_fp.is_file(),
+                    reason="one or more transcript artifacts missing on disk",
+                )
+                continue
+            try:
+                fy = json.loads(normalized_fp.read_text(encoding="utf-8"))["fiscal_year"]
+            except (json.JSONDecodeError, KeyError, OSError) as exc:
+                n_skipped += 1
+                log.warning(
+                    "manifest_filing_skipped",
+                    ticker=entry.ticker,
+                    stem=stem,
+                    reason=f"unreadable transcript JSON: {type(exc).__name__}",
+                )
+                continue
+            filings.append(_filing_entry(cfg, entry.ticker, fy, stem))
 
     manifest: dict[str, Any] = {
         "version": MANIFEST_VERSION,

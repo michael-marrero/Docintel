@@ -229,12 +229,16 @@ def _chunk_id(
         # 8-K is accession-keyed (many filings/year, no fiscal period). Dashes
         # are stripped from the accession so the hyphen stays the id delimiter.
         segment = f"8K-{accession.replace('-', '')}"
+    elif filing_type == "transcript":
+        # Transcript (Story 1.2): CALL marker + fiscal period disambiguates a
+        # same-period 10-Q (AAPL-CALL-Q1FY2024-... vs AAPL-Q1FY2024-...).
+        segment = f"CALL-{_period_token(fiscal_year, fiscal_period)}"
     else:
         segment = _period_token(fiscal_year, fiscal_period)
     return f"{ticker}-{segment}-{_item_code_to_filename(item_code)}-{ordinal:03d}"
 
 
-def _derive_item_title(section_text: str, item_code: str) -> str:
+def _derive_item_title(section_text: str, item_code: str, filing_type: str = "10-K") -> str:
     """Extract the item heading title from section_text, or fall back to the canonical map.
 
     The normalizer's ``sections[item_code]`` value starts with the heading
@@ -243,7 +247,18 @@ def _derive_item_title(section_text: str, item_code: str) -> str:
     if that fails (e.g. heading text was lost to whitespace collapse),
     fall back to the canonical item-title table (10-K items plus the merged
     8-K event titles).
+
+    Transcripts (Story 1.2) have no ITEM heading — their section starts with a
+    speaker heading line (``Tim Cook (CEO)``), so the title is simply that first
+    non-empty line. The 10-K/10-Q/8-K path (default filing_type) is untouched.
     """
+    if filing_type == "transcript":
+        for raw_line in section_text.splitlines():
+            line = raw_line.strip()
+            if line:
+                return line
+        return item_code
+
     # Try the first non-empty line as a heading. The code group accepts an
     # OPTIONAL dotted 8-K suffix (``2.02``) in addition to the 10-K/10-Q
     # ``\d{1,2}[A-C]?`` form — otherwise a 8-K heading "ITEM 2.02 Results…"
@@ -764,7 +779,7 @@ def chunk_filing(normalized_path: Path, *, target_tokens: int = TARGET_TOKENS) -
             # items_found can list an item whose body text is empty
             # (defensive against future normalizer changes); skip.
             continue
-        item_title = _derive_item_title(section_text, item_code)
+        item_title = _derive_item_title(section_text, item_code, nf.filing_type)
         item_chunks = _chunk_section(
             item_code=item_code,
             item_title=item_title,
