@@ -263,8 +263,9 @@ body {
   padding: 6px 2px 0;
 }
 
-/* inline citation chip (FR-B2) — built from structured citation data, inert
- * here; click-to-pin drill-down is Story 2.3 */
+/* inline citation chip (FR-B2) — a native <button> built from structured
+ * citation data; click/Enter/Space pins its source in the drill-down panel
+ * (Story 2.3). Active = the currently-pinned source (teal, UX-DR6/DR8). */
 .chip {
   font-family: var(--font-mono);
   font-size: var(--type-chip-size);
@@ -279,6 +280,120 @@ body {
   background: var(--card-recessed);
   border: 1px solid var(--hairline);
   color: var(--ink-dim);
+  cursor: pointer;
+  line-height: inherit;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent-text-light); }
+.chip.active {
+  border-color: var(--accent);
+  color: var(--accent-text-light);
+  background: var(--accent-wash);
+}
+
+/* ---- workspace grid: brief column + sticky source panel (Story 2.3) ---- */
+.workspace { display: grid; grid-template-columns: 1fr; gap: var(--space-gutter); }
+.workspace.panel-open { grid-template-columns: 1fr var(--panel-width); }
+.workspace .view { min-width: 0; } /* let the brief column shrink, never overflow */
+
+/* ---- source drill-down panel (UX-DR6, UX-DR8) ---- */
+.panel {
+  align-self: start;
+  position: sticky;
+  top: 18px;
+  margin-top: calc(var(--space-unit) * 6);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.panel[hidden] { display: none; }
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.panel-head .lbl {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.panel-head .count {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.src { display: block; width: 100%; text-align: left; padding: 14px 16px; }
+.src + .src { border-top: 1px solid var(--hairline); }
+button.src {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--hairline);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.src:first-of-type, button.src:first-of-type { border-top: none; }
+button.src:hover .srctitle { color: var(--accent-text-light); }
+
+.src.expanded { position: relative; background: var(--accent-wash); }
+.src.expanded::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);   /* 2px teal rail (UX-DR8) */
+}
+
+.src .srchead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.src .doc, .src .relev, .src .chev {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-micro-tracking);
+}
+.src .doc { color: var(--ink-dim); text-transform: uppercase; }
+.src .relev { margin-left: auto; color: var(--ink-faint); white-space: nowrap; }
+.src .chev { margin-left: auto; color: var(--ink-faint); white-space: nowrap; }
+.src .srctitle {
+  font-family: var(--font-sans);
+  font-size: var(--type-heading-size);
+  font-weight: 520;
+  color: var(--prose);
+}
+.src .passage {
+  font-family: var(--font-sans);
+  font-size: var(--type-passage-size);
+  line-height: var(--type-passage-line);
+  color: var(--prose);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.src .passage mark {
+  background: var(--accent-mark);   /* supporting-span highlight (UX-DR8) */
+  color: inherit;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+}
+.src .snippet {
+  font-family: var(--font-sans);
+  font-size: var(--type-passage-size);
+  line-height: var(--type-passage-line);
+  color: var(--ink-dim);
+}
+
+/* Narrow screens: panel stacks under the brief, not a sticky side column. */
+@media (max-width: 860px) {
+  .workspace.panel-open { grid-template-columns: 1fr; }
+  .panel { position: static; }
 }
 
 /* ---- refusal stub (full banner in Story 2.6) ---- */

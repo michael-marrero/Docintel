@@ -11,6 +11,11 @@ import {
   esc,
   citationChipLabel,
   citedTextToHTML,
+  sourceDocLabel,
+  formatRerankScore,
+  dedupeSources,
+  panelCountLabel,
+  sourcePanelHTML,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -111,7 +116,11 @@ test("citedTextToHTML: inline chips from known ids, prose escaped", () => {
   const citations = [{ chunk_id: "AAPL-FY2024-Item-1A-018", fiscal_year: 2024, item_code: "Item 1A" }];
   const html = citedTextToHTML("Risk is <high> here [AAPL-FY2024-Item-1A-018].", citations);
   assert.match(html, /Risk is &lt;high&gt; here/); // prose escaped
-  assert.match(html, /<span class="chip" data-chunk-id="AAPL-FY2024-Item-1A-018">\[FY24 · 1A\]<\/span>/);
+  // Native <button> chip (Story 2.3) with an aria-label + data-chunk-id.
+  assert.match(
+    html,
+    /<button type="button" class="chip" data-chunk-id="AAPL-FY2024-Item-1A-018" aria-label="View source \[FY24 · 1A\]">\[FY24 · 1A\]<\/button>/,
+  );
 });
 
 test("citedTextToHTML: hallucinated chunk-id-shaped token dropped, no orphan space (AD-10)", () => {
@@ -128,4 +137,83 @@ test("citedTextToHTML: legitimate bracketed prose is preserved, not eaten", () =
 test("citedTextToHTML: no citations / empty text is safe", () => {
   assert.equal(citedTextToHTML("", []), "");
   assert.equal(citedTextToHTML(null, null), "");
+});
+
+// --- source drill-down panel helpers (Story 2.3) ---
+
+test("sourceDocLabel: company · FY · ITEM (uppercased), missing item collapses", () => {
+  assert.equal(
+    sourceDocLabel({ company: "Apple Inc.", fiscal_year: 2024, item_code: "Item 1A" }),
+    "Apple Inc. · FY2024 · ITEM 1A",
+  );
+  assert.equal(sourceDocLabel({ company: "Apple Inc.", fiscal_year: 2024 }), "Apple Inc. · FY2024");
+});
+
+test("formatRerankScore: 2dp when finite, empty string otherwise (no fake number)", () => {
+  assert.equal(formatRerankScore(0.9412), "rerank 0.94");
+  assert.equal(formatRerankScore(1), "rerank 1.00");
+  assert.equal(formatRerankScore(undefined), "");
+  assert.equal(formatRerankScore(NaN), "");
+});
+
+test("dedupeSources: unique by chunk_id, first-seen order, drops falsy/id-less", () => {
+  const out = dedupeSources([
+    { chunk_id: "A" },
+    { chunk_id: "B" },
+    { chunk_id: "A" }, // dup
+    null,
+    { fiscal_year: 2024 }, // no chunk_id
+  ]);
+  assert.deepEqual(out.map((c) => c.chunk_id), ["A", "B"]);
+});
+
+test("panelCountLabel: pinned shows N OF M · chip; unpinned shows N SOURCES", () => {
+  assert.equal(panelCountLabel(2, 5, "[FY24 · 1A]"), "2 OF 5 · [FY24 · 1A]");
+  assert.equal(panelCountLabel(0, 5, ""), "5 SOURCES");
+  assert.equal(panelCountLabel(0, 1, ""), "1 SOURCE");
+});
+
+const SRC = (over = {}) => ({
+  cit: {
+    chunk_id: "AAPL-FY2024-Item-1A-018",
+    company: "Apple Inc.",
+    fiscal_year: 2024,
+    item_code: "Item 1A",
+    item_title: "Risk Factors",
+    text: "Multi-year contracts covered 68% of revenue in fiscal 2024.",
+    ...over.cit,
+  },
+  score: over.score,
+});
+
+test("sourcePanelHTML: nothing pinned → head count + collapsed button rows only", () => {
+  const html = sourcePanelHTML([SRC({ score: 0.94 })], null);
+  assert.match(html, /<span class="count">1 SOURCE<\/span>/);
+  assert.match(html, /<button type="button" class="src collapsed" data-chunk-id="AAPL-FY2024-Item-1A-018"/);
+  assert.match(html, /Risk Factors/); // item_title as the collapsed row title
+  assert.doesNotMatch(html, /<mark>/); // no expanded passage until pinned
+});
+
+test("sourcePanelHTML: pinned row → locator, rerank score, passage in a <mark>", () => {
+  const html = sourcePanelHTML([SRC({ score: 0.94 })], "AAPL-FY2024-Item-1A-018");
+  assert.match(html, /1 OF 1 · \[FY24 · 1A\]/); // pinned count
+  assert.match(html, /class="doc">Apple Inc\. · FY2024 · ITEM 1A</); // locator
+  assert.match(html, /class="relev">rerank 0\.94</); // rerank score
+  assert.match(html, /<mark>Multi-year contracts covered 68% of revenue in fiscal 2024\.<\/mark>/);
+  assert.match(html, /data-passage/); // focus target
+});
+
+test("sourcePanelHTML: no score → the rerank line is omitted, not faked", () => {
+  const html = sourcePanelHTML([SRC({ score: undefined })], "AAPL-FY2024-Item-1A-018");
+  assert.doesNotMatch(html, /relev/);
+});
+
+test("sourcePanelHTML: malicious company/passage is escaped (XSS)", () => {
+  const evil = SRC({
+    cit: { text: "<img src=x onerror=alert(1)>", company: "<script>alert(1)</script>" },
+    score: 0.5,
+  });
+  const html = sourcePanelHTML([evil], "AAPL-FY2024-Item-1A-018");
+  assert.doesNotMatch(html, /<img|<script>/); // no live markup injected
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/); // passage escaped inside <mark>
 });

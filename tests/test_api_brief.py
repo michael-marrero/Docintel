@@ -70,6 +70,21 @@ def test_brief_citations_are_scoped_to_the_requested_company():
             assert cit["chunk_id"].upper().startswith(ticker), cit["chunk_id"]
 
 
+def test_brief_section_carries_rerank_scores_for_cited_chunks():
+    # Story 2.3: each section event carries a `scores` sidecar mapping every
+    # CITED chunk_id to a numeric rerank score, so the source panel shows
+    # `rerank 0.94` without a re-fetch. Uncited chunks are excluded.
+    ticker = _first_covered_ticker()
+    events = _parse_sse(client.get(f"/brief/{ticker}").text)
+    for _, d in [e for e in events if e[0] == "section"]:
+        scores = d["scores"]
+        assert isinstance(scores, dict)
+        cited_ids = {c["chunk_id"] for c in d["answer"]["citations"]}
+        assert set(scores) == cited_ids, (set(scores), cited_ids)
+        for v in scores.values():
+            assert isinstance(v, (int, float))
+
+
 def test_brief_uncovered_ticker_refuses_without_fabricating():
     res = client.get("/brief/ZZZZ")
     assert res.status_code == 200

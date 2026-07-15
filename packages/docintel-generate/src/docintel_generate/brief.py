@@ -56,12 +56,21 @@ BRIEF_SECTIONS: tuple[BriefSection, ...] = (
 
 
 class BriefSectionResult(NamedTuple):
-    """A rendered brief section: its metadata + the cited ``Answer``."""
+    """A rendered brief section: its metadata + the cited ``Answer``.
+
+    ``scores`` maps each *cited* ``chunk_id`` to its final retrieval score (the
+    post-rerank score in the default pipeline). It is a sidecar, not part of the
+    frozen ``Answer``/``Citation`` schema (which deliberately omits per-citation
+    score), so the Story 2.3 source panel can show ``rerank 0.94`` without a
+    re-fetch. Only cited chunks are included — the panel never shows an
+    uncited passage.
+    """
 
     index: int
     key: str
     title: str
     answer: Answer
+    scores: dict[str, float]
 
 
 def generate_brief(
@@ -77,9 +86,15 @@ def generate_brief(
     for index, section in enumerate(BRIEF_SECTIONS):
         query = section.query.format(company=company_name)
         gr = generator.generate(query, k=k, ticker=ticker)
+        answer = Answer.from_generation_result(gr)
+        cited = {c.chunk_id for c in answer.citations}
+        scores = {
+            rc.chunk_id: round(rc.score, 2) for rc in gr.retrieved_chunks if rc.chunk_id in cited
+        }
         yield BriefSectionResult(
             index=index,
             key=section.key,
             title=section.title,
-            answer=Answer.from_generation_result(gr),
+            answer=answer,
+            scores=scores,
         )

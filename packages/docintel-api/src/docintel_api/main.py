@@ -354,6 +354,7 @@ def brief(ticker: str) -> Any:
                     "key": section.key,
                     "title": section.title,
                     "answer": answer.model_dump(),
+                    "scores": section.scores,  # {chunk_id: rerank score} — Story 2.3 panel
                 },
             )
         yield _sse(

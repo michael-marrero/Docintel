@@ -120,7 +120,12 @@ export function citedTextToHTML(text, citations) {
     const cit = byId.get(m[1]);
     if (cit) {
       html += esc(between);
-      html += `<span class="chip" data-chunk-id="${esc(cit.chunk_id)}">${esc(citationChipLabel(cit))}</span>`;
+      const label = citationChipLabel(cit);
+      // A real <button> (phrasing content, valid in <p>) → native Enter/Space
+      // activation + focusability, no role/tabindex/keydown scaffolding (2.3/2.8).
+      html +=
+        `<button type="button" class="chip" data-chunk-id="${esc(cit.chunk_id)}"` +
+        ` aria-label="View source ${esc(label)}">${esc(label)}</button>`;
     } else if (CHUNK_ID_RE.test(m[1])) {
       // hallucinated citation → drop it and one preceding space (no orphan gap)
       html += esc(between.replace(/ +$/, ""));
@@ -132,4 +137,93 @@ export function citedTextToHTML(text, citations) {
   }
   html += esc(src.slice(last));
   return html;
+}
+
+// --- source drill-down panel (Story 2.3) — pure helpers, DOM lives in panel.js ---
+
+/** The panel's per-source locator line: `NWL · FY2024 · ITEM 1A`. The corpus
+ * has no filing-form type or filename per citation, so this is company + fiscal
+ * year + item code (uppercased) — honest to the data, not the mockup's
+ * `NWL_10-K_2024.pdf`. */
+export function sourceDocLabel(cit) {
+  const parts = [cit?.company, cit?.fiscal_year != null ? `FY${cit.fiscal_year}` : null];
+  const item = String(cit?.item_code ?? "").trim().toUpperCase();
+  if (item) parts.push(item);
+  return parts.filter(Boolean).join(" · ");
+}
+
+/** `rerank 0.94` from a numeric score, or "" when no score is available (the
+ * panel omits the line rather than showing a fake number). */
+export function formatRerankScore(score) {
+  return Number.isFinite(score) ? `rerank ${Number(score).toFixed(2)}` : "";
+}
+
+/** De-duplicate citations by `chunk_id`, preserving first-seen order — the panel
+ * lists each cited source once even when several sections cite it. */
+export function dedupeSources(citations) {
+  const seen = new Set();
+  const out = [];
+  for (const c of citations ?? []) {
+    if (!c || !c.chunk_id || seen.has(c.chunk_id)) continue;
+    seen.add(c.chunk_id);
+    out.push(c);
+  }
+  return out;
+}
+
+/** The panel-head count: `2 OF 5 · [FY24 · 1A]` when a source is pinned (1-based
+ * position), else the collapsed `N SOURCES` state (UX-DR6/DR8). */
+export function panelCountLabel(pinnedPos, total, chipLabel) {
+  if (pinnedPos && pinnedPos >= 1) return `${pinnedPos} OF ${total} · ${chipLabel}`;
+  return `${total} SOURCE${total === 1 ? "" : "S"}`;
+}
+
+// A short single-line snippet for a collapsed source row (~120 chars).
+function snippet(text) {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  return t.length > 120 ? `${t.slice(0, 118)}…` : t;
+}
+
+/** Build the full source-panel innerHTML (head + one row per source). Pure so
+ * the escaping and the `<mark>` markup are unit-tested without a browser; the
+ * DOM controller (panel.js) owns only class-toggling, listeners, and focus.
+ *
+ * `sources` is `[{cit, score}]` (unique, ordered); `pinnedId` is the expanded
+ * chunk_id or null. Every corpus/LLM string is escaped. The pinned row shows the
+ * locator + rerank score + full passage with the supporting span in a teal
+ * `<mark>` (the whole cited chunk is the honest support — `char_span_in_section`
+ * indexes the section, not this excerpt, so a sub-span can't be located here). */
+export function sourcePanelHTML(sources, pinnedId) {
+  const list = sources ?? [];
+  const pos = pinnedId ? list.findIndex((s) => s.cit.chunk_id === pinnedId) + 1 : 0;
+  const pinnedCit = pos >= 1 ? list[pos - 1].cit : null;
+  const count = panelCountLabel(pos, list.length, pinnedCit ? citationChipLabel(pinnedCit) : "");
+
+  const rows = list
+    .map(({ cit, score }) => {
+      const chip = esc(citationChipLabel(cit));
+      if (cit.chunk_id === pinnedId) {
+        const relev = formatRerankScore(score);
+        return (
+          `<div class="src expanded"><div class="srchead">` +
+          `<span class="doc">${esc(sourceDocLabel(cit))}</span>` +
+          (relev ? `<span class="relev">${esc(relev)}</span>` : "") +
+          `</div><div class="passage" tabindex="-1" data-passage>` +
+          `“<mark>${esc(cit.text)}</mark>”</div></div>`
+        );
+      }
+      return (
+        `<button type="button" class="src collapsed" data-chunk-id="${esc(cit.chunk_id)}"` +
+        ` aria-label="Expand source ${chip}"><div class="srchead">` +
+        `<span class="srctitle">${esc(cit.item_title || cit.item_code || "Source")}</span>` +
+        `<span class="chev">▸ ${chip}</span></div>` +
+        `<div class="snippet">${esc(snippet(cit.text))}</div></button>`
+      );
+    })
+    .join("");
+
+  return (
+    `<div class="panel-head"><span class="lbl">SOURCE</span>` +
+    `<span class="count">${esc(count)}</span></div>${rows}`
+  );
 }

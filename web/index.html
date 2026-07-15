@@ -44,7 +44,14 @@
          here: swapping this whole container would make AT re-announce the entire
          injected subtree. Transitions are announced via #announcer, and focus is
          moved into the new content by app.js. -->
-    <main id="view" class="view"></main>
+    <div class="workspace">
+      <main id="view" class="view"></main>
+
+      <!-- Sticky source drill-down panel (Story 2.3). Hidden until a brief's
+           citations register; the .workspace grid gives it its 360px column
+           only when it has sources (see .panel-open). -->
+      <aside id="source-panel" class="panel" aria-label="Source drill-down" hidden></aside>
+    </div>
 
     <!-- Dedicated polite status line for state transitions (visually hidden). -->
     <p id="announcer" class="visually-hidden" role="status" aria-live="polite"></p>

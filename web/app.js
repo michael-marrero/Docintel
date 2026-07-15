@@ -10,6 +10,7 @@ import {
   citedTextToHTML,
 } from "/lib.js";
 import { streamBrief } from "/brief.js";
+import { createPanel } from "/panel.js";
 
 const $ = (sel) => document.querySelector(sel);
 const view = $("#view");
@@ -18,6 +19,21 @@ const scopeLabel = $("#scope-label");
 const announcer = $("#announcer");
 
 let activeStream = null; // the in-flight brief EventSource, if any
+
+// Source drill-down panel (Story 2.3). Pinning from a source row syncs the
+// inline chip's active state; dismissing clears it.
+const panel = createPanel($("#source-panel"), {
+  onPin: (id) => setActiveChip(id),
+  onDismiss: () => setActiveChip(null),
+});
+
+// Mark the inline chip(s) for `id` active (teal), clearing any prior — or clear
+// all when `id` is null. Several sections may cite the same source; mark each.
+function setActiveChip(id) {
+  for (const chip of view.querySelectorAll(".chip")) {
+    chip.classList.toggle("active", id != null && chip.dataset.chunkId === id);
+  }
+}
 
 // Announce a state transition to assistive tech via the dedicated live region,
 // and move focus to the newly-rendered heading so keyboard/AT users land on the
@@ -54,6 +70,7 @@ async function loadCoverage() {
 // --- views (the state machine swaps #view) ---
 
 function renderEmpty() {
+  panel.reset();
   const hints = coveredTickers(companies)
     .slice(0, 8)
     .map((t) => `<button class="ticker-hint" type="button" data-ticker="${esc(t)}">${esc(t)}</button>`)
@@ -74,6 +91,7 @@ function renderEmpty() {
 // pending cards, then fills each as its `section` SSE event arrives (UX-DR16).
 function renderGenerating(ticker) {
   if (activeStream) activeStream.close(); // supersede any in-flight brief
+  panel.reset(); // drop the prior brief's sources before this one streams
   // Guard every row's ticker — a declared-but-unindexed filer may lack one.
   const company =
     companies.find((c) => String(c.ticker ?? "").toUpperCase() === ticker) ?? { name: ticker, ticker };
@@ -103,6 +121,8 @@ function renderGenerating(ticker) {
       const card = view.querySelector(`[data-section-index="${evt.index}"]`);
       if (!card) return; // unexpected/duplicate index — don't miscount
       fillSectionCard(card, evt);
+      // Register this section's cited sources with the drill-down panel (2.3).
+      panel.addCitations(evt.answer?.citations ?? [], evt.scores ?? {});
       rendered += 1;
       chips += card.querySelectorAll(".chip").length; // count chips ACTUALLY shown, not provided
       const status = $("#brief-status");
@@ -145,6 +165,7 @@ function fillSectionCard(card, evt) {
 // Uncovered ticker → refusal path (AC-3). Minimal, sober stub; the full banner
 // (REFUSAL_TEXT_SENTINEL, WHAT-I-DO-HAVE cited list) is Story 2.6.
 function renderRefusalStub(ticker) {
+  panel.reset();
   view.innerHTML = `
     <div class="refusal" role="status">
       <div class="rlbl" tabindex="-1" data-focus>⊘ INSUFFICIENT EVIDENCE — not in the covered corpus</div>
@@ -171,6 +192,7 @@ function submitCommand(raw) {
 // an honest placeholder — NOT a mis-routed brief stream for the sentence.
 function renderAskPlaceholder(question) {
   if (activeStream) activeStream.close();
+  panel.reset();
   view.innerHTML = `
     <div class="empty">
       <h1 tabindex="-1" data-focus>Q&amp;A is coming</h1>
@@ -197,6 +219,20 @@ function initTheme() {
     sync();
   });
 }
+
+// --- citation drill-down wiring (Story 2.3) ---
+// Delegated: a citation chip (native <button>, so Enter/Space fire click too)
+// pins its source in the panel. Chips whose source isn't registered are inert.
+view.addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip || !view.contains(chip)) return;
+  const id = chip.dataset.chunkId;
+  if (panel.has(id)) panel.pin(id, chip); // chip is the focus-return target on Esc
+});
+// Esc dismisses the pinned source (panel restores focus to the opening chip).
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && panel.pinnedId) panel.dismiss();
+});
 
 // --- boot ---
 $("#command-bar").addEventListener("submit", (e) => {
