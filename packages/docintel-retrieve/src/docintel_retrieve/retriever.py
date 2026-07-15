@@ -179,7 +179,9 @@ class Retriever:
         except Exception:
             pass
 
-    def search(self, query: str, k: int = TOP_K_FINAL) -> list[RetrievedChunk]:
+    def search(
+        self, query: str, k: int = TOP_K_FINAL, ticker: str | None = None
+    ) -> list[RetrievedChunk]:
         """One callable, end-to-end. See module docstring for the pipeline.
 
         Args:
@@ -289,10 +291,20 @@ class Retriever:
 
         # Step F — top-K post-processing. RerankedDoc.doc_id is the index
         # into top_m_chunks (the contract every Reranker adapter honours).
+        #
+        # Optional ``ticker`` post-filter (Story 2.2 brief scoping): keep only
+        # this company's reranked passages, then take top-k. Applied AFTER the
+        # 512-token canary (Step D, above) so the reranker-truncation gate stays
+        # valid on the full top-20. Iterates the WHOLE reranked list (not
+        # reranked[:k]) so a ticker whose best passages sit past rank-k still
+        # surfaces up to k of them; unscoped (ticker=None) keeps prior behavior.
+        want = ticker.upper() if ticker else None
         results: list[RetrievedChunk] = []
-        for reranked_doc in reranked[:k]:
+        for reranked_doc in reranked:
             idx = int(reranked_doc.doc_id)
             chunk = top_m_chunks[idx]
+            if want is not None and str(chunk.ticker).upper() != want:
+                continue
             results.append(
                 RetrievedChunk(
                     chunk_id=chunk.chunk_id,
@@ -304,6 +316,8 @@ class Retriever:
                     char_span_in_section=chunk.char_span_in_section,
                 )
             )
+            if len(results) >= k:
+                break
 
         # Step G — telemetry (D-12). Twelve fields verbatim; Phase 9 MET-05
         # + Phase 11 ablation reports source from this single log line.

@@ -295,6 +295,81 @@ def query(req: QueryRequest, request: Request) -> QueryResponse:
 
 
 # ---------------------------------------------------------------------------
+# GET /brief/{ticker} — Story 2.2 streaming structured cited brief (SSE)
+# ---------------------------------------------------------------------------
+
+
+def _covered_company(ticker: str) -> dict[str, Any] | None:
+    """Return the coverage row for ``ticker`` if it is an indexed filer, else None.
+
+    Lazy import (mirrors ``/coverage``) keeps ``import docintel_api.main`` cheap.
+    """
+    from docintel_ingest.coverage import build_coverage_view
+
+    want = ticker.upper()
+    for company in build_coverage_view(_settings()).get("companies", []):
+        if str(company.get("ticker", "")).upper() == want and company.get("in_corpus"):
+            return company
+    return None
+
+
+def _sse(event: str, payload: dict[str, Any]) -> str:
+    """Frame one Server-Sent Event: ``event:`` line + one ``data:`` JSON line."""
+    import json
+
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+@app.get("/brief/{ticker}", tags=["brief"])
+def brief(ticker: str) -> Any:
+    """Stream a four-section cited brief for ``ticker`` as Server-Sent Events.
+
+    Emits one ``section`` event per section as it is generated (section-by-section,
+    UX-DR16), then a terminal ``done`` event. An uncovered ticker yields a single
+    ``refused`` event (full refusal UX is Story 2.6) — it routes, never fabricates.
+    Same-origin plain HTTP (AD-15); the browser consumes it via ``EventSource``.
+    """
+    from fastapi.responses import StreamingResponse
+
+    company = _covered_company(ticker)
+
+    def stream() -> Any:
+        if company is None:
+            yield _sse("refused", {"ticker": ticker.upper(), "reason": "not a covered filer"})
+            return
+
+        from docintel_generate.brief import generate_brief
+
+        gen = _generator()
+        claims = 0
+        n_sections = 0
+        for section in generate_brief(gen, company["ticker"], company["name"]):
+            answer = section.answer
+            claims += len(answer.citations)
+            n_sections += 1
+            yield _sse(
+                "section",
+                {
+                    "index": section.index,
+                    "key": section.key,
+                    "title": section.title,
+                    "answer": answer.model_dump(),
+                },
+            )
+        yield _sse(
+            "done",
+            {
+                "ticker": company["ticker"],
+                "name": company["name"],
+                "sections": n_sections,
+                "claims_cited": claims,
+            },
+        )
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
 # GET /traces + GET /trace/{id} — UI-01 traces tab; D-10
 # ---------------------------------------------------------------------------
 
