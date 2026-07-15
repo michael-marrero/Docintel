@@ -257,18 +257,39 @@ export function suggestQuestions(answer, company) {
   return titles.map((t) => `How did ${who}'s ${t.toLowerCase()} change year over year?`);
 }
 
-/** The Q&A answer body HTML (Story 2.4): the `DOCINTEL` label, the cited prose,
- * and the `GROUNDED` footer. Pure + escaped (chips via citedTextToHTML). A
- * refused answer renders its text plainly with no footer (the full refusal
- * banner is Story 2.6). */
+/** Multi-hop badge (Story 2.5, UX-DR11): when an answer's citations combine ≥2
+ * distinct filings, label the synthesis `MULTI-HOP · CROSS-COMPANY`/`CROSS-PERIOD`
+ * (both when it spans companies AND periods). A "filing" is one company×fiscal
+ * year. Empty for a single-filing answer — no false multi-hop claim. This is a
+ * read-out of what the fixed hybrid retrieval already combined (AD-9, FR-B7);
+ * it changes no retrieval behaviour. */
+export function multiHopBadge(citations) {
+  const cites = citations ?? [];
+  const companies = new Set(cites.map((c) => c.company)).size;
+  const years = new Set(cites.map((c) => c.fiscal_year)).size;
+  const filings = new Set(cites.map((c) => `${c.company}|${c.fiscal_year}`)).size;
+  if (filings < 2) return "";
+  const parts = [];
+  if (companies >= 2) parts.push("CROSS-COMPANY");
+  if (years >= 2) parts.push("CROSS-PERIOD");
+  return parts.length ? `MULTI-HOP · ${parts.join(" · ")}` : "MULTI-HOP";
+}
+
+/** The Q&A answer body HTML (Story 2.4/2.5): the `DOCINTEL` label (+ a multi-hop
+ * badge when the answer spans filings), the cited prose, and the `GROUNDED`
+ * footer. Pure + escaped (chips via citedTextToHTML). A refused answer renders
+ * its text plainly with no badge/footer (the full refusal banner is Story 2.6). */
 export function qaAnswerHTML(answer) {
   const a = answer ?? {};
   const prose = a.refused
     ? `<p class="section-refused">${esc(a.text)}</p>`
     : `<p>${citedTextToHTML(a.text, a.citations)}</p>`;
   const grounded = a.refused ? "" : groundedLabel(a.citations);
+  const badge = a.refused ? "" : multiHopBadge(a.citations);
   return (
-    `<div class="albl"><span class="d"></span> DOCINTEL</div>${prose}` +
+    `<div class="albl"><span class="d"></span> DOCINTEL` +
+    (badge ? ` <span class="multihop">⤳ ${esc(badge)}</span>` : "") +
+    `</div>${prose}` +
     (grounded ? `<div class="grounded"><b>GROUNDED</b>${esc(grounded.replace(/^GROUNDED/, ""))}</div>` : "")
   );
 }

@@ -452,6 +452,8 @@ button.src:hover .srctitle { color: var(--accent-text-light); }
   margin-bottom: 8px;
 }
 .answer .albl .d { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+/* multi-hop / cross-document synthesis badge (Story 2.5, UX-DR11) */
+.answer .albl .multihop { margin-left: auto; color: var(--accent-text-light); letter-spacing: 0.1em; }
 .answer p {
   font-family: var(--font-sans);
   font-size: var(--type-body-size);

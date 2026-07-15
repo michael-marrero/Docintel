@@ -19,6 +19,7 @@ import {
   groundedLabel,
   suggestQuestions,
   qaAnswerHTML,
+  multiHopBadge,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -263,4 +264,49 @@ test("qaAnswerHTML: refused answer → plain text, no chips, no GROUNDED footer"
   assert.match(html, /section-refused/);
   assert.doesNotMatch(html, /GROUNDED/);
   assert.doesNotMatch(html, /class="chip"/);
+});
+
+// --- multi-hop / cross-document synthesis (Story 2.5) ---
+
+test("multiHopBadge: single filing → empty (no false multi-hop claim)", () => {
+  assert.equal(
+    multiHopBadge([
+      { company: "Apple Inc.", fiscal_year: 2024 },
+      { company: "Apple Inc.", fiscal_year: 2024 },
+    ]),
+    "",
+  );
+});
+
+test("multiHopBadge: distinct years same company → CROSS-PERIOD", () => {
+  const b = multiHopBadge([
+    { company: "Microsoft Corporation", fiscal_year: 2023 },
+    { company: "Microsoft Corporation", fiscal_year: 2024 },
+  ]);
+  assert.equal(b, "MULTI-HOP · CROSS-PERIOD");
+});
+
+test("multiHopBadge: distinct companies AND years → CROSS-COMPANY · CROSS-PERIOD", () => {
+  const b = multiHopBadge([
+    { company: "Apple Inc.", fiscal_year: 2023 },
+    { company: "Microsoft Corporation", fiscal_year: 2024 },
+  ]);
+  assert.equal(b, "MULTI-HOP · CROSS-COMPANY · CROSS-PERIOD");
+});
+
+test("qaAnswerHTML: multi-hop answer shows the ⤳ badge; single-filing does not", () => {
+  const multi = qaAnswerHTML(ANS({
+    citations: [
+      { chunk_id: "MSFT-FY2023-Item-7-001", company: "Microsoft Corporation", fiscal_year: 2023, item_title: "MD&A" },
+      { chunk_id: "MSFT-FY2024-Item-7-001", company: "Microsoft Corporation", fiscal_year: 2024, item_title: "MD&A" },
+    ],
+    text: "R&D rose [MSFT-FY2023-Item-7-001] [MSFT-FY2024-Item-7-001].",
+  }));
+  assert.match(multi, /class="multihop">⤳ MULTI-HOP · CROSS-PERIOD</);
+  // single-filing answer (one company, one year) → no badge
+  const single = qaAnswerHTML(ANS({
+    citations: [{ chunk_id: "AAPL-FY2024-Item-8-006", company: "Apple Inc.", fiscal_year: 2024, item_title: "Financials" }],
+    text: "Revenue rose [AAPL-FY2024-Item-8-006].",
+  }));
+  assert.doesNotMatch(single, /multihop/);
 });
