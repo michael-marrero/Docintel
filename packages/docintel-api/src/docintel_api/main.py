@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from docintel_core import __version__
@@ -294,6 +295,82 @@ def query(req: QueryRequest, request: Request) -> QueryResponse:
 
 
 # ---------------------------------------------------------------------------
+# GET /brief/{ticker} — Story 2.2 streaming structured cited brief (SSE)
+# ---------------------------------------------------------------------------
+
+
+def _covered_company(ticker: str) -> dict[str, Any] | None:
+    """Return the coverage row for ``ticker`` if it is an indexed filer, else None.
+
+    Lazy import (mirrors ``/coverage``) keeps ``import docintel_api.main`` cheap.
+    """
+    from docintel_ingest.coverage import build_coverage_view
+
+    want = ticker.upper()
+    for company in build_coverage_view(_settings()).get("companies", []):
+        if str(company.get("ticker", "")).upper() == want and company.get("in_corpus"):
+            return company
+    return None
+
+
+def _sse(event: str, payload: dict[str, Any]) -> str:
+    """Frame one Server-Sent Event: ``event:`` line + one ``data:`` JSON line."""
+    import json
+
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+@app.get("/brief/{ticker}", tags=["brief"])
+def brief(ticker: str) -> Any:
+    """Stream a four-section cited brief for ``ticker`` as Server-Sent Events.
+
+    Emits one ``section`` event per section as it is generated (section-by-section,
+    UX-DR16), then a terminal ``done`` event. An uncovered ticker yields a single
+    ``refused`` event (full refusal UX is Story 2.6) — it routes, never fabricates.
+    Same-origin plain HTTP (AD-15); the browser consumes it via ``EventSource``.
+    """
+    from fastapi.responses import StreamingResponse
+
+    company = _covered_company(ticker)
+
+    def stream() -> Any:
+        if company is None:
+            yield _sse("refused", {"ticker": ticker.upper(), "reason": "not a covered filer"})
+            return
+
+        from docintel_generate.brief import generate_brief
+
+        gen = _generator()
+        claims = 0
+        n_sections = 0
+        for section in generate_brief(gen, company["ticker"], company["name"]):
+            answer = section.answer
+            claims += len(answer.citations)
+            n_sections += 1
+            yield _sse(
+                "section",
+                {
+                    "index": section.index,
+                    "key": section.key,
+                    "title": section.title,
+                    "answer": answer.model_dump(),
+                    "scores": section.scores,  # {chunk_id: rerank score} — Story 2.3 panel
+                },
+            )
+        yield _sse(
+            "done",
+            {
+                "ticker": company["ticker"],
+                "name": company["name"],
+                "sections": n_sections,
+                "claims_cited": claims,
+            },
+        )
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
 # GET /traces + GET /trace/{id} — UI-01 traces tab; D-10
 # ---------------------------------------------------------------------------
 
@@ -325,8 +402,16 @@ def list_traces(limit: int = 50) -> list[dict[str, Any]]:
     table, so we ``reversed`` it here at the boundary. ``limit`` caps the
     response at a sane portfolio-scale default (50); pagination not required
     (CONTEXT "Claude's Discretion").
+
+    Only records that recorded at least one span are surfaced — the showcase is
+    the RAG query pipeline (``POST /query`` writes a ``pipeline`` span). Requests
+    that did no traced work (``/health``, ``/coverage`` on page load, etc.) write
+    empty-span records; filtering them here keeps the query traces from being
+    buried (Story 2.1 review). Static assets are already skipped upstream by the
+    middleware, so they never reach the sink.
     """
-    return list(reversed(load_traces(_settings().trace_dir, limit=limit)))
+    records = reversed(load_traces(_settings().trace_dir, limit=limit))
+    return [rec for rec in records if rec.get("spans")]
 
 
 @app.get("/trace/{trace_id}", tags=["traces"])
@@ -345,6 +430,51 @@ def get_trace(trace_id: str) -> dict[str, Any]:
         if record.get("trace_id") == trace_id:
             return record
     raise HTTPException(status_code=404, detail="trace not found")
+
+
+# ---------------------------------------------------------------------------
+# Static frontend (Story 2.1) — serve the dark-terminal web-app from web/.
+#
+# Mounted LAST so the API routes above (/health, /coverage, /query, /traces,
+# /trace/{id}) always win; StaticFiles(html=True) then serves web/index.html at
+# "/" and the static assets (app.js, app.css, lib.js, tokens.css) by path, and
+# 404s unknown paths. Same-origin, so the frontend's fetch("/coverage") needs no
+# CORS. The page touches the API over HTTP only (AD-15) — never the filesystem.
+# ---------------------------------------------------------------------------
+
+
+def _web_dir() -> Path | None:
+    """Locate the frontend directory, or None if it isn't present.
+
+    Not configuration (D-18 is about env-driven Settings) — a static-asset path
+    derived from the package layout. Prefers the in-repo location
+    (``<repo>/web``, resolved from this file); falls back to ``<cwd>/web`` so a
+    container that runs uvicorn from a WORKDIR holding ``web/`` also resolves.
+    """
+    candidates = [
+        Path(__file__).resolve().parents[4] / "web",  # in-repo + TestClient
+        Path.cwd() / "web",  # container WORKDIR fallback
+    ]
+    for cand in candidates:
+        if (cand / "index.html").is_file():
+            return cand
+    return None
+
+
+_WEB_DIR = _web_dir()
+if _WEB_DIR is not None:
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="web")
+else:
+    # Fail open (API still boots) but say so — a silent blank page is not
+    # diagnosable. In a pip-installed deploy, ensure the container copies web/
+    # into a location _web_dir() can find (repo layout or the uvicorn WORKDIR).
+    import structlog
+
+    structlog.get_logger("docintel_api").warning(
+        "web_dir_not_found", detail="frontend not found; GET / will 404 (UI disabled)"
+    )
 
 
 # ---------------------------------------------------------------------------

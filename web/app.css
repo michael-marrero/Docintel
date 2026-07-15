@@ -1,0 +1,598 @@
+/* docintel analyst workspace — component styles (Story 2.1).
+ * Every color/size/space is a token from tokens.css (Story 2.0). Zero hard-coded
+ * hex — the token file is the single source of truth (UX-DR1). Depth is tonal
+ * (recessed/canvas/card on hairlines), no shadows (UX-DR3). */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+/* screen-reader-only (announcer, skip context) */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: calc(var(--space-unit) * 6) calc(var(--space-unit) * 6) calc(var(--space-unit) * 20);
+}
+
+/* ---- skip link (a11y) ---- */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--card);
+  color: var(--ink);
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+}
+.skip-link:focus { left: 8px; top: 8px; z-index: 10; }
+
+/* ---- top bar ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: calc(var(--space-unit) * 5);
+}
+.brand {
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+  letter-spacing: var(--type-data-tracking);
+  color: var(--ink);
+}
+.brand-mark { color: var(--accent); }
+
+.theme-toggle {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.theme-toggle:hover { color: var(--ink-dim); border-color: var(--ink-faint); }
+
+/* ---- command bar (UX-DR4/DR15) ---- */
+.cmdbar {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 3);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+}
+.cmdbar .prompt { color: var(--accent); font-weight: 600; }
+
+.cmdbar .query {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+  letter-spacing: var(--type-data-tracking);
+  padding: 0;
+}
+.cmdbar .query::placeholder { color: var(--ink-faint); }
+
+/* blinking block cursor — parks next to the caret. Holds static under
+ * prefers-reduced-motion (UX-DR17). */
+.cmdbar .cursor {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 17px;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  transform: translateY(1px);
+  animation: blink 1.06s steps(1) infinite;
+}
+/* Hide the block cursor once the field has content or loses focus — it stands
+ * in for an empty, focused prompt (terminal feel) not a live text caret. */
+.cmdbar:focus-within .query:not(:placeholder-shown) ~ .cursor { opacity: 0; }
+.cmdbar:not(:focus-within) .cursor { opacity: 0; }
+
+@keyframes blink { 50% { opacity: 0; } }
+/* Reduced motion (UX-DR17): freeze ALL blink/pulse/spin/caret motion + any
+ * transition — content still streams (that's JS-driven, not animation). Robust
+ * global reset so a future animation can't leak past the a11y floor. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.cmdbar .scope {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* ---- focus ring (never clipped; ≥3:1, 2px offset) ---- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- view region ---- */
+.view { margin-top: calc(var(--space-unit) * 6); }
+
+/* empty / initial state */
+.empty {
+  color: var(--ink-dim);
+  font-size: var(--type-body-size);
+}
+.empty h1 {
+  font-family: var(--font-sans);
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  line-height: var(--type-display-line);
+  letter-spacing: var(--type-display-tracking);
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+.empty .hint {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  margin-top: calc(var(--space-unit) * 4);
+}
+.ticker-hints { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ticker-hint {
+  font-family: var(--font-mono);
+  font-size: var(--type-chip-size);
+  letter-spacing: var(--type-chip-tracking);
+  color: var(--ink-dim);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.ticker-hint:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- title row (shared by generating + brief states) ---- */
+.titlerow {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin: calc(var(--space-unit) * 5) 2px 6px;
+  flex-wrap: wrap;
+}
+.titlerow h1 {
+  font-family: var(--font-sans);
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  letter-spacing: var(--type-display-tracking);
+  margin: 0;
+}
+.genstate {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-dim);
+}
+.genstate .spin {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);  /* glow ring — not app depth (UX-DR3 exempt: it's a status indicator, not a surface) */
+}
+.genstate b { color: var(--accent); font-weight: 600; }
+
+/* ---- section cards (pending placeholders in 2.1; streamed in 2.2) ---- */
+.stack { margin-top: calc(var(--space-unit) * 4); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: var(--space-card-pad) 20px;
+  margin-bottom: 14px;
+}
+.card.pending { background: var(--card-recessed); border-style: dashed; }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  line-height: var(--type-micro-line);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+.eyebrow .tick { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.eyebrow .state { margin-left: auto; letter-spacing: var(--type-meta-tracking); }
+.card h2 {
+  font-family: var(--font-sans);
+  font-size: var(--type-heading-size);
+  font-weight: var(--type-heading-weight);
+  letter-spacing: var(--type-heading-tracking);
+  margin: 0 0 10px;
+}
+.card.pending h2 { color: var(--ink-faint); }
+.card p {
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  color: var(--prose);
+  margin: 0;
+}
+.card .state.done { color: var(--accent); }
+.ph-line { height: 9px; border-radius: var(--radius-sm); background: var(--hairline); margin: 9px 0; }
+.ph-line.w1 { width: 92%; } .ph-line.w2 { width: 78%; } .ph-line.w3 { width: 60%; }
+.section-refused { color: var(--ink-dim); font-style: italic; }
+
+/* status line under the title while streaming */
+.statusline {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  padding: 6px 2px 0;
+}
+
+/* inline citation chip (FR-B2) — a native <button> built from structured
+ * citation data; click/Enter/Space pins its source in the drill-down panel
+ * (Story 2.3). Active = the currently-pinned source (teal, UX-DR6/DR8). */
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--type-chip-size);
+  letter-spacing: var(--type-chip-tracking);
+  white-space: nowrap;
+  vertical-align: baseline;
+  position: relative;
+  top: -1px;
+  margin-left: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  color: var(--ink-dim);
+  cursor: pointer;
+  line-height: inherit;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent-text-light); }
+.chip.active {
+  border-color: var(--accent);
+  color: var(--accent-text-light);
+  background: var(--accent-wash);
+}
+
+/* ---- workspace grid: brief column + sticky source panel (Story 2.3) ---- */
+.workspace { display: grid; grid-template-columns: 1fr; gap: var(--space-gutter); }
+.workspace.panel-open { grid-template-columns: 1fr var(--panel-width); }
+.workspace .view { min-width: 0; } /* let the brief column shrink, never overflow */
+
+/* ---- source drill-down panel (UX-DR6, UX-DR8) ---- */
+.panel {
+  align-self: start;
+  position: sticky;
+  top: 18px;
+  margin-top: calc(var(--space-unit) * 6);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  /* No overflow:hidden — it would clip a focused source row's :focus-visible
+   * ring at the panel edge (UX-DR20: the ring must never be clipped). */
+}
+.panel[hidden] { display: none; }
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.panel-head .lbl {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.panel-head .count {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.src { display: block; width: 100%; text-align: left; padding: 14px 16px; }
+.src + .src { border-top: 1px solid var(--hairline); }
+button.src {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--hairline);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.src:first-of-type, button.src:first-of-type { border-top: none; }
+button.src:hover .srctitle { color: var(--accent-text-light); }
+
+.src.expanded { position: relative; background: var(--accent-wash); }
+.src.expanded::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);   /* 2px teal rail (UX-DR8) */
+}
+
+.src .srchead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.src .doc, .src .relev, .src .chev {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-micro-tracking);
+}
+.src .doc { color: var(--ink-dim); text-transform: uppercase; }
+.src .relev { margin-left: auto; color: var(--ink-faint); white-space: nowrap; }
+.src .chev { margin-left: auto; color: var(--ink-faint); white-space: nowrap; }
+.src .srctitle {
+  font-family: var(--font-sans);
+  font-size: var(--type-heading-size);
+  font-weight: 520;
+  color: var(--prose);
+}
+.src .passage {
+  font-family: var(--font-sans);
+  font-size: var(--type-passage-size);
+  line-height: var(--type-passage-line);
+  color: var(--prose);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.src .passage mark {
+  background: var(--accent-mark);   /* supporting-span highlight (UX-DR8) */
+  color: inherit;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+}
+.src .snippet {
+  font-family: var(--font-sans);
+  font-size: var(--type-passage-size);
+  line-height: var(--type-passage-line);
+  color: var(--ink-dim);
+}
+
+/* Narrow screens: panel stacks under the brief, not a sticky side column. */
+@media (max-width: 860px) {
+  .workspace.panel-open { grid-template-columns: 1fr; }
+  .panel { position: static; }
+}
+
+/* ---- confidence signal (Story 2.7, UX-DR7/FR-B6) ---- */
+/* Categorical (high/medium/low) — no fabricated 0.91 decimal; calibration is
+ * proven in Epic 3, not asserted here (AC-2). The 3-level bar sits over an
+ * accent-dim track (the 95%-CI band shade, UX-DR7). Never without CLAIMS CITED. */
+.confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  margin-top: 11px;
+}
+.confidence .clabel b { color: var(--accent-text-light); font-weight: 600; }
+.confidence .cbar {
+  width: 64px;
+  height: 5px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);   /* 95%-CI band shade (UX-DR7) */
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.confidence .cfill { display: block; height: 100%; background: var(--accent); }
+.confidence .cfill.lvl-high { width: 100%; }
+.confidence .cfill.lvl-medium { width: 66%; }
+.confidence .cfill.lvl-low { width: 33%; }
+
+/* ---- Q&A drill-down thread (Story 2.4, UX-DR11/DR14) ---- */
+.threadwrap { margin-top: calc(var(--space-unit) * 6); }
+.threadlbl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: calc(var(--space-unit) * 3);
+}
+.threadlbl .tick { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+.threadlbl::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+
+.exchange { margin-bottom: calc(var(--space-unit) * 5); }
+.qbar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+  color: var(--ink);
+}
+.qbar .prompt { color: var(--accent); font-weight: 600; }
+.qbar .q { color: var(--ink); }
+.qbar .q:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+.answer {
+  position: relative;
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 15px 18px;
+  margin: 8px 0 0 18px;
+}
+.answer::before {
+  content: "";
+  position: absolute;
+  left: -18px; top: 0; bottom: 0;
+  width: 1px;
+  background: var(--hairline);
+}
+.answer .albl {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.answer .albl .d { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+/* multi-hop / cross-document synthesis badge (Story 2.5, UX-DR11) */
+.answer .albl .multihop { margin-left: auto; color: var(--accent-text-light); letter-spacing: 0.1em; }
+.answer p {
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  color: var(--prose);
+  margin: 0 0 9px;
+}
+.answer p:last-child { margin-bottom: 0; }
+.answer .grounded {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+.answer .grounded b { color: var(--ink-dim); font-weight: 600; }
+
+/* suggestion chips (UX-DR14) — recessed SANS (non-teal body), mono teal Q marker.
+ * Clicking populates the command bar (no auto-submit). */
+.suggests { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0 18px; }
+.suggest {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-sans);
+  font-size: var(--type-passage-size);
+  color: var(--prose);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 7px 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.suggest:hover { border-color: var(--ink-faint); }
+.suggest .q { font-family: var(--font-mono); font-size: var(--type-chip-size); color: var(--accent-text-light); }
+
+/* ---- refusal stub (full banner in Story 2.6) ---- */
+.refusal {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--ink-faint);   /* neutral rail — refusal is sober, not teal (UX-DR12) */
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-top: 16px;
+}
+.refusal .rlbl {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--prose);
+  margin-bottom: 6px;
+}
+.refusal .rq {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.refusal p { font-family: var(--font-sans); font-size: var(--type-body-size); color: var(--prose); margin: 0 0 8px; }
+
+/* ---- error banner (Story 2.8, UX-DR13) — a FAILURE, not a refusal ---- */
+/* Terracotta 2px alert rail + role="alert" (app.js): visually distinct from the
+ * neutral, sober refusal. Retrieval/generation failure with a RETRY. */
+.errbanner {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--alert);   /* terracotta alert rail (UX-DR13) */
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-top: 16px;
+}
+.errbanner.answer { margin: 8px 0 0 18px; }  /* inline in a Q&A exchange */
+.errbanner .errlbl {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--alert);
+  margin-bottom: 6px;
+}
+.errbanner p { font-family: var(--font-sans); font-size: var(--type-body-size); color: var(--prose); margin: 0 0 10px; }
+.errbanner .retry {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.errbanner .retry:hover { border-color: var(--alert); color: var(--alert); }
+.refusal .have {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  line-height: 1.7;
+  color: var(--ink-dim);
+}
+.refusal .have b { color: var(--accent-text-light); font-weight: 600; }

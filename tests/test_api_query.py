@@ -129,6 +129,32 @@ def test_post_query_single_trace_record(client: TestClient) -> None:
     )
 
 
+def test_post_query_multi_hop_combines_documents(client: TestClient) -> None:
+    """Story 2.5 (FR-B5) — a comparative/trend question is answered by combining
+    evidence across multiple filings into ONE cited answer.
+
+    A cross-period/cross-company question rides the fixed hybrid retrieval path
+    (bm25+dense → RRF → rerank → top-5, AD-9 — unchanged by this story) which
+    fuses candidates over the whole corpus. The single ``Answer`` it returns must
+    therefore carry citations spanning ≥2 distinct filings (a filing = one
+    company × fiscal year), and each citation is independently anchored
+    (separately pinnable in the UI, UX-DR6). We do not assert a specific pair —
+    only that synthesis is genuinely multi-document, not single-filing.
+    """
+    resp = client.post(
+        "/query",
+        json={"question": "Which companies grew R&D while margins shrank across 2023 and 2024?"},
+        headers={"X-Trace-Id": str(uuid.uuid4())},
+    )
+    assert resp.status_code == 200
+    answer = resp.json()["answer"]
+    assert not answer["refused"]
+    filings = {(c["company"], c["fiscal_year"]) for c in answer["citations"]}
+    assert len(filings) >= 2, f"expected multi-document synthesis, got {filings}"
+    # each contributing source is separately citable (distinct chunk_ids)
+    assert len({c["chunk_id"] for c in answer["citations"]}) == len(answer["citations"])
+
+
 def test_post_query_rejects_extra_fields(client: TestClient) -> None:
     """Security V5 (T-13-02) — POST /query rejects unknown body fields with 422.
 

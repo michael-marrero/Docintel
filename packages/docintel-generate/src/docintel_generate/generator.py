@@ -114,7 +114,7 @@ class Generator:
         self._bundle = bundle
         self._retriever = retriever
 
-    def generate(self, query: str, k: int = 5) -> GenerationResult:
+    def generate(self, query: str, k: int = 5, ticker: str | None = None) -> GenerationResult:
         """One callable, end-to-end. See module docstring for the 5-step pipeline.
 
         Args:
@@ -140,8 +140,15 @@ class Generator:
         # retrieval (D-05), RRF fusion (D-07), top-M rerank (D-09), and emits its
         # own ``retriever_search_completed`` telemetry. Generator just consumes
         # the result list.
+        # ``ticker`` (Story 2.2 brief scoping) constrains retrieval to one
+        # company's passages; None preserves the unscoped Q&A behavior. Only pass
+        # it through when set, so retriever doubles that don't know about ticker
+        # scoping (test fakes, minimal adapters) keep working on the Q&A path.
         t_retr_start = time.perf_counter()
-        retrieved = self._retriever.search(query, k=k)
+        if ticker is None:
+            retrieved = self._retriever.search(query, k=k)
+        else:
+            retrieved = self._retriever.search(query, k=k, ticker=ticker)
         retrieval_ms = (time.perf_counter() - t_retr_start) * 1000
 
         # Step B — hard zero-chunk refusal (skip LLM, save a call + cost).

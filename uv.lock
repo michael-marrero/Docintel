@@ -243,6 +243,7 @@ version = "0.1.0"
 source = { editable = "packages/docintel-api" }
 dependencies = [
     { name = "docintel-core" },
+    { name = "docintel-ingest" },
     { name = "fastapi" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -250,6 +251,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "docintel-core", editable = "packages/docintel-core" },
+    { name = "docintel-ingest", editable = "packages/docintel-ingest" },
     { name = "fastapi", specifier = "==0.136.1" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.46.0" },
 ]

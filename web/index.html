@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>docintel — analyst workspace</title>
+  <!-- Apply the saved theme BEFORE first paint (no flash-of-wrong-theme).
+       Must be inline + blocking; the app module is deferred. -->
+  <script>
+    try {
+      var t = localStorage.getItem("docintel-theme");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) { /* localStorage unavailable — keep the dark default */ }
+  </script>
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <!-- Skip link (a11y floor; full pass in Story 2.8) -->
+  <a class="skip-link" href="#command-input">Skip to command bar</a>
+
+  <div class="app">
+    <header class="topbar">
+      <span class="brand"><span class="brand-mark">▮</span> docintel</span>
+      <button id="theme-toggle" class="theme-toggle" type="button"
+              aria-label="Toggle light theme" aria-pressed="false">
+        <span class="theme-toggle-label">THEME</span>
+      </button>
+    </header>
+
+    <!-- Command bar: keyboard-native front door (UX-DR4, UX-DR15) -->
+    <form id="command-bar" class="cmdbar" autocomplete="off" role="search"
+          aria-label="Company brief command bar">
+      <span class="prompt" aria-hidden="true">&gt;</span>
+      <input id="command-input" class="query" type="text" name="q"
+             enterkeyhint="go" spellcheck="false"
+             placeholder="ticker or question — e.g. NWL"
+             aria-label="Type a ticker to request a brief, or a question">
+      <span class="cursor" aria-hidden="true"></span>
+      <span id="scope-label" class="scope" aria-live="polite">CORPUS · … FILERS</span>
+    </form>
+
+    <!-- The one region the state machine swaps. Empty state on load. No aria-live
+         here: swapping this whole container would make AT re-announce the entire
+         injected subtree. Transitions are announced via #announcer, and focus is
+         moved into the new content by app.js. -->
+    <div class="workspace">
+      <main id="view" class="view"></main>
+
+      <!-- Sticky source drill-down panel (Story 2.3). Hidden until a brief's
+           citations register; the .workspace grid gives it its 360px column
+           only when it has sources (see .panel-open). -->
+      <aside id="source-panel" class="panel" aria-label="Source drill-down" hidden></aside>
+    </div>
+
+    <!-- Dedicated polite status line for state transitions (visually hidden). -->
+    <p id="announcer" class="visually-hidden" role="status" aria-live="polite"></p>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
