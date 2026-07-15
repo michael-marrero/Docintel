@@ -31,19 +31,20 @@ class Coverage:
     def tickers(self) -> list[str]:
         return sorted({c.ticker for c in self.companies})
 
-    def _entry(self, ticker: str) -> CompanyEntry | None:
-        for c in self.companies:
-            if c.ticker == ticker:
-                return c
-        return None
+    def _entries(self, ticker: str) -> list[CompanyEntry]:
+        # ALL matching rows — the snapshot may carry duplicate ticker rows
+        # (curation concern, not Pydantic-validated), and ingest processes every
+        # row, so the facade must UNION them or it would refuse a period the
+        # corpus actually contains (the facade is the authority for 2.6 refusal).
+        return [c for c in self.companies if c.ticker == ticker]
 
     def fiscal_years_for(self, ticker: str) -> list[int]:
-        entry = self._entry(ticker)
-        return sorted(entry.fiscal_years) if entry else []
+        return sorted({y for e in self._entries(ticker) for y in e.fiscal_years})
 
     def forms_for(self, ticker: str) -> list[str]:
-        entry = self._entry(ticker)
-        return list(entry.forms) if entry else []
+        # Sorted (like fiscal_years_for) so as_matrix()/sha256() are a canonical
+        # scope identity independent of the CSV's forms ordering.
+        return sorted({f for e in self._entries(ticker) for f in e.forms})
 
     def is_in_scope(
         self, ticker: str, fiscal_year: int | None = None, form: str | None = None
@@ -51,14 +52,17 @@ class Coverage:
         """True iff ``ticker`` is covered (and, when given, the fiscal_year/form too).
 
         An unknown ticker returns False (never raises). This is the boundary the
-        coverage view (1.5) renders and honest refusal (2.6) checks.
+        coverage view (1.5) renders and honest refusal (2.6) checks. Duplicate
+        ticker rows are unioned so the facade agrees with what ingest indexes.
         """
-        entry = self._entry(ticker)
-        if entry is None:
+        entries = self._entries(ticker)
+        if not entries:
             return False
-        if fiscal_year is not None and fiscal_year not in entry.fiscal_years:
+        if fiscal_year is not None and fiscal_year not in {
+            y for e in entries for y in e.fiscal_years
+        }:
             return False
-        if form is not None and form not in entry.forms:
+        if form is not None and form not in {f for e in entries for f in e.forms}:
             return False
         return True
 

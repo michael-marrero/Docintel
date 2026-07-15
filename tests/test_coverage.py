@@ -58,6 +58,27 @@ def test_matrix_and_deterministic_sha(tmp_path: Path) -> None:
     assert cov.sha256() == load_coverage(cfg).sha256()
 
 
+def test_duplicate_ticker_rows_are_unioned(tmp_path: Path) -> None:
+    # Review fix: ingest processes all rows, so the facade must UNION duplicate
+    # ticker rows (not first-wins) or it would refuse an in-corpus period.
+    cfg = _snapshot(
+        tmp_path,
+        [_row("AAPL", "[2024]", '["10-K"]'), _row("AAPL", "[2025]", '["10-Q"]')],
+    )
+    cov = load_coverage(cfg)
+    assert cov.tickers == ["AAPL"]  # deduped
+    assert cov.fiscal_years_for("AAPL") == [2024, 2025]
+    assert cov.forms_for("AAPL") == ["10-K", "10-Q"]
+    assert cov.is_in_scope("AAPL", 2025)  # from the 2nd row — not lost
+    assert cov.is_in_scope("AAPL", 2024, "10-K")
+
+
+def test_forms_are_sorted_canonically(tmp_path: Path) -> None:
+    # Review fix: forms_for is sorted so the scope hash is order-independent.
+    cfg = _snapshot(tmp_path, [_row("AAPL", "[2024]", '["10-Q", "10-K"]')])
+    assert load_coverage(cfg).forms_for("AAPL") == ["10-K", "10-Q"]
+
+
 def test_sha_changes_when_scope_changes(tmp_path: Path) -> None:
     a = load_coverage(_snapshot(tmp_path / "a", [_row("AAPL", "[2024]", '["10-K"]')]))
     b = load_coverage(_snapshot(tmp_path / "b", [_row("AAPL", "[2024]", '["10-K", "8-K"]')]))
