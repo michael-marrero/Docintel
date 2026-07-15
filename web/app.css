@@ -516,4 +516,11 @@ button.src:hover .srctitle { color: var(--accent-text-light); }
   color: var(--ink-faint);
   margin-bottom: 8px;
 }
-.refusal p { font-family: var(--font-sans); font-size: var(--type-body-size); color: var(--prose); margin: 0; }
+.refusal p { font-family: var(--font-sans); font-size: var(--type-body-size); color: var(--prose); margin: 0 0 8px; }
+.refusal .have {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  line-height: 1.7;
+  color: var(--ink-dim);
+}
+.refusal .have b { color: var(--accent-text-light); font-weight: 600; }

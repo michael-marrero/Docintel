@@ -20,6 +20,8 @@ import {
   suggestQuestions,
   qaAnswerHTML,
   multiHopBadge,
+  corpusHaveList,
+  refusalBannerHTML,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -309,4 +311,34 @@ test("qaAnswerHTML: multi-hop answer shows the ⤳ badge; single-filing does not
     text: "Revenue rose [AAPL-FY2024-Item-8-006].",
   }));
   assert.doesNotMatch(single, /multihop/);
+});
+
+// --- honest refusal banner (Story 2.6) ---
+
+test("corpusHaveList: TICKER — Name for covered filers only, capped", () => {
+  const out = corpusHaveList(
+    [
+      { ticker: "aapl", name: "Apple Inc.", in_corpus: true },
+      { ticker: "MSFT", name: "Microsoft Corporation", in_corpus: true },
+      { ticker: "ZZZZ", name: "Not Indexed", in_corpus: false }, // dropped
+      { name: "No Ticker", in_corpus: true }, // dropped
+    ],
+    1,
+  );
+  assert.deepEqual(out, ["AAPL — Apple Inc."]); // capped to 1, uppercased, in_corpus only
+});
+
+test("refusalBannerHTML: label + echoed query + reason + WHAT I DO HAVE, escaped", () => {
+  const html = refusalBannerHTML("brief TSLA", "TSLA is not indexed.", ["AAPL — Apple Inc."]);
+  assert.match(html, /⊘ INSUFFICIENT EVIDENCE/);
+  assert.match(html, /class="rq">&gt; brief TSLA</); // echoed query, > escaped
+  assert.match(html, /<p>TSLA is not indexed\.<\/p>/);
+  assert.match(html, /<b>WHAT I DO HAVE:<\/b>.*· AAPL — Apple Inc\./s);
+});
+
+test("refusalBannerHTML: no corpus → WHAT I DO HAVE omitted; malicious query escaped", () => {
+  const html = refusalBannerHTML("<img src=x onerror=alert(1)>", "reason", []);
+  assert.doesNotMatch(html, /WHAT I DO HAVE/);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img src=x/);
 });

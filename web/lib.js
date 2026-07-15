@@ -78,6 +78,34 @@ export function isCovered(ticker, companies) {
   return coveredTickers(companies).includes(String(ticker).toUpperCase());
 }
 
+// --- honest refusal (Story 2.6) — pure; DOM wrapper in app.js ---
+
+/** `WHAT I DO HAVE` list items from the covered corpus: `AAPL — Apple Inc.`,
+ * capped at `max`. This is the honest fallback when a query is out-of-corpus —
+ * a refused answer has no citations (AD-10), so "what I do have" is the corpus
+ * scope, not fabricated adjacent passages. */
+export function corpusHaveList(companies, max = 6) {
+  return (companies ?? [])
+    .filter((c) => c && c.in_corpus && c.ticker)
+    .slice(0, max)
+    .map((c) => `${String(c.ticker).toUpperCase()} — ${c.name ?? c.ticker}`);
+}
+
+/** The refusal banner inner HTML (Story 2.6, UX-DR12/FR-B4): mono
+ * `⊘ INSUFFICIENT EVIDENCE`, the echoed query, a plain reason, and a
+ * `WHAT I DO HAVE:` list. Pure + escaped. Sober information, not an error —
+ * the neutral rail + `role="status"` come from the `.refusal` wrapper (app.js).
+ * `have` is a list of plain strings (e.g. from `corpusHaveList`). */
+export function refusalBannerHTML(query, reason, have) {
+  const items = (have ?? []).map((h) => `· ${esc(h)}`).join("<br>");
+  return (
+    `<div class="rlbl">⊘ INSUFFICIENT EVIDENCE — not enough in the corpus to answer that</div>` +
+    `<div class="rq">&gt; ${esc(query)}</div>` +
+    `<p>${esc(reason)}</p>` +
+    (items ? `<div class="have"><b>WHAT I DO HAVE:</b><br>${items}</div>` : "")
+  );
+}
+
 // --- rendering (pure; used by brief.js/app.js before innerHTML) ---
 
 const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };

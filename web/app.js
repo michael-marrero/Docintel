@@ -10,6 +10,8 @@ import {
   citedTextToHTML,
   qaAnswerHTML,
   suggestQuestions,
+  corpusHaveList,
+  refusalBannerHTML,
 } from "/lib.js";
 import { streamBrief } from "/brief.js";
 import { createPanel } from "/panel.js";
@@ -140,10 +142,17 @@ function renderGenerating(ticker) {
       const status = $("#brief-status");
       if (status) status.textContent = `${rendered} sections · ${chips} claims cited`;
     },
-    onRefused() {
+    onRefused(data) {
       // Only take over the view if nothing has rendered — never wipe good,
       // already-streamed sections (the backend only refuses first-and-only today).
-      if (rendered === 0) renderRefusalStub(company.ticker);
+      if (rendered === 0) {
+        renderRefusal(
+          `brief ${company.ticker}`,
+          data?.reason
+            ? `The corpus can't ground a brief on ${company.ticker}: ${data.reason}.`
+            : `${company.ticker} is not among the indexed filers, so there is nothing to ground a brief on.`,
+        );
+      }
     },
     onError() {
       // Legible failure surface; the full error banner is Story 2.8.
@@ -167,19 +176,32 @@ function fillSectionCard(card, evt) {
     ${body}`;
 }
 
-// Uncovered ticker → refusal path (AC-3). Minimal, sober stub; the full banner
-// (REFUSAL_TEXT_SENTINEL, WHAT-I-DO-HAVE cited list) is Story 2.6.
-function renderRefusalStub(ticker) {
+// Honest refusal banner (Story 2.6, UX-DR12/FR-B4). Sober information, never an
+// error or an affordance: neutral 2px rail (.refusal), role="status", mono
+// ⊘ INSUFFICIENT EVIDENCE, the echoed query, a plain reason, and a WHAT I DO
+// HAVE list (the covered corpus — a refused answer has no citations, AD-10).
+function renderRefusal(query, reason) {
   panel.reset();
   anchored = null;
-  view.innerHTML = `
-    <div class="refusal" role="status">
-      <div class="rlbl" tabindex="-1" data-focus>⊘ INSUFFICIENT EVIDENCE — not in the covered corpus</div>
-      <div class="rq">&gt; brief ${esc(ticker)}</div>
-      <p>${esc(ticker)} is not among the indexed filers, so there is nothing to ground a brief on.</p>
-    </div>`;
-  transition(`No coverage for ${ticker}`);
-  // TODO(2.6): full refusal banner + WHAT-I-DO-HAVE list from the API refusal path.
+  view.innerHTML = `<div class="refusal" role="status">${refusalBannerHTML(
+    query,
+    reason,
+    corpusHaveList(companies),
+  )}</div>`;
+  const rlbl = view.querySelector(".rlbl");
+  if (rlbl) {
+    rlbl.tabIndex = -1;
+    rlbl.setAttribute("data-focus", "");
+  }
+  transition(`Insufficient evidence for ${query}`);
+}
+
+// Uncovered ticker → refusal (routes, never fabricates).
+function renderRefusalStub(ticker) {
+  renderRefusal(
+    `brief ${ticker}`,
+    `${ticker} is not among the indexed filers, so there is nothing in the corpus to ground a brief on.`,
+  );
 }
 
 // --- command routing ---
@@ -256,9 +278,17 @@ async function submitFollowup(question) {
     const answer = (await res.json()).answer;
     const ans = exchange.querySelector(".answer");
     ans.removeAttribute("aria-busy");
-    ans.innerHTML = qaAnswerHTML(answer);
-    panel.addCitations(answer.citations ?? [], {}); // /query has no score sidecar — panel omits rerank line
-    renderSuggestions(exchange, answer);
+    if (answer.refused) {
+      // Honest refusal in-thread (Story 2.6): the same sober banner, no chips,
+      // no fabricated answer. A refused answer has no citations (AD-10).
+      ans.classList.add("refusal");
+      ans.setAttribute("role", "status");
+      ans.innerHTML = refusalBannerHTML(question, answer.text, corpusHaveList(companies));
+    } else {
+      ans.innerHTML = qaAnswerHTML(answer);
+      panel.addCitations(answer.citations ?? [], {}); // /query has no score sidecar — panel omits rerank line
+      renderSuggestions(exchange, answer);
+    }
   } catch (err) {
     // Legible failure surface; the full error banner is Story 2.8.
     const ans = exchange.querySelector(".answer");
