@@ -16,6 +16,9 @@ import {
   dedupeSources,
   panelCountLabel,
   sourcePanelHTML,
+  groundedLabel,
+  suggestQuestions,
+  qaAnswerHTML,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -216,4 +219,48 @@ test("sourcePanelHTML: malicious company/passage is escaped (XSS)", () => {
   const html = sourcePanelHTML([evil], "AAPL-FY2024-Item-1A-018");
   assert.doesNotMatch(html, /<img|<script>/); // no live markup injected
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/); // passage escaped inside <mark>
+});
+
+// --- Q&A drill-down thread helpers (Story 2.4) ---
+
+const ANS = (over = {}) => ({
+  text: "Revenue rose [AAPL-FY2024-Item-8-006].",
+  citations: [
+    { chunk_id: "AAPL-FY2024-Item-8-006", company: "Apple Inc.", fiscal_year: 2024, item_code: "Item 8", item_title: "Financial Statements" },
+    { chunk_id: "AAPL-FY2023-Item-8-006", company: "Apple Inc.", fiscal_year: 2023, item_code: "Item 8", item_title: "Financial Statements" },
+  ],
+  confidence: "high",
+  refused: false,
+  ...over,
+});
+
+test("groundedLabel: passages + distinct filings, plural-aware, empty on no citations", () => {
+  assert.equal(groundedLabel(ANS().citations), "GROUNDED · 2 passages · 2 filings");
+  assert.equal(
+    groundedLabel([{ company: "Apple Inc.", fiscal_year: 2024 }]),
+    "GROUNDED · 1 passage · 1 filing",
+  );
+  assert.equal(groundedLabel([]), "");
+});
+
+test("suggestQuestions: ≤3 from distinct item titles + company; empty on refusal", () => {
+  const qs = suggestQuestions(ANS(), "Apple Inc.");
+  assert.equal(qs.length, 1); // both citations share one item_title → deduped
+  assert.match(qs[0], /Apple Inc\.'s financial statements change year over year/);
+  assert.deepEqual(suggestQuestions({ refused: true, text: "no" }, "Apple Inc."), []);
+});
+
+test("qaAnswerHTML: DOCINTEL label + cited prose + GROUNDED footer; escapes prose", () => {
+  const html = qaAnswerHTML(ANS({ text: "x <b>y</b> [AAPL-FY2024-Item-8-006]." }));
+  assert.match(html, /class="albl"/);
+  assert.match(html, /x &lt;b&gt;y&lt;\/b&gt;/); // prose escaped
+  assert.match(html, /<button type="button" class="chip"/); // inline chip
+  assert.match(html, /<b>GROUNDED<\/b> · 2 passages · 2 filings/);
+});
+
+test("qaAnswerHTML: refused answer → plain text, no chips, no GROUNDED footer", () => {
+  const html = qaAnswerHTML({ refused: true, text: "I cannot answer from the corpus.", citations: [] });
+  assert.match(html, /section-refused/);
+  assert.doesNotMatch(html, /GROUNDED/);
+  assert.doesNotMatch(html, /class="chip"/);
 });

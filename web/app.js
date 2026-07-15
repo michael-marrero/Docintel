@@ -8,6 +8,8 @@ import {
   isCovered,
   esc,
   citedTextToHTML,
+  qaAnswerHTML,
+  suggestQuestions,
 } from "/lib.js";
 import { streamBrief } from "/brief.js";
 import { createPanel } from "/panel.js";
@@ -19,6 +21,7 @@ const scopeLabel = $("#scope-label");
 const announcer = $("#announcer");
 
 let activeStream = null; // the in-flight brief EventSource, if any
+let anchored = null; // { ticker, name } of the current brief, for follow-up context
 
 // Source drill-down panel (Story 2.3). Pinning from a source row syncs the
 // inline chip's active state; dismissing clears it.
@@ -71,6 +74,7 @@ async function loadCoverage() {
 
 function renderEmpty() {
   panel.reset();
+  anchored = null;
   const hints = coveredTickers(companies)
     .slice(0, 8)
     .map((t) => `<button class="ticker-hint" type="button" data-ticker="${esc(t)}">${esc(t)}</button>`)
@@ -112,6 +116,7 @@ function renderGenerating(ticker) {
     </div>
     <div class="statusline"><span id="brief-status" aria-live="polite">synthesizing · 0 of ${SECTIONS.length} sections</span></div>
     <div class="stack">${cards}</div>`;
+  anchored = { ticker: company.ticker, name: company.name }; // follow-ups (2.4) anchor here
   transition(`Generating brief for ${company.name}`);
 
   let rendered = 0;
@@ -166,6 +171,7 @@ function fillSectionCard(card, evt) {
 // (REFUSAL_TEXT_SENTINEL, WHAT-I-DO-HAVE cited list) is Story 2.6.
 function renderRefusalStub(ticker) {
   panel.reset();
+  anchored = null;
   view.innerHTML = `
     <div class="refusal" role="status">
       <div class="rlbl" tabindex="-1" data-focus>⊘ INSUFFICIENT EVIDENCE — not in the covered corpus</div>
@@ -184,23 +190,103 @@ function submitCommand(raw) {
     if (isCovered(cmd.ticker, companies)) renderGenerating(cmd.ticker);
     else renderRefusalStub(cmd.ticker);
   } else {
-    renderAskPlaceholder(cmd.question);
+    submitFollowup(cmd.question);
   }
 }
 
-// Free-text questions get a Q&A thread over POST /query in Story 2.4. Until then
-// an honest placeholder — NOT a mis-routed brief stream for the sentence.
-function renderAskPlaceholder(question) {
-  if (activeStream) activeStream.close();
-  panel.reset();
-  view.innerHTML = `
-    <div class="empty">
-      <h1 tabindex="-1" data-focus>Q&amp;A is coming</h1>
-      <p>Cited follow-up answers land in the next build. For now, type a covered ticker for a brief.</p>
-      <div class="hint">YOU ASKED</div>
-      <p class="section-refused">${esc(question)}</p>
-    </div>`;
-  transition("Q&A is not available yet");
+// --- Q&A drill-down thread (Story 2.4) ---
+// A free-text question appends a cited exchange (mono question echo + sans cited
+// answer) to an inline thread — under the anchored brief when there is one, else
+// a standalone Q&A view. Answers come from POST /query (FR-B3); citations drill
+// into the same source panel (2.3); 1–3 suggestion chips offer cited next
+// questions and populate the command bar without auto-submitting (UX-DR14).
+
+// Ensure the thread container exists in #view and return it. Appends under an
+// anchored brief; otherwise swaps to a fresh standalone Q&A view.
+function ensureThread() {
+  let thread = view.querySelector("#qa-thread");
+  if (thread) return thread;
+  const section = document.createElement("div");
+  section.className = "threadwrap";
+  section.innerHTML = `
+    <div class="threadlbl"><span class="tick"></span>
+      <span class="threadcount">FOLLOW-UP THREAD</span></div>
+    <div id="qa-thread" class="thread" aria-live="polite"></div>`;
+  if (view.querySelector(".stack")) {
+    view.appendChild(section); // anchored brief present — thread goes below it
+  } else {
+    panel.reset(); // standalone Q&A — fresh workspace
+    view.innerHTML = `<div class="titlerow"><h1 tabindex="-1" data-focus>Q&amp;A</h1></div>`;
+    view.appendChild(section);
+  }
+  return view.querySelector("#qa-thread");
+}
+
+function updateThreadCount(thread) {
+  const n = thread.querySelectorAll(".exchange").length;
+  const lbl = thread.parentElement.querySelector(".threadcount");
+  if (lbl) lbl.textContent = `FOLLOW-UP THREAD · ${n} EXCHANGE${n === 1 ? "" : "S"}`;
+}
+
+async function submitFollowup(question) {
+  const thread = ensureThread();
+  const exchange = document.createElement("div");
+  exchange.className = "exchange";
+  exchange.innerHTML = `
+    <div class="qbar"><span class="prompt" aria-hidden="true">&gt;</span>
+      <span class="q" tabindex="-1">${esc(question)}</span></div>
+    <div class="answer" aria-busy="true">
+      <div class="albl"><span class="d"></span> DOCINTEL</div>
+      <p class="section-refused">thinking…</p></div>`;
+  thread.appendChild(exchange);
+  updateThreadCount(thread);
+  input.value = "";
+  // Announce, then land focus on the new question (don't call transition() — it
+  // would steal focus back to the brief heading).
+  if (announcer) announcer.textContent = `Asked: ${question}`;
+  exchange.querySelector(".q")?.focus();
+
+  try {
+    const res = await fetch("/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    if (!res.ok) throw new Error(`/query ${res.status}`);
+    const answer = (await res.json()).answer;
+    const ans = exchange.querySelector(".answer");
+    ans.removeAttribute("aria-busy");
+    ans.innerHTML = qaAnswerHTML(answer);
+    panel.addCitations(answer.citations ?? [], {}); // /query has no score sidecar — panel omits rerank line
+    renderSuggestions(exchange, answer);
+  } catch (err) {
+    // Legible failure surface; the full error banner is Story 2.8.
+    const ans = exchange.querySelector(".answer");
+    ans.removeAttribute("aria-busy");
+    ans.innerHTML = `<div class="albl"><span class="d"></span> DOCINTEL</div>
+      <p class="section-refused">Answer failed — retry from the command bar.</p>`;
+    console.error(err);
+  }
+}
+
+// 1–3 cited suggestion chips after the latest answer; clicking populates the
+// command bar (no auto-submit, UX-DR14). Only the newest exchange shows them.
+function renderSuggestions(exchange, answer) {
+  for (const s of view.querySelectorAll(".suggests")) s.remove();
+  const qs = suggestQuestions(answer, anchored?.name);
+  if (!qs.length) return;
+  const box = document.createElement("div");
+  box.className = "suggests";
+  box.innerHTML = qs
+    .map((q) => `<button type="button" class="suggest" data-q="${esc(q)}"><span class="q">Q</span> ${esc(q)}</button>`)
+    .join("");
+  exchange.appendChild(box);
+  for (const b of box.querySelectorAll(".suggest")) {
+    b.addEventListener("click", () => {
+      input.value = b.dataset.q;
+      input.focus();
+    });
+  }
 }
 
 // --- theme (dark default; light co-equal, persisted) ---

@@ -396,6 +396,101 @@ button.src:hover .srctitle { color: var(--accent-text-light); }
   .panel { position: static; }
 }
 
+/* ---- Q&A drill-down thread (Story 2.4, UX-DR11/DR14) ---- */
+.threadwrap { margin-top: calc(var(--space-unit) * 6); }
+.threadlbl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: calc(var(--space-unit) * 3);
+}
+.threadlbl .tick { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+.threadlbl::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+
+.exchange { margin-bottom: calc(var(--space-unit) * 5); }
+.qbar {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+  color: var(--ink);
+}
+.qbar .prompt { color: var(--accent); font-weight: 600; }
+.qbar .q { color: var(--ink); }
+.qbar .q:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+.answer {
+  position: relative;
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 15px 18px;
+  margin: 8px 0 0 18px;
+}
+.answer::before {
+  content: "";
+  position: absolute;
+  left: -18px; top: 0; bottom: 0;
+  width: 1px;
+  background: var(--hairline);
+}
+.answer .albl {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.answer .albl .d { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.answer p {
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  color: var(--prose);
+  margin: 0 0 9px;
+}
+.answer p:last-child { margin-bottom: 0; }
+.answer .grounded {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+.answer .grounded b { color: var(--ink-dim); font-weight: 600; }
+
+/* suggestion chips (UX-DR14) — recessed SANS (non-teal body), mono teal Q marker.
+ * Clicking populates the command bar (no auto-submit). */
+.suggests { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0 18px; }
+.suggest {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-sans);
+  font-size: var(--type-passage-size);
+  color: var(--prose);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 7px 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.suggest:hover { border-color: var(--ink-faint); }
+.suggest .q { font-family: var(--font-mono); font-size: var(--type-chip-size); color: var(--accent-text-light); }
+
 /* ---- refusal stub (full banner in Story 2.6) ---- */
 .refusal {
   background: var(--card);

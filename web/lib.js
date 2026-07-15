@@ -227,3 +227,48 @@ export function sourcePanelHTML(sources, pinnedId) {
     `<span class="count">${esc(count)}</span></div>${rows}`
   );
 }
+
+// --- Q&A drill-down thread (Story 2.4) — pure helpers, DOM lives in app.js ---
+
+/** `GROUNDED · 3 passages · 2 filings` from an answer's citations. A "filing" is
+ * a unique (company, fiscal_year) pair; "passages" = citation count. Returns ""
+ * when there are no citations (nothing to ground — a refusal). */
+export function groundedLabel(citations) {
+  const cites = citations ?? [];
+  if (cites.length === 0) return "";
+  const filings = new Set(cites.map((c) => `${c.company}|${c.fiscal_year}`)).size;
+  const p = cites.length === 1 ? "passage" : "passages";
+  const f = filings === 1 ? "filing" : "filings";
+  return `GROUNDED · ${cites.length} ${p} · ${filings} ${f}`;
+}
+
+/** 1–3 cited next-question suggestions (UX-DR14) derived from the answer's
+ * distinct citation item titles + the company — deterministic, grounded in the
+ * sources actually retrieved (not free-invented). Empty on a refusal. */
+export function suggestQuestions(answer, company) {
+  if (!answer || answer.refused) return [];
+  const who = company || "this company";
+  const titles = [];
+  for (const c of answer.citations ?? []) {
+    const t = String(c.item_title || "").trim();
+    if (t && !titles.includes(t)) titles.push(t);
+    if (titles.length === 3) break;
+  }
+  return titles.map((t) => `How did ${who}'s ${t.toLowerCase()} change year over year?`);
+}
+
+/** The Q&A answer body HTML (Story 2.4): the `DOCINTEL` label, the cited prose,
+ * and the `GROUNDED` footer. Pure + escaped (chips via citedTextToHTML). A
+ * refused answer renders its text plainly with no footer (the full refusal
+ * banner is Story 2.6). */
+export function qaAnswerHTML(answer) {
+  const a = answer ?? {};
+  const prose = a.refused
+    ? `<p class="section-refused">${esc(a.text)}</p>`
+    : `<p>${citedTextToHTML(a.text, a.citations)}</p>`;
+  const grounded = a.refused ? "" : groundedLabel(a.citations);
+  return (
+    `<div class="albl"><span class="d"></span> DOCINTEL</div>${prose}` +
+    (grounded ? `<div class="grounded"><b>GROUNDED</b>${esc(grounded.replace(/^GROUNDED/, ""))}</div>` : "")
+  );
+}
