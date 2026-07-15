@@ -1,0 +1,100 @@
+/* docintel — design token foundation (Story 2.0)
+ *
+ * Single source of truth for Epic 2 (UX-DR1). Dark and light are CO-EQUAL
+ * (UX-DR2): the light surface re-declares every custom property, it is not a
+ * default-plus-invert. Depth is tonal only (recessed < canvas < card on
+ * hairline borders) — no drop shadows exist in this file (UX-DR3).
+ *
+ * Values transcribed VERBATIM from ux-designs/.../DESIGN.md §colors/typography/
+ * rounded/spacing. Those are the WCAG-2.2-AA-fixed values; the ratio comments
+ * (and prior failing values) are preserved so the accessibility provenance
+ * travels with the tokens. Do NOT copy hex from the mockups' :root — they carry
+ * older, pre-fix values (e.g. accent-dim #1C4F49 @ 1.73:1, FAILED).
+ */
+
+/* ---- DARK SURFACE (co-equal) ---- */
+:root {
+  /* color — surfaces (tonal depth, UX-DR3) */
+  --canvas: #0B0E11;          /* near-black app canvas */
+  --card: #12161B;            /* raised card surface */
+  --card-recessed: #0F1318;   /* recessed / source-panel / chip surface */
+
+  /* color — ink */
+  --ink: #E6E8EB;             /* primary ink */
+  --ink-dim: #8B939C;         /* secondary / muted ink */
+  --ink-faint: #7A828C;       /* tertiary — micro-labels, locators. AA: 4.67:1 card / 4.98:1 canvas / 4.79:1 recessed (was #5A626B ~2.94–3.13:1 FAILED) */
+  --prose: #C7CCD2;           /* body-prose ink inside cards */
+  --hairline: #1C2229;        /* 1px rules; also confidence-bar track */
+
+  /* color — accent (teal) */
+  --accent: #2DD4BF;                     /* single teal accent (dark + all large/UI fills) */
+  --accent-dim: #2E8278;                 /* low-intensity teal — CI band / track shade. 3.5:1 vs track #1C2229 (was #1C4F49 @ 1.73:1 FAILED 3:1 UI) */
+  --accent-wash: rgba(45,212,191,0.10);  /* active-chip fill */
+  --accent-mark: rgba(45,212,191,0.22);  /* source-passage highlight (mark) */
+
+  /* color — system */
+  --alert: #E0795B;           /* system-error rail/icon — sober, non-alarm. 6.1:1 vs card (≥3:1 UI) */
+
+  /* type — families (two-family scale, UX-DR1) */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* type — sans roles (prose + headings) */
+  --type-display-size: 24px;    --type-display-weight: 650; --type-display-line: 1.25;  --type-display-tracking: -0.01em;
+  --type-heading-size: 16px;    --type-heading-weight: 620; --type-heading-line: 1.35;  --type-heading-tracking: -0.005em;
+  --type-body-size: 14px;       --type-body-weight: 400;    --type-body-line: 1.5;
+  --type-passage-size: 12.5px;  --type-passage-weight: 400; --type-passage-line: 1.55;
+
+  /* type — mono roles (numbers, tickers, chips, UPPERCASE micro-labels) */
+  --type-data-size: 14px;       --type-data-weight: 400;    --type-data-tracking: 0.02em;
+  --type-chip-size: 10.5px;     --type-chip-weight: 400;    --type-chip-tracking: 0.02em;
+  --type-micro-size: 10.5px;    --type-micro-weight: 400;   --type-micro-line: 1.4;   --type-micro-tracking: 0.16em; /* UPPERCASE eyebrows */
+  --type-meta-size: 11px;       --type-meta-weight: 400;    --type-meta-tracking: 0.05em;
+
+  /* shape — 3-radius system */
+  --radius-sm: 2px;     /* inline marks, cursor */
+  --radius: 4px;        /* house radius — cards, controls, chips, command bar, passages */
+  --radius-frame: 8px;  /* outermost app/browser frame only */
+
+  /* spacing — 4px unit + named steps */
+  --space-unit: 4px;
+  --space-card-pad: 18px;    /* card vertical padding (20px horizontal) */
+  --space-gutter: 18px;      /* brief column ↔ source panel gap */
+  --space-region-gap: 56px;  /* between major page regions / co-equal surfaces */
+  --panel-width: 360px;      /* fixed source drill-down panel width (desktop) */
+}
+
+/* ---- LIGHT SURFACE (co-equal — full re-declaration, NOT an invert, UX-DR2) ---- */
+:root[data-theme="light"] {
+  /* color — surfaces */
+  --canvas: #FBFBFA;          /* near-white canvas */
+  --card: #FFFFFF;            /* white card surface */
+  --card-recessed: #F4F5F4;   /* recessed / source-panel / chip surface */
+
+  /* color — ink */
+  --ink: #11151A;             /* primary ink */
+  --ink-dim: #5C656E;         /* secondary ink */
+  --ink-faint: #677079;       /* tertiary — locators. AA: 5.04:1 card / 4.86:1 canvas / 4.61:1 recessed (was #8A929B ~2.88–3.15:1 FAILED) */
+  --prose: #2A2F36;           /* body-prose ink inside cards */
+  --hairline: #E4E7E9;        /* 1px rules; also confidence-bar track */
+
+  /* color — accent SPLIT on light (UX-DR2): fill/UI vs text/numbers/locators */
+  --accent: #0D9488;          /* alias → accent-light: teal for LARGE/UI/fill only (≥3:1). NOT AA as text. */
+  --accent-light: #0D9488;    /* fills/UI: confidence-bar fill 3.01:1 vs track, eyebrow tick */
+  --accent-text-light: #0F766E; /* teal TEXT/numbers/locators. AA: 5.47:1 card / 5.29:1 canvas / 5.01:1 recessed; 4.41:1 as fill vs track (≥3:1) */
+  --accent-dim: #2E8278;      /* CI band / track shade — ≥3:1 vs track on both surfaces */
+  --accent-wash: #D6F2EE;     /* teal wash for active highlight on light */
+  --accent-mark: #D6F2EE;     /* source-passage highlight on light */
+
+  /* color — system */
+  --alert: #C25A38;           /* system-error rail/icon on light — sober. 4.36:1 vs card (≥3:1 UI) */
+
+  /* type / shape / spacing — surface-invariant (declared on :root); light re-states only color */
+}
+
+/* Dark surface exposes the same split-var names so components can reference them
+ * unconditionally; on dark, teal text and teal fill are the same #2DD4BF. */
+:root {
+  --accent-light: var(--accent);
+  --accent-text-light: var(--accent);
+}
