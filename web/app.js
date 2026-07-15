@@ -12,6 +12,7 @@ import {
   suggestQuestions,
   corpusHaveList,
   refusalBannerHTML,
+  confidenceSignalHTML,
 } from "/lib.js";
 import { streamBrief } from "/brief.js";
 import { createPanel } from "/panel.js";
@@ -169,11 +170,12 @@ function fillSectionCard(card, evt) {
   const body = ans.refused
     ? `<p class="section-refused">Not covered in the filings.</p>`
     : `<p>${citedTextToHTML(ans.text, ans.citations)}</p>`;
+  // Confidence signal per brief section (Story 2.7, UX-DR7) — non-refused only.
   card.innerHTML = `
     <p class="eyebrow"><span class="tick"></span> ${esc(evt.title).toUpperCase()}
       <span class="state done">✓ RENDERED</span></p>
     <h2>${esc(evt.title)}</h2>
-    ${body}`;
+    ${body}${confidenceSignalHTML(ans)}`;
 }
 
 // Honest refusal banner (Story 2.6, UX-DR12/FR-B4). Sober information, never an

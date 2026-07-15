@@ -303,6 +303,57 @@ export function multiHopBadge(citations) {
   return parts.length ? `MULTI-HOP · ${parts.join(" · ")}` : "MULTI-HOP";
 }
 
+/** Real grounding ratio for the confidence signal (Story 2.7): `{cited, total}`
+ * where `total` = sentences in the answer and `cited` = sentences carrying ≥1
+ * in-set `[chunk_id]` citation. This is the honest, computable "claims cited"
+ * count (the synthesis prompt requires every sentence cited); `total: 0` means
+ * no signal should render. */
+export function claimsCited(text, citations) {
+  const ids = new Set((citations ?? []).map((c) => c.chunk_id));
+  const sentences = String(text ?? "")
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => s.trim());
+  const re = /\[([A-Za-z0-9._-]+)\]/g;
+  let cited = 0;
+  for (const s of sentences) {
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(s)) !== null) {
+      if (ids.has(m[1])) {
+        cited += 1;
+        break;
+      }
+    }
+  }
+  return { cited, total: sentences.length };
+}
+
+/** The confidence signal (Story 2.7, UX-DR7/FR-B6): `CONFIDENCE HIGH` (teal
+ * category) + a 64×5px 3-level bar over an `accent-dim` track (the CI-band
+ * shade) + `· N/M CLAIMS CITED`. NEVER shown without the claims-cited count,
+ * and never for a refused answer.
+ *
+ * HONESTY (AC-2): the runtime signal is the LLM's *categorical* self-report
+ * (`high`/`medium`/`low`) — there is no calibrated 0–1 score. Rendering the
+ * mockup's `0.91` would assert a calibration Epic 3 (FR-C5) has not yet proven,
+ * which AC-2 forbids. So we show the honest category + the *real* grounding
+ * ratio, not a fabricated decimal. The bar is a coarse 3-level visual, not a
+ * claimed percentage. */
+export function confidenceSignalHTML(answer) {
+  const a = answer ?? {};
+  if (a.refused) return "";
+  const level = a.confidence || "medium";
+  const { cited, total } = claimsCited(a.text, a.citations);
+  if (!total) return ""; // never without a claims-cited count
+  return (
+    `<div class="confidence" role="img" ` +
+    `aria-label="Confidence ${esc(level)}, ${cited} of ${total} claims cited">` +
+    `<span class="clabel">CONFIDENCE <b>${esc(level.toUpperCase())}</b></span>` +
+    `<span class="cbar" aria-hidden="true"><span class="cfill lvl-${esc(level)}"></span></span>` +
+    `<span class="cclaims">· ${cited}/${total} CLAIMS CITED</span></div>`
+  );
+}
+
 /** The Q&A answer body HTML (Story 2.4/2.5): the `DOCINTEL` label (+ a multi-hop
  * badge when the answer spans filings), the cited prose, and the `GROUNDED`
  * footer. Pure + escaped (chips via citedTextToHTML). A refused answer renders
@@ -318,6 +369,7 @@ export function qaAnswerHTML(answer) {
     `<div class="albl"><span class="d"></span> DOCINTEL` +
     (badge ? ` <span class="multihop">⤳ ${esc(badge)}</span>` : "") +
     `</div>${prose}` +
-    (grounded ? `<div class="grounded"><b>GROUNDED</b>${esc(grounded.replace(/^GROUNDED/, ""))}</div>` : "")
+    (grounded ? `<div class="grounded"><b>GROUNDED</b>${esc(grounded.replace(/^GROUNDED/, ""))}</div>` : "") +
+    confidenceSignalHTML(a)
   );
 }

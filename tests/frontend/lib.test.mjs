@@ -22,6 +22,8 @@ import {
   multiHopBadge,
   corpusHaveList,
   refusalBannerHTML,
+  claimsCited,
+  confidenceSignalHTML,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -341,4 +343,35 @@ test("refusalBannerHTML: no corpus → WHAT I DO HAVE omitted; malicious query e
   assert.doesNotMatch(html, /WHAT I DO HAVE/);
   assert.doesNotMatch(html, /<img/);
   assert.match(html, /&lt;img src=x/);
+});
+
+// --- confidence signal (Story 2.7) ---
+
+test("claimsCited: counts sentences with an in-set citation vs total sentences", () => {
+  const cits = [{ chunk_id: "A-FY2024-Item-8-1" }, { chunk_id: "A-FY2024-Item-1A-2" }];
+  const r = claimsCited(
+    "Revenue rose [A-FY2024-Item-8-1]. Margins held. Risks grew [A-FY2024-Item-1A-2].",
+    cits,
+  );
+  assert.deepEqual(r, { cited: 2, total: 3 }); // 3 sentences, 2 carry a valid cite
+  assert.deepEqual(claimsCited("", []), { cited: 0, total: 0 });
+});
+
+test("confidenceSignalHTML: honest CATEGORY (not a fabricated decimal) + real N/M", () => {
+  const html = confidenceSignalHTML({
+    confidence: "high",
+    refused: false,
+    text: "Revenue rose [A-FY2024-Item-8-1]. Margins held.",
+    citations: [{ chunk_id: "A-FY2024-Item-8-1" }],
+  });
+  assert.match(html, /CONFIDENCE <b>HIGH<\/b>/); // category, not "0.91"
+  assert.doesNotMatch(html, /0\.\d/); // AC-2: no fabricated calibrated decimal
+  assert.match(html, /· 1\/2 CLAIMS CITED/); // real grounding ratio
+  assert.match(html, /class="cfill lvl-high"/); // 3-level bar
+  assert.match(html, /aria-label="Confidence high, 1 of 2 claims cited"/);
+});
+
+test("confidenceSignalHTML: never shown for a refusal, nor without a claims count", () => {
+  assert.equal(confidenceSignalHTML({ refused: true, text: "no", citations: [] }), "");
+  assert.equal(confidenceSignalHTML({ refused: false, text: "", citations: [] }), ""); // total 0 → no signal
 });

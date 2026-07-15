@@ -396,6 +396,34 @@ button.src:hover .srctitle { color: var(--accent-text-light); }
   .panel { position: static; }
 }
 
+/* ---- confidence signal (Story 2.7, UX-DR7/FR-B6) ---- */
+/* Categorical (high/medium/low) — no fabricated 0.91 decimal; calibration is
+ * proven in Epic 3, not asserted here (AC-2). The 3-level bar sits over an
+ * accent-dim track (the 95%-CI band shade, UX-DR7). Never without CLAIMS CITED. */
+.confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  margin-top: 11px;
+}
+.confidence .clabel b { color: var(--accent-text-light); font-weight: 600; }
+.confidence .cbar {
+  width: 64px;
+  height: 5px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);   /* 95%-CI band shade (UX-DR7) */
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.confidence .cfill { display: block; height: 100%; background: var(--accent); }
+.confidence .cfill.lvl-high { width: 100%; }
+.confidence .cfill.lvl-medium { width: 66%; }
+.confidence .cfill.lvl-low { width: 33%; }
+
 /* ---- Q&A drill-down thread (Story 2.4, UX-DR11/DR14) ---- */
 .threadwrap { margin-top: calc(var(--space-unit) * 6); }
 .threadlbl {
