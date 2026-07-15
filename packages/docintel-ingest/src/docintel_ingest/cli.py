@@ -63,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser(
         "transcripts", help="normalize firm-supplied earnings-call transcripts (Story 1.2)"
     )
+    sub.add_parser(
+        "detect", help="detect newly-published filings vs the corpus (Story 1.4; live SEC)"
+    )
     # chunk: optional overrides for the normalized-root and chunks-out-root
     # so tests/test_chunk_idempotency.py::test_chunks_byte_identical can
     # re-chunk into a tmpdir for byte-identity diffing against committed
@@ -115,6 +118,21 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_ingest.transcript import normalize_transcripts_all
 
         return int(normalize_transcripts_all(cfg))
+    if args.cmd == "detect":
+        # Live SEC query (network) → delta vs the corpus. Reports; exit 0 whether
+        # up-to-date or new-found (reporting, not a failure). Lazy import.
+        from docintel_ingest.detect import detect_new, fetch_latest_accessions
+
+        result = detect_new(cfg, fetch_latest_accessions(cfg))
+        # Structured log is the reporting surface (OBS-03 no-print convention);
+        # ``summary`` carries the human-readable "up to date" / "N new" message.
+        log.info(
+            "detect_complete",
+            up_to_date=result.is_up_to_date,
+            count=result.count,
+            summary=result.summary(),
+        )
+        return 0
     if args.cmd == "chunk":
         from pathlib import Path
 
