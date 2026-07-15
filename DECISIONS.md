@@ -699,4 +699,77 @@ dispatch + Story 1.6 for 8-K).
 
 ---
 
-*Last updated: 2026-07-13, Story 1.1 (ADR-015 10-Q re-baseline).*
+## ADR-016: Tier is a construction-time posture; sealed = zero egress (Epic 4, AD-17)
+
+**Status:** Accepted (2026-07-15)
+
+**Context:** Epic 4 introduces two deployment tiers — `open` (bring-your-own hosted
+provider key) and `sealed` (local-only, air-gapped). The architecture spine
+previously deferred "auth / multi-tenancy / licensing" as out of scope for a
+single-user demo, so the sealed tier had **no governing invariant** (Implementation
+Readiness §Major 2). Without one, "air-gapped" is an unenforceable claim: any
+adapter could silently open a socket.
+
+**Decision:** The tier is selected **once at construction** from `Settings.tier`
+(`open | sealed`), an extension of ADR-001/002 (AD-2) — never a hot-path branch.
+The tier constrains **which adapters may be constructed**:
+
+- `sealed` binds **only local adapters** and the factory **rejects at construction**
+  any adapter that would egress (a remote LLM provider, a hosted `OPENAI_BASE_URL`).
+  A sealed process makes **zero external network calls** — models, index, and eval
+  are all local (NFR-SEC1/NFR-DEP2).
+- `open` may bind a hosted-LLM adapter, but **only the LLM call** leaves the
+  perimeter; corpus and queries stay local (NFR-SEC1).
+
+Retrieve/generate/eval code is **byte-identical across tiers** (AD-2); only the
+bundle differs (AD-3). A construction-time guard (`ensure_sealed_egress_free`) +
+a test asserting no-egress-under-sealed enforce it.
+
+**Consequences:**
+
+- + "Air-gapped" becomes a **checkable structural property**, not a marketing claim.
+- + Sealed reuses the existing adapter seam (AD-3) — call sites are unchanged, so
+  the tier is a wiring choice, not a code fork.
+- − A new remote adapter family must register its egress posture so the sealed
+  guard can reject it; this is the intended cost of the guarantee.
+
+## ADR-017: Offline-verifiable licensing via asymmetric signature; never phone home (Epic 4, AD-18)
+
+**Status:** Accepted (2026-07-15)
+
+**Context:** FR-E2 requires a license the deployment can verify **without calling
+home** — licensing must coexist with the sealed tier's zero-egress rule (ADR-016)
+and the no-phone-home guarantee. PRD RISK-4 flagged the offline-license design as
+unresolved. A symmetric (HMAC) scheme is insufficient: the deployment would hold
+the secret and could **forge** its own license.
+
+**Decision:** A license is a **signed token** (licensee, expiry, tier/seat scope)
+verified **entirely offline** against a **bundled public key** using an **asymmetric
+signature (Ed25519)** — the vendor holds the private key and issues; the deployment
+can verify but **cannot forge**; there is **no vendor network call** at issue,
+startup, or query time (FR-E2, NFR-SEC2/SEC4). Verification + enforcement happen
+**once at startup/construction** (cached thereafter — never per-request egress); an
+expired / out-of-scope license triggers the documented enforcement policy **without
+transmitting anything** to the vendor.
+
+The verifier is an **adapter seam** (AD-3): a `LicenseVerifier` Protocol + a real
+**Ed25519** adapter (`cryptography`, import-guarded) + a deterministic **stub**
+(the offline-first default, AD-2/AD-8). A license/secret key is **never logged and
+never embedded in an image** (NFR-SEC3). Rolling bespoke crypto is forbidden —
+verification uses a vetted library only.
+
+**Consequences:**
+
+- + Licensing coexists with the air-gap: verification is a local public-key check.
+- + The seam lets the demo run on the deterministic stub (no key material) while a
+  real deployment swaps in the Ed25519 adapter — a one-adapter change (AD-3).
+- + Asymmetric keys mean a leaked *deployment* image cannot mint licenses (only the
+  public key ships).
+- − `cryptography` is an optional dependency for the real adapter; the stub +
+  enforcement logic (expiry/scope) run on stdlib alone, so the offline suite needs
+  no native build (the Ed25519 round-trip test skips when `cryptography` is absent,
+  mirroring the real-key LLM tests).
+
+---
+
+*Last updated: 2026-07-15, Epic 4 (ADR-016 sealed tier / AD-17, ADR-017 offline license / AD-18).*
