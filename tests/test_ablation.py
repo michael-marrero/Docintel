@@ -106,9 +106,9 @@ def _load_ablation_manifest(run_dir: Path) -> dict:
     with arms as rows + an ``arm_components`` provenance map.
     """
     manifest_path = run_dir / "ablation-manifest.json"
-    assert manifest_path.exists(), (
-        f"ABL-01: ablate run must write a top-level ablation manifest at {manifest_path}"
-    )
+    assert (
+        manifest_path.exists()
+    ), f"ABL-01: ablate run must write a top-level ablation manifest at {manifest_path}"
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
@@ -181,21 +181,21 @@ def test_deltas_present_and_finite(tmp_path: Path) -> None:
     for arm in _NON_BASELINE_ARMS:
         deltas = _arm_deltas(manifest, arm)
         for metric in _HEADLINE_METRICS:
-            assert metric in deltas, (
-                f"ABL-01: arm {arm!r} must carry a delta for headline metric {metric!r}"
-            )
+            assert (
+                metric in deltas
+            ), f"ABL-01: arm {arm!r} must carry a delta for headline metric {metric!r}"
             triple = deltas[metric]
-            assert len(triple) == 3, (
-                f"ABL-01: arm {arm!r} metric {metric!r} must be a (delta, lo, hi) triple; got {triple!r}"
-            )
+            assert (
+                len(triple) == 3
+            ), f"ABL-01: arm {arm!r} metric {metric!r} must be a (delta, lo, hi) triple; got {triple!r}"
             delta, lo, hi = (float(x) for x in triple)
             assert math.isfinite(delta) and math.isfinite(lo) and math.isfinite(hi), (
                 f"ABL-01: arm {arm!r} metric {metric!r} (delta, lo, hi) must all be finite "
                 f"(no NaN/Inf); got {triple!r}"
             )
-            assert lo <= hi, (
-                f"ABL-01: arm {arm!r} metric {metric!r} CI must satisfy lo <= hi; got [{lo}, {hi}]"
-            )
+            assert (
+                lo <= hi
+            ), f"ABL-01: arm {arm!r} metric {metric!r} CI must satisfy lo <= hi; got [{lo}, {hi}]"
 
 
 # ---------------------------------------------------------------------------
@@ -294,9 +294,9 @@ def test_real_ablate_includes_chunk_sweep(tmp_path: Path) -> None:
 
     arm_names = set(manifest.get("arms", {}))
     for arm in _CHUNK_SWEEP_ARMS:
-        assert (run_dir / arm).is_dir(), (
-            f"ABL-01 (real): real-mode sweep must create a sidecar dir for {arm!r}"
-        )
+        assert (
+            run_dir / arm
+        ).is_dir(), f"ABL-01 (real): real-mode sweep must create a sidecar dir for {arm!r}"
         assert arm in arm_names, (
             f"ABL-01 (real): ablation manifest must carry the {arm!r} sweep arm "
             f"({_CHUNK_SWEEP_ARMS} required in real mode, D-05)"
@@ -372,12 +372,12 @@ def test_chunk_arm_wiring_appends_three_arms_in_real_mode(
     # (a) all three chunk arm dirs + manifest arms present.
     manifest_arms = set(manifest.get("arms", {}))
     for arm in _CHUNK_SWEEP_ARMS:
-        assert (run_dir / arm).is_dir(), (
-            f"ABL-01 (wiring): real-mode branch must create a sidecar dir for {arm!r}"
-        )
-        assert arm in manifest_arms, (
-            f"ABL-01 (wiring): manifest must carry the {arm!r} arm in real mode"
-        )
+        assert (
+            run_dir / arm
+        ).is_dir(), f"ABL-01 (wiring): real-mode branch must create a sidecar dir for {arm!r}"
+        assert (
+            arm in manifest_arms
+        ), f"ABL-01 (wiring): manifest must carry the {arm!r} arm in real mode"
     assert arm in manifest.get("arm_names", []), "arm_names must list the chunk arms"
 
     # (b) chunk_sizes == [300, 450, 600] + per-arm index identity hashes recorded.
@@ -415,12 +415,12 @@ def test_chunk_arms_absent_in_stub_mode(tmp_path: Path) -> None:
             f"ABL-01/D-04 (wiring): stub mode must NOT create the {arm!r} dir "
             f"(chunk sweep is real-only)"
         )
-        assert arm not in manifest_arms, (
-            f"ABL-01/D-04 (wiring): stub manifest must NOT carry the {arm!r} arm"
-        )
-    assert manifest["chunk_sizes"] == [], (
-        f"ABL-01/D-04 (wiring): stub chunk_sizes must be []; got {manifest.get('chunk_sizes')!r}"
-    )
+        assert (
+            arm not in manifest_arms
+        ), f"ABL-01/D-04 (wiring): stub manifest must NOT carry the {arm!r} arm"
+    assert (
+        manifest["chunk_sizes"] == []
+    ), f"ABL-01/D-04 (wiring): stub chunk_sizes must be []; got {manifest.get('chunk_sizes')!r}"
     assert manifest["index_identity_hashes"] == {}, (
         f"ABL-01/D-04 (wiring): stub index_identity_hashes must be empty; "
         f"got {manifest.get('index_identity_hashes')!r}"
@@ -450,13 +450,13 @@ def test_report_table_shape(tmp_path: Path) -> None:
         assert arm in text, f"ABL-02: comparison table must carry a row for arm {arm!r}"
 
     # Non-baseline rows carry bracketed CIs; the table has CI brackets present.
-    assert "[" in text and "]" in text, (
-        "ABL-02: non-baseline rows must render bracketed [lo, hi] CIs (D-07 cell shape)"
-    )
+    assert (
+        "[" in text and "]" in text
+    ), "ABL-02: non-baseline rows must render bracketed [lo, hi] CIs (D-07 cell shape)"
     # Baseline is the reference row — its delta cell is an em-dash, not a CI.
-    assert "—" in text, (
-        "ABL-02: the baseline row must show '—' for its delta (it is the reference row, D-07)"
-    )
+    assert (
+        "—" in text
+    ), "ABL-02: the baseline row must show '—' for its delta (it is the reference row, D-07)"
 
 
 # ---------------------------------------------------------------------------
@@ -477,9 +477,7 @@ def test_headline_sentence_per_ablation(tmp_path: Path) -> None:
 
     marker = "## Comparison Table"
     head = text.split(marker, 1)[0] if marker in text else text
-    headline_lines = [
-        ln for ln in head.splitlines() if "Hit@3" in ln and "[" in ln and "]" in ln
-    ]
+    headline_lines = [ln for ln in head.splitlines() if "Hit@3" in ln and "[" in ln and "]" in ln]
     assert headline_lines, (
         "ABL-02: at least one headline-finding sentence mentioning 'Hit@3' with a bracketed "
         "CI must appear ABOVE the comparison table (the recruiter-skim payload, D-07)"
@@ -507,9 +505,7 @@ def test_output_location() -> None:
     before = set(_ABLATIONS_DIR.glob("*/")) if _ABLATIONS_DIR.exists() else set()
 
     exit_code = run_ablations(cfg)
-    new_dirs = (
-        (set(_ABLATIONS_DIR.glob("*/")) - before) if _ABLATIONS_DIR.exists() else set()
-    )
+    new_dirs = (set(_ABLATIONS_DIR.glob("*/")) - before) if _ABLATIONS_DIR.exists() else set()
     try:
         assert exit_code == 0, f"ABL-02: ablate must exit 0 in stub mode; got {exit_code}"
         assert new_dirs, (
@@ -517,9 +513,9 @@ def test_output_location() -> None:
             "data/eval/ablations/ (D-08, sibling of reports/)"
         )
         for created in new_dirs:
-            assert _ABLATIONS_DIR in created.resolve().parents or created.parent == _ABLATIONS_DIR, (
-                f"ABL-02: created run dir {created} must live under {_ABLATIONS_DIR}"
-            )
+            assert (
+                _ABLATIONS_DIR in created.resolve().parents or created.parent == _ABLATIONS_DIR
+            ), f"ABL-02: created run dir {created} must live under {_ABLATIONS_DIR}"
     finally:
         for _d in new_dirs:
             shutil.rmtree(_d, ignore_errors=True)
@@ -591,9 +587,9 @@ def test_validate_nan_and_wellformed() -> None:
         assert "NaN" in raw, "precondition: NaN must appear in raw manifest JSON text"
         (abl_dir / "ablation-manifest.json").write_text(raw, encoding="utf-8")
         nan_exit = cmd_validate_ablation(abl_dir)
-        assert nan_exit == 1, (
-            f"D-11: extended validate must return 1 when a delta is NaN; got {nan_exit}"
-        )
+        assert (
+            nan_exit == 1
+        ), f"D-11: extended validate must return 1 when a delta is NaN; got {nan_exit}"
 
     # --- Leg 2: well-formed committed stub-sample -> exit 0 ---
     ok_exit = cmd_validate_ablation(_STUB_SAMPLE_DIR)

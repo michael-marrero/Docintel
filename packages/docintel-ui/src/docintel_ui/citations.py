@@ -97,9 +97,13 @@ def _badge_html(index: int, citation: Citation) -> str:
     works semantically — it just loses the dotted underline.
     """
     section = f"{citation.item_code}: {citation.item_title}"
-    header = f"[{_html_escape(citation.company)} · {_html_escape(section)}]"
-    excerpt = _html_escape(citation.text[:_HOVER_EXCERPT_CHARS])
-    title_value = f"{header}\n{excerpt}"
+    # Collapse ALL whitespace BEFORE escaping. The 10-K excerpt carries `\n\n`
+    # paragraph breaks; a blank line inside the title attribute breaks Streamlit's
+    # markdown->HTML block rendering — it splits the <abbr> tag at the blank line,
+    # leaking the raw `<abbr title=... style=...>` markup onto the page (the bug
+    # seen in the hero demo). Flattening to one line renders as a clean tooltip.
+    raw_title = f"[{citation.company} · {section}] {citation.text[:_HOVER_EXCERPT_CHARS]}"
+    title_value = _html_escape(" ".join(raw_title.split()))
     return (
         f'<abbr title="{title_value}" '
         f'style="cursor:help; text-decoration:none; '
@@ -218,7 +222,5 @@ def build_sources_list(answer: Answer) -> list[str]:
         excerpt = citation.text[:_SOURCES_EXCERPT_CHARS]
         ellipsis = "..." if len(citation.text) > _SOURCES_EXCERPT_CHARS else ""
         section = f"{citation.item_code}: {citation.item_title}"
-        entries.append(
-            f"**[{index}]** {citation.company} · {section}  \n*{excerpt}{ellipsis}*"
-        )
+        entries.append(f"**[{index}]** {citation.company} · {section}  \n*{excerpt}{ellipsis}*")
     return entries

@@ -35,3 +35,16 @@ def test_stub_model_costs_zero() -> None:
     from docintel_core.pricing import cost_for
 
     assert cost_for("stub", "stub", 9999, 9999) == 0.0
+
+
+def test_nim_models_priced_zero_not_keyerror() -> None:
+    """NIM-served models are keyed (D-14) so cost_for returns 0.0 instead of raising.
+
+    build.nvidia.com hosted inference is a free dev-credit tier — the marginal
+    $/token is 0. The point of registering them is to clear the D-06 KeyError
+    gate (an unregistered generator model would crash the eval mid-run).
+    """
+    from docintel_core.pricing import cost_for
+
+    assert cost_for("openai", "openai/gpt-oss-120b", 1_000, 500) == 0.0
+    assert cost_for("openai", "meta/llama-3.3-70b-instruct", 1_000, 500) == 0.0

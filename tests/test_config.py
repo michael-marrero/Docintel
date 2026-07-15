@@ -41,3 +41,29 @@ def test_real_provider_overridable_via_env(
     """The DOCINTEL_LLM_REAL_PROVIDER env var flips the real provider to OpenAI."""
     monkeypatch.setenv("DOCINTEL_LLM_REAL_PROVIDER", "openai")
     assert Settings().llm_real_provider == "openai"
+
+
+# ---------------------------------------------------------------------------
+# D-14 / ADR-014: OpenAI-compatible endpoint override (NIM) + distinct judge model
+# ---------------------------------------------------------------------------
+
+
+def test_openai_endpoint_overrides_default_to_safe_values(clean_docintel_env) -> None:
+    """Without env, the NIM knobs default to api.openai.com + gpt-4o + no judge override."""
+    cfg = Settings()
+    assert cfg.openai_base_url is None
+    assert cfg.openai_model == "gpt-4o"
+    assert cfg.judge_model is None
+
+
+def test_nim_endpoint_overridable_via_env(
+    clean_docintel_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DOCINTEL_OPENAI_BASE_URL / _MODEL / DOCINTEL_JUDGE_MODEL drive the NIM wiring (D-14)."""
+    monkeypatch.setenv("DOCINTEL_OPENAI_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    monkeypatch.setenv("DOCINTEL_OPENAI_MODEL", "openai/gpt-oss-120b")
+    monkeypatch.setenv("DOCINTEL_JUDGE_MODEL", "meta/llama-3.3-70b-instruct")
+    cfg = Settings()
+    assert cfg.openai_base_url == "https://integrate.api.nvidia.com/v1"
+    assert cfg.openai_model == "openai/gpt-oss-120b"
+    assert cfg.judge_model == "meta/llama-3.3-70b-instruct"

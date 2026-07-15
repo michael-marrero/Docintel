@@ -60,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("fetch", help="download 10-Ks from SEC EDGAR")
     sub.add_parser("normalize", help="parse raw HTML to per-Item JSON")
+    sub.add_parser(
+        "transcripts", help="normalize firm-supplied earnings-call transcripts (Story 1.2)"
+    )
+    sub.add_parser(
+        "detect", help="detect newly-published filings vs the corpus (Story 1.4; live SEC)"
+    )
     # chunk: optional overrides for the normalized-root and chunks-out-root
     # so tests/test_chunk_idempotency.py::test_chunks_byte_identical can
     # re-chunk into a tmpdir for byte-identity diffing against committed
@@ -91,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override greedy split point in tokens (default 450; Phase 11 chunk-size sweep {300,450,600}, ABL-01)",
     )
-    sub.add_parser("all", help="fetch + normalize + chunk + manifest")
+    sub.add_parser("all", help="fetch + normalize + transcripts + chunk + manifest")
     sub.add_parser("verify", help="re-chunk normalized; assert byte-identity")
 
     args = parser.parse_args(argv)
@@ -108,6 +114,30 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_ingest.normalize import normalize_all
 
         return int(normalize_all(cfg))
+    if args.cmd == "transcripts":
+        from docintel_ingest.transcript import normalize_transcripts_all
+
+        return int(normalize_transcripts_all(cfg))
+    if args.cmd == "detect":
+        # Live SEC query (network) → delta vs the corpus. Reports; exit 0 whether
+        # up-to-date or new-found (reporting, not a failure). Lazy import.
+        from docintel_ingest.detect import detect_new, fetch_latest_accessions
+
+        try:
+            latest = fetch_latest_accessions(cfg)
+        except Exception as exc:  # network/lookup failure — clean error, not a traceback
+            log.error("detect_failed", error_type=type(exc).__name__, error=str(exc))
+            return 1
+        result = detect_new(cfg, latest)
+        # Structured log is the reporting surface (OBS-03 no-print convention);
+        # ``summary`` carries the human-readable "up to date" / "N new" message.
+        log.info(
+            "detect_complete",
+            up_to_date=result.is_up_to_date,
+            count=result.count,
+            summary=result.summary(),
+        )
+        return 0
     if args.cmd == "chunk":
         from pathlib import Path
 
@@ -154,6 +184,7 @@ def _cmd_all(cfg: Settings) -> int:
     from docintel_ingest.fetch import fetch_all
     from docintel_ingest.manifest import write_manifest
     from docintel_ingest.normalize import normalize_all
+    from docintel_ingest.transcript import normalize_transcripts_all
 
     rc = fetch_all(cfg)
     if rc != 0:
@@ -163,6 +194,17 @@ def _cmd_all(cfg: Settings) -> int:
     if rc != 0:
         log.error("all_step_failed", step="normalize", rc=rc)
         return rc
+    # Transcripts (Story 1.2): OPTIONAL firm-supplied source, normalized before
+    # chunk so chunk_all picks up the CALL-*.json alongside the filings. A no-op
+    # when no transcripts/ dir is present. Unlike fetch/normalize, a non-zero rc
+    # (one bad transcript, already logged + skipped per-file) must NOT abort the
+    # corpus build — warn and continue so filings + good transcripts still land.
+    if normalize_transcripts_all(cfg) != 0:
+        log.warning(
+            "all_step_partial",
+            step="transcripts",
+            note="one or more transcripts failed; continuing with filings + good transcripts",
+        )
     rc = chunk_all(cfg)
     if rc != 0:
         # chunk_all is all-or-nothing: a non-zero rc means it wrote NOTHING

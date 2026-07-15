@@ -1,0 +1,29 @@
+{
+  "ticker": "AAPL",
+  "fiscal_year": 2024,
+  "fiscal_period": "Q1",
+  "call_date": "2024-02-01",
+  "title": "AAPL Q1 FY2024 Earnings Call (fixture)",
+  "turns": [
+    {
+      "speaker": "Operator",
+      "role": "",
+      "text": "Good afternoon and welcome to the Company's earnings conference call for the first fiscal quarter. My name is the operator and I will be your host today. Please note that this call is being recorded. I would now like to turn the call over to Investor Relations."
+    },
+    {
+      "speaker": "Tim Cook",
+      "role": "Chief Executive Officer",
+      "text": "Thank you and good afternoon everyone. We are pleased to report a solid quarter with revenue growth across several of our product categories and continued strength in Services. Our installed base of active devices reached a new all-time high, which underscores the loyalty and satisfaction of our customers. During the quarter we saw particular momentum in emerging markets, where we continue to invest in retail and channel partnerships. We also advanced our environmental commitments and remain on track toward our carbon-neutral goals. Looking ahead, we are optimistic about our product pipeline and the opportunities in front of us, and we remain focused on delivering long-term value to our shareholders while investing in innovation."
+    },
+    {
+      "speaker": "Luca Maestri",
+      "role": "Chief Financial Officer",
+      "text": "Thank you Tim. Total revenue for the quarter reflected growth compared to the prior-year period, with gross margin expanding on a favorable mix shift toward Services. Operating expenses were in line with our expectations as we continued to invest in research and development. We returned capital to shareholders through dividends and share repurchases during the quarter, and our balance sheet remains strong with a substantial net cash position."
+    },
+    {
+      "speaker": "Operator",
+      "role": "",
+      "text": "Thank you. We will now begin the question-and-answer session. Our first question comes from an analyst on the line."
+    }
+  ]
+}

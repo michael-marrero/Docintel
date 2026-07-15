@@ -76,8 +76,9 @@ log = structlog.stdlib.get_logger(__name__)
 # MANIFEST.json schema version. Bump if the schema changes in a way that
 # would force consumers (tests/test_chunk_idempotency.py, Phase 4 index
 # manifest) to update their parsing. V1 is the schema from RESEARCH.md
-# lines 668-713.
-MANIFEST_VERSION = 1
+# lines 668-713. V2 (Story 1.1) adds per-filing ``filing_type`` +
+# ``fiscal_period`` provenance.
+MANIFEST_VERSION = 2
 
 
 class Discrepancy(NamedTuple):
@@ -122,7 +123,7 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int) -> dict[str, Any]:
+def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int, stem: str) -> dict[str, Any]:
     """Build one per-filing entry for ``MANIFEST.json["filings"]``.
 
     Schema mirrors RESEARCH.md lines 693-712. ``raw_path`` /
@@ -142,6 +143,9 @@ def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int) -> dict[str, Any
         ticker: Validated SEC ticker (Pydantic ``CompanyEntry`` validation
             at snapshot load time guarantees the form ``^[A-Z.]{1,5}$``).
         fiscal_year: Integer fiscal-year label from the snapshot row.
+        stem: Filename stem shared by all three artifacts — ``FY{year}`` for a
+            10-K, ``Q{n}FY{year}`` for a 10-Q. Keeps 10-K paths byte-identical
+            (stem == ``FY{fiscal_year}``) while giving each 10-Q its own entry.
 
     Returns:
         Dict ready for serialization into the manifest's ``filings``
@@ -149,19 +153,28 @@ def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int) -> dict[str, Any
         ``json.dumps(..., sort_keys=True)`` re-orders keys deterministically
         at the writer.
     """
-    raw_rel = f"data/corpus/raw/{ticker}/FY{fiscal_year}.html"
-    normalized_rel = f"data/corpus/normalized/{ticker}/FY{fiscal_year}.json"
-    chunks_rel = f"data/corpus/chunks/{ticker}/FY{fiscal_year}.jsonl"
+    normalized_rel = f"data/corpus/normalized/{ticker}/{stem}.json"
+    chunks_rel = f"data/corpus/chunks/{ticker}/{stem}.jsonl"
 
-    raw_fp = Path(cfg.data_dir) / "corpus" / "raw" / ticker / f"FY{fiscal_year}.html"
-    normalized_fp = Path(cfg.data_dir) / "corpus" / "normalized" / ticker / f"FY{fiscal_year}.json"
-    chunks_fp = Path(cfg.data_dir) / "corpus" / "chunks" / ticker / f"FY{fiscal_year}.jsonl"
+    normalized_fp = Path(cfg.data_dir) / "corpus" / "normalized" / ticker / f"{stem}.json"
+    chunks_fp = Path(cfg.data_dir) / "corpus" / "chunks" / ticker / f"{stem}.jsonl"
 
     # Read the normalized JSON to surface accession + per-filing manifest
     # fields that downstream consumers (Phase 4 index manifest, eval-report
     # provenance) read out of MANIFEST.json directly rather than re-parsing
     # every normalized JSON.
     normalized_obj = json.loads(normalized_fp.read_text(encoding="utf-8"))
+
+    # Raw location: SEC filings live under raw/{stem}.html; a firm-supplied
+    # transcript's raw IS the JSON under transcripts/ (its repo-relative path is
+    # carried on the normalized JSON). Filings keep the exact same value → the
+    # committed manifest stays byte-identical.
+    if normalized_obj.get("filing_type") == "transcript":
+        raw_rel = normalized_obj["raw_path"]
+        raw_fp = Path(cfg.data_dir) / Path(raw_rel).relative_to("data")
+    else:
+        raw_rel = f"data/corpus/raw/{ticker}/{stem}.html"
+        raw_fp = Path(cfg.data_dir) / "corpus" / "raw" / ticker / f"{stem}.html"
 
     # Chunk count = newline-separated JSONL lines. Empty filings
     # (AMZN/META/XOM x 3 FYs — Wave 3 styled-span outcome) have a
@@ -184,6 +197,11 @@ def _filing_entry(cfg: Settings, ticker: str, fiscal_year: int) -> dict[str, Any
         "items_missing": normalized_obj["manifest"]["items_missing"],
         "ordering_valid": normalized_obj["manifest"]["ordering_valid"],
         "tables_dropped": normalized_obj["manifest"]["tables_dropped"],
+        # Story 1.1 (MANIFEST v2): form-type + fiscal-period provenance, read
+        # from the normalized JSON. ``.get`` defaults keep the reader resilient
+        # to any pre-re-baseline normalized file still lacking the keys.
+        "filing_type": normalized_obj.get("filing_type", "10-K"),
+        "fiscal_period": normalized_obj.get("fiscal_period", "FY"),
     }
 
 
@@ -275,28 +293,115 @@ def write_manifest(cfg: Settings, *, target_tokens: int = TARGET_TOKENS) -> Path
         "sentence_split_regex": "(?<=[.!?])\\s+(?=[A-Z])",
     }
 
+    corpus = Path(cfg.data_dir) / "corpus"
     filings: list[dict[str, Any]] = []
     n_skipped = 0
     for entry in companies:
-        for year in entry.fiscal_years:
-            raw_fp = Path(cfg.data_dir) / "corpus" / "raw" / entry.ticker / f"FY{year}.html"
-            normalized_fp = (
-                Path(cfg.data_dir) / "corpus" / "normalized" / entry.ticker / f"FY{year}.json"
-            )
-            chunks_fp = Path(cfg.data_dir) / "corpus" / "chunks" / entry.ticker / f"FY{year}.jsonl"
-            if not (raw_fp.is_file() and normalized_fp.is_file() and chunks_fp.is_file()):
+        for form in entry.forms:
+            if form == "8-K":
+                # 8-K is accession-keyed (8K-{accession}.json), NOT year-keyed —
+                # discover per ticker (globbing per year would double-count). The
+                # fiscal year is read from the normalized JSON. 10-K-only tickers
+                # never reach this branch, so the committed manifest is byte-stable.
+                ndir = corpus / "normalized" / entry.ticker
+                for stem in sorted(p.stem for p in ndir.glob("8K-*.json")):
+                    raw_fp = corpus / "raw" / entry.ticker / f"{stem}.html"
+                    normalized_fp = ndir / f"{stem}.json"
+                    chunks_fp = corpus / "chunks" / entry.ticker / f"{stem}.jsonl"
+                    if not (raw_fp.is_file() and normalized_fp.is_file() and chunks_fp.is_file()):
+                        n_skipped += 1
+                        log.warning(
+                            "manifest_filing_skipped",
+                            ticker=entry.ticker,
+                            form=form,
+                            stem=stem,
+                            raw_present=raw_fp.is_file(),
+                            normalized_present=normalized_fp.is_file(),
+                            chunks_present=chunks_fp.is_file(),
+                            reason="one or more artifacts missing on disk",
+                        )
+                        continue
+                    try:
+                        fy = json.loads(normalized_fp.read_text(encoding="utf-8"))["fiscal_year"]
+                    except (json.JSONDecodeError, KeyError, OSError) as exc:
+                        n_skipped += 1
+                        log.warning(
+                            "manifest_filing_skipped",
+                            ticker=entry.ticker,
+                            form=form,
+                            stem=stem,
+                            reason=f"unreadable normalized JSON: {type(exc).__name__}",
+                        )
+                        continue
+                    filings.append(_filing_entry(cfg, entry.ticker, fy, stem))
+                continue
+            for year in entry.fiscal_years:
+                if form == "10-K":
+                    stems = [f"FY{year}"]
+                else:
+                    # 10-Q: one file per fetched quarter, Q-keyed (Q1FY{year}…).
+                    # Discover them off disk — a ticker may have any subset of
+                    # quarters. 10-K-only tickers never reach this branch, so the
+                    # committed corpus manifest stays byte-identical.
+                    stems = sorted(
+                        p.stem
+                        for p in (corpus / "normalized" / entry.ticker).glob(f"Q?FY{year}.json")
+                    )
+                for stem in stems:
+                    raw_fp = corpus / "raw" / entry.ticker / f"{stem}.html"
+                    normalized_fp = corpus / "normalized" / entry.ticker / f"{stem}.json"
+                    chunks_fp = corpus / "chunks" / entry.ticker / f"{stem}.jsonl"
+                    if not (raw_fp.is_file() and normalized_fp.is_file() and chunks_fp.is_file()):
+                        n_skipped += 1
+                        log.warning(
+                            "manifest_filing_skipped",
+                            ticker=entry.ticker,
+                            fiscal_year=year,
+                            form=form,
+                            stem=stem,
+                            raw_present=raw_fp.is_file(),
+                            normalized_present=normalized_fp.is_file(),
+                            chunks_present=chunks_fp.is_file(),
+                            reason="one or more artifacts missing on disk",
+                        )
+                        continue
+                    filings.append(_filing_entry(cfg, entry.ticker, year, stem))
+
+        # Transcripts (Story 1.2): firm-supplied, NOT in entry.forms — discover
+        # by the CALL- prefix per ticker (call-date-keyed, not year-keyed). Only
+        # fires when a ticker has committed transcript output; filing-only tickers
+        # never enter this branch, so the committed manifest stays byte-stable.
+        tdir_norm = corpus / "normalized" / entry.ticker
+        for stem in sorted(p.stem for p in tdir_norm.glob("CALL-*.json")):
+            normalized_fp = tdir_norm / f"{stem}.json"
+            chunks_fp = corpus / "chunks" / entry.ticker / f"{stem}.jsonl"
+            if not (normalized_fp.is_file() and chunks_fp.is_file()):
                 n_skipped += 1
                 log.warning(
                     "manifest_filing_skipped",
                     ticker=entry.ticker,
-                    fiscal_year=year,
-                    raw_present=raw_fp.is_file(),
+                    stem=stem,
                     normalized_present=normalized_fp.is_file(),
                     chunks_present=chunks_fp.is_file(),
-                    reason="one or more artifacts missing on disk",
+                    reason="one or more transcript artifacts missing on disk",
                 )
                 continue
-            filings.append(_filing_entry(cfg, entry.ticker, year))
+            # Guard the whole entry build: the transcript raw is the JSON under
+            # transcripts/ (resolved inside _filing_entry). A missing raw file
+            # (FileNotFoundError) or a non-``data/`` raw_path (ValueError from
+            # relative_to) must skip that one transcript, not abort the manifest.
+            try:
+                fy = json.loads(normalized_fp.read_text(encoding="utf-8"))["fiscal_year"]
+                filings.append(_filing_entry(cfg, entry.ticker, fy, stem))
+            except (json.JSONDecodeError, KeyError, OSError, ValueError) as exc:
+                n_skipped += 1
+                log.warning(
+                    "manifest_filing_skipped",
+                    ticker=entry.ticker,
+                    stem=stem,
+                    reason=f"unbuildable transcript entry: {type(exc).__name__}",
+                )
+                continue
 
     manifest: dict[str, Any] = {
         "version": MANIFEST_VERSION,

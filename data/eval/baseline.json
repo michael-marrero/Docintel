@@ -1,0 +1,9 @@
+{
+  "report_dir": "data/eval/reports/20260710_213926_942457Z/",
+  "git_sha": "8278e8a9ebff81187ebb197e58bf83e7b804f7d0",
+  "eval_set_sha256": "5d9f879207c6b8a0c363804eebb9add4babefaa63beadcea7dc80dbd8db88d82",
+  "prompt_version_hash": "65da07f1ba3e",
+  "phase_locked": 14,
+  "cost_usd": 0.0,
+  "locked_at": "2026-07-10T22:23:58Z"
+}

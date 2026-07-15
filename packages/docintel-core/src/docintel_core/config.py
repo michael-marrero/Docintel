@@ -50,6 +50,33 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = Field(default=None)
     openai_api_key: SecretStr | None = Field(default=None)
 
+    # OpenAI-compatible endpoint override (D-14). Set DOCINTEL_OPENAI_BASE_URL to
+    # point the OpenAI adapter at any chat-completions-compatible gateway — e.g.
+    # NVIDIA NIM hosted catalog ("https://integrate.api.nvidia.com/v1") serving
+    # open-weight models like openai/gpt-oss-120b. None → the SDK default
+    # (api.openai.com). The nvapi-... key goes in openai_api_key.
+    openai_base_url: str | None = Field(default=None)
+
+    # Generator model for the OpenAI adapter. Default gpt-4o (the v1.0 baseline).
+    # Override to a NIM catalog id (e.g. "openai/gpt-oss-120b") via
+    # DOCINTEL_OPENAI_MODEL. Must be keyed in pricing.py or cost_for() raises (D-06).
+    openai_model: str = Field(default="gpt-4o")
+
+    # Cross-family judge model (D-14). When set AND llm_real_provider='openai',
+    # the judge is a SECOND OpenAIAdapter pinned to this model rather than the
+    # Anthropic complement — enabling distinct-model cross-family judging against
+    # a single OpenAI-compatible gateway (e.g. generator=openai/gpt-oss-120b,
+    # judge=meta/llama-3.3-70b-instruct, both via NIM). None preserves the v1.0
+    # cross-PROVIDER behaviour (D-04). See ADR-014.
+    judge_model: str | None = Field(default=None)
+
+    # EMP-01: optional SEPARATE API key for the judge adapter. NIM free-tier caps
+    # total requests per worker (~32); a 32-question eval makes 64 calls (gen+judge)
+    # and exhausts one key. Putting the judge on a SECOND nvapi key gives it an
+    # independent worker budget so the full frozen benchmark runs on free NIM.
+    # None → judge reuses openai_api_key (single-key behaviour, unchanged).
+    judge_openai_api_key: SecretStr | None = Field(default=None)
+
     # Where ingestion artifacts land (Phase 3+ will use this).
     data_dir: str = Field(default="data")
 

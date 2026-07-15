@@ -62,11 +62,11 @@ from typing import Any
 
 __all__ = [
     "_find_eval_report",
-    "parse_retrieval_rows",
+    "load_ablation_manifest",
+    "load_results",
     "parse_ablation_rows",
     "parse_faithfulness_row",
-    "load_results",
-    "load_ablation_manifest",
+    "parse_retrieval_rows",
     "representative_banner",
 ]
 
@@ -129,9 +129,7 @@ def _find_eval_report(data_dir: str) -> tuple[Path | None, bool]:
         real_reports = sorted(
             d
             for d in reports_base.iterdir()
-            if d.is_dir()
-            and d.name != _STUB_SAMPLE_DIR
-            and (d / "results.json").is_file()
+            if d.is_dir() and d.name != _STUB_SAMPLE_DIR and (d / "results.json").is_file()
         )
         if real_reports:
             return real_reports[-1], True
@@ -283,9 +281,7 @@ def parse_ablation_rows(manifest: dict[str, Any]) -> list[dict[str, str]]:
             value = arm_metrics.get(metric, 0.0)
             if metric in arm_deltas and len(arm_deltas[metric]) == 3:
                 delta, lo, hi = arm_deltas[metric]
-                row[metric] = (
-                    f"{value:.3f} (Δ{delta:+.3f} [{lo:.3f}, {hi:.3f}])"
-                )
+                row[metric] = f"{value:.3f} (Δ{delta:+.3f} [{lo:.3f}, {hi:.3f}])"
             else:
                 # Baseline arm carries empty deltas — show "baseline" so the
                 # reader knows it's the reference, not just "missing CI".

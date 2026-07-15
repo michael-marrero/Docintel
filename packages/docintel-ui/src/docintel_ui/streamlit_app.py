@@ -46,6 +46,7 @@ from docintel_core.config import Settings
 from docintel_core.types import REFUSAL_TEXT_SENTINEL, Answer
 
 from docintel_ui.citations import build_sources_list, render_citation_badges
+from docintel_ui.coverage_view import scope_label, status_html, table_html
 from docintel_ui.eval_view import (
     _find_eval_report,
     load_ablation_manifest,
@@ -154,6 +155,67 @@ def _fetch_traces(api_url: str) -> tuple[bool, list[dict[str, Any]] | str]:
         return False, f"Invalid JSON from {api_url}/traces: {exc}"
 
 
+# ---------------------------------------------------------------------------
+# Coverage view (Story 1.5) — the browsable front-door corpus scope
+# ---------------------------------------------------------------------------
+
+
+def _fetch_coverage(api_url: str) -> tuple[bool, dict[str, Any] | str]:
+    """Call GET {api_url}/coverage (Story 1.5; AD-15 — UI reads coverage via API only).
+
+    Mirrors ``_fetch_traces``: sync httpx.get, X-Trace-Id header, 3s timeout,
+    never-raises ``(ok, payload)`` return.
+    """
+    trace_id = str(uuid.uuid4())
+    try:
+        resp = httpx.get(f"{api_url}/coverage", headers={"X-Trace-Id": trace_id}, timeout=3.0)
+        resp.raise_for_status()
+        body = resp.json()
+        if not isinstance(body, dict) or "companies" not in body or "corpus" not in body:
+            return False, f"Unexpected /coverage payload: {type(body).__name__}"
+        return True, body
+    except httpx.HTTPError as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    except ValueError as exc:  # JSON decode failure
+        return False, f"Invalid JSON from {api_url}/coverage: {exc}"
+
+
+def _render_coverage(settings: Settings) -> None:
+    """Front-door coverage view (Story 1.5): status label + browsable table (AD-15 — API only)."""
+    ok, body = _fetch_coverage(settings.api_url)
+    if not ok:
+        st.warning(f"Coverage unavailable from {settings.api_url}/coverage: {body}")
+        return
+    corpus: dict[str, Any] = body["corpus"]  # type: ignore[index]
+    companies: list[dict[str, Any]] = body["companies"]  # type: ignore[index]
+    st.html(status_html(corpus))
+    st.caption(
+        "docintel only answers from the filings below. Anything outside this set "
+        "returns a refusal, not a guess."
+    )
+    query = (
+        st.text_input(
+            "Filter coverage",
+            value="",
+            placeholder="Filter by company or ticker (e.g. AAPL)",
+            label_visibility="collapsed",
+        )
+        .strip()
+        .lower()
+    )
+    rows = [
+        c
+        for c in companies
+        if not query or query in c["ticker"].lower() or query in c["name"].lower()
+    ]
+    st.html(table_html(rows))
+    st.caption(
+        f"Showing {len(rows)} of {corpus['company_count']} companies · "
+        f"{scope_label(corpus)}. docintel will not answer about companies, "
+        "sectors, or periods not listed here."
+    )
+
+
 def _render_stage_bars(trace: dict[str, Any]) -> None:
     """Render per-stage horizontal timing bars for a single trace (D-11).
 
@@ -212,13 +274,9 @@ def _render_stage_bars(trace: dict[str, Any]) -> None:
     total_ms = float(trace.get("total_ms", 0.0))
     cost_usd = float(trace.get("cost_usd", 0.0))
     stub_note = (
-        " · stub mode — all durations are 0 ms (non-representative)"
-        if total_ms == 0.0
-        else ""
+        " · stub mode — all durations are 0 ms (non-representative)" if total_ms == 0.0 else ""
     )
-    st.caption(
-        f"Total: {total_ms:.1f} ms · Cost: ${cost_usd:.6f}{stub_note}"
-    )
+    st.caption(f"Total: {total_ms:.1f} ms · Cost: ${cost_usd:.6f}{stub_note}")
 
 
 def _render_traces_tab(settings: Settings) -> None:
@@ -238,9 +296,7 @@ def _render_traces_tab(settings: Settings) -> None:
 
     assert isinstance(body, list)
     if not body:
-        st.info(
-            "No traces yet. Run a query from the Query tab to populate this view."
-        )
+        st.info("No traces yet. Run a query from the Query tab to populate this view.")
         return
 
     # Defensive newest-first slice — the API reverses load_traces, but we
@@ -407,11 +463,13 @@ def _render_query_result(payload: tuple[bool, dict[str, Any] | str]) -> None:
         return
 
     # ---- Answer card (D-03) ----
-    # Inline hoverable numbered badges via the pure citations.py helper. The
-    # badges' title attributes are HTML-escaped (V5 / T-13-01) inside the
-    # helper, so unsafe_allow_html=True is safe here — no user input flows
-    # raw into the HTML.
-    st.markdown(render_citation_badges(answer_obj), unsafe_allow_html=True)
+    # Inline hoverable numbered badges via the pure citations.py helper. Render
+    # with st.html (raw HTML, NO markdown pass) — st.markdown(unsafe_allow_html=True)
+    # runs the string through markdown first, which (a) treats the `[N]` badge
+    # labels as link-reference syntax and (b) sanitizes/splits the <abbr> tags,
+    # leaking raw `<abbr title=... style=...>` markup onto the page (the hero-demo
+    # bug). st.html emits the escaped HTML verbatim so the tooltips render clean.
+    st.html(render_citation_badges(answer_obj))
 
     # Confidence + cost/latency meter row.
     col_conf, col_cost, col_latency = st.columns(3)
@@ -455,6 +513,13 @@ def main() -> None:
         f"provider={settings.llm_provider}"
     )
 
+    # ---------------- Coverage (front door — Story 1.5) ----------------
+    # Rendered above the tabs so the analyst sees what's answerable before asking
+    # (epics 1.5 empty-state, UX-DR9/16). Fetched over HTTP only (AD-15).
+    st.subheader("Corpus coverage")
+    st.caption("What docintel can answer — browse before you ask.")
+    _render_coverage(settings)
+
     # ---------------- API health probe ----------------
     st.subheader("API health")
     trace_id = str(uuid.uuid4())
@@ -486,9 +551,7 @@ def main() -> None:
             with st.spinner("Querying..."):
                 # Store the (ok, payload) tuple in session_state so it survives
                 # Streamlit reruns + tab switches (RESEARCH Pitfall 1).
-                st.session_state["query_result"] = _call_query(
-                    settings.api_url, question
-                )
+                st.session_state["query_result"] = _call_query(settings.api_url, question)
 
         if "query_result" in st.session_state:
             _render_query_result(st.session_state["query_result"])

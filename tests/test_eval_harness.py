@@ -33,7 +33,7 @@ from pathlib import Path
 # Module-level path anchors (test_eval_dataset_schema.py pattern — line 31)
 # ---------------------------------------------------------------------------
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_QUESTIONS_PATH = _REPO_ROOT / "data" / "eval" / "ground_truth" / "questions.jsonl"
+_EVAL_SET_PATH = _REPO_ROOT / "data" / "eval" / "ground_truth" / "eval_set.jsonl"
 _REPORTS_DIR = _REPO_ROOT / "data" / "eval" / "reports"
 _GITIGNORE_PATH = _REPO_ROOT / ".gitignore"
 

@@ -206,7 +206,181 @@ def find_item_boundaries(text: str) -> list[tuple[str, int, int]]:
     return boundaries
 
 
-def _validate_ordering(found_codes: list[str]) -> bool:
+# ---------------------------------------------------------------------------
+# 10-Q segmentation (Story 1.1). A 10-Q repeats item NUMBERS across PART I
+# (financial) and PART II (other) — e.g. "Item 2" is MD&A in Part I and
+# "Unregistered Sales" in Part II. The 10-K last-match dedup would MERGE
+# them and drop MD&A, so 10-Q boundaries are keyed by the PART-prefixed code
+# ("Part I Item 2"). Gated behind form so the 10-K path is byte-identical.
+# ---------------------------------------------------------------------------
+
+# ``PART I`` / ``PART II`` headers. Alternation ``I{1,2}`` + ``\b`` matches
+# the longer roman ("II") before falling back to "I". Em-dash / hyphen / colon
+# after the roman is optional (filers use "PART I—FINANCIAL INFORMATION",
+# "PART I - ...", or a bare newline).
+PART_RE = re.compile(
+    r"^[ \t]*PART[ \t]+(I{1,2})\b",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+# Canonical 10-Q item sequence, PART-prefixed. Titles are the SEC-standard
+# item titles (Part I = financial/MD&A; Part II = legal/other). Item 1A
+# (Risk Factors) lives only in Part II for 10-Q.
+CANONICAL_ITEMS_10Q: list[str] = [
+    "Part I Item 1",
+    "Part I Item 2",
+    "Part I Item 3",
+    "Part I Item 4",
+    "Part II Item 1",
+    "Part II Item 1A",
+    "Part II Item 2",
+    "Part II Item 3",
+    "Part II Item 4",
+    "Part II Item 5",
+    "Part II Item 6",
+]
+
+# Roman-numeral → "Part N" label. Only I and II occur in a 10-Q.
+_ROMAN_TO_PART = {"I": "Part I", "II": "Part II"}
+
+
+def find_item_boundaries_10q(text: str) -> list[tuple[str, int, int]]:
+    """Slice 10-Q text into ``(part_item_code, char_start, char_end)`` tuples.
+
+    Like :func:`find_item_boundaries` but PART-aware: every ``Item N`` heading
+    is prefixed with the most recent ``PART I`` / ``PART II`` header so the
+    Part I and Part II items sharing a number stay distinct. Item headings that
+    appear BEFORE the first PART header (typically the table-of-contents block
+    at the top of the filing) are dropped — they carry no part context and the
+    real body headings under a PART header supersede them.
+
+    Returns the boundaries in document order; ``char_end`` is the start of the
+    next Item heading OR the next PART header (whichever comes first), or
+    ``len(text)`` for the last item. The caller applies last-match dedup on the
+    part-prefixed code to collapse any ToC-vs-body duplicate that sits under
+    the same PART.
+
+    Args:
+        text: Visible filing text after NFC + nbsp + whitespace normalization
+            (same input contract as :func:`find_item_boundaries`).
+
+    Returns:
+        ``list[tuple[part_item_code, char_start, char_end]]`` where
+        ``part_item_code`` is e.g. ``"Part I Item 2"``. Empty list if no
+        PART-scoped Item heading is detected.
+    """
+    # Merge PART and ITEM matches into one document-ordered stream.
+    events: list[tuple[int, str, str]] = []  # (pos, kind, payload)
+    for m in PART_RE.finditer(text):
+        events.append((m.start(), "part", m.group(1).upper()))
+    for m in ITEM_RE.finditer(text):
+        events.append((m.start(), "item", m.group(1).upper()))
+    events.sort(key=lambda e: e[0])
+
+    # First pass: assign each item to its current part, recording heading start.
+    current_part: str | None = None
+    scoped: list[tuple[str, int]] = []  # (part_item_code, start)
+    for pos, kind, payload in events:
+        if kind == "part":
+            current_part = _ROMAN_TO_PART.get(payload)
+        elif current_part is not None:  # drop pre-PART (ToC) items
+            scoped.append((f"{current_part} Item {payload}", pos))
+
+    # Second pass: char_end is the start of the next heading of ANY kind
+    # (Item OR Part). Using only the next *item* start would fold a trailing
+    # PART header — and any prose between it and that Part's first Item — into
+    # the previous Part's last item (e.g. Part I Item 4 swallowing
+    # "PART II — OTHER INFORMATION").
+    heading_starts = sorted(pos for pos, _, _ in events)
+    boundaries: list[tuple[str, int, int]] = []
+    for code, start in scoped:
+        end = next((p for p in heading_starts if p > start), len(text))
+        boundaries.append((code, start, end))
+    return boundaries
+
+
+# 8-K heading regex — dotted event codes (``Item 2.02``, ``Item 5.02``). The
+# 10-K ``ITEM_RE`` captures ``\d{1,2}[A-C]?`` and does NOT match a dotted code,
+# so 8-K needs its own pattern. Kept SEPARATE (not a loosened shared regex) so
+# 10-K/10-Q detection is unaffected.
+ITEM_RE_8K = re.compile(
+    r"^[ \t]*ITEM[ \t]+(\d{1,2}\.\d{2})(?:[.—\-:]|[ \t])[ \t]*(.+?)[ \t]*$",
+    flags=re.IGNORECASE | re.MULTILINE,
+)
+
+
+# Canonical 8-K event-item sequence (SEC Form 8-K General Instructions). Used
+# for human-scannable section ordering only — 8-K items are event-driven, so a
+# given filing reports just the one or two that occurred (items_missing is not
+# meaningful and ordering is never a fixed subsequence; see normalize_html).
+CANONICAL_ITEMS_8K: list[str] = [
+    "Item 1.01",
+    "Item 1.02",
+    "Item 1.03",
+    "Item 1.04",
+    "Item 1.05",
+    "Item 2.01",
+    "Item 2.02",
+    "Item 2.03",
+    "Item 2.04",
+    "Item 2.05",
+    "Item 2.06",
+    "Item 3.01",
+    "Item 3.02",
+    "Item 3.03",
+    "Item 4.01",
+    "Item 4.02",
+    "Item 5.01",
+    "Item 5.02",
+    "Item 5.03",
+    "Item 5.04",
+    "Item 5.05",
+    "Item 5.06",
+    "Item 5.07",
+    "Item 5.08",
+    "Item 6.01",
+    "Item 6.02",
+    "Item 6.03",
+    "Item 6.04",
+    "Item 6.05",
+    "Item 7.01",
+    "Item 8.01",
+    "Item 9.01",
+]
+
+
+def find_item_boundaries_8k(text: str) -> list[tuple[str, int, int]]:
+    """Slice 8-K text into ``(item_code, char_start, char_end)`` tuples.
+
+    8-K is a FLAT event-item list (no PART structure), with dotted item codes
+    (``Item 2.02``). ``char_end`` is the start of the next Item heading (or
+    ``len(text)`` for the last) — mirrors :func:`find_item_boundaries` but with
+    the dotted :data:`ITEM_RE_8K`. Empty list if no 8-K Item heading is found.
+    """
+    matches = [(m.start(), f"Item {m.group(1)}") for m in ITEM_RE_8K.finditer(text)]
+    boundaries: list[tuple[str, int, int]] = []
+    for i, (start, code) in enumerate(matches):
+        end = matches[i + 1][0] if i + 1 < len(matches) else len(text)
+        boundaries.append((code, start, end))
+    return boundaries
+
+
+def _fiscal_year_from_accession(accession: str) -> int | None:
+    """Derive the filing year from a SEC accession's ``{cik}-{yy}-{seq}`` middle segment.
+
+    EDGAR electronic filings start ~1993, so a 2-digit year ``>= 70`` maps to
+    ``19xx`` and otherwise to ``20xx``. Returns ``None`` when the accession is not
+    the expected dash-delimited shape with a numeric year — the caller logs and
+    skips that one file rather than crashing the whole normalize run.
+    """
+    parts = accession.split("-")
+    if len(parts) < 3 or not parts[1].isdigit():
+        return None
+    yy = int(parts[1])
+    return (1900 if yy >= 70 else 2000) + yy
+
+
+def _validate_ordering(found_codes: list[str], canonical: list[str] | None = None) -> bool:
     """Verify ``found_codes`` is a SUBSEQUENCE of the canonical Item order.
 
     Subsequence (NOT strict equality): a filing that detects Items
@@ -220,12 +394,17 @@ def _validate_ordering(found_codes: list[str]) -> bool:
     all found codes, the ordering is INVALID (out-of-order or duplicate).
 
     Args:
-        found_codes: List of ``"Item N[X]"`` strings in the order detected.
+        found_codes: List of item-code strings in the order detected
+            (``"Item N[X]"`` for 10-K, ``"Part I Item N"`` for 10-Q).
+        canonical: Canonical ordered code list to validate against. Defaults
+            to the 10-K ``CANONICAL_ITEMS`` sequence; 10-Q passes
+            ``CANONICAL_ITEMS_10Q`` (already full part-prefixed codes).
 
     Returns:
         True iff ``found_codes`` is a subsequence of the canonical sequence.
     """
-    canonical = [f"Item {c}" for c in CANONICAL_ITEMS]
+    if canonical is None:
+        canonical = [f"Item {c}" for c in CANONICAL_ITEMS]
     i = 0  # canonical pointer
     for code in found_codes:
         while i < len(canonical) and canonical[i] != code:
@@ -390,7 +569,22 @@ def _load_accession_map(cfg: Settings) -> dict[str, dict[str, str]]:
     return data
 
 
-def _resolve_accession(cfg: Settings, ticker: str, fiscal_year: int) -> str:
+# iXBRL cover-page tags for matching a cached 10-Q to its (quarter, FY).
+_QUARTER_FOCUS_RE = re.compile(
+    r'name="dei:DocumentFiscalPeriodFocus"[^>]*>\s*(Q[1-3]|FY)\s*<', flags=re.IGNORECASE
+)
+_FY_FOCUS_RE = re.compile(
+    r'name="dei:DocumentFiscalYearFocus"[^>]*>\s*(\d{4})\s*<', flags=re.IGNORECASE
+)
+
+
+def _resolve_accession(
+    cfg: Settings,
+    ticker: str,
+    fiscal_year: int,
+    form: str = "10-K",
+    fiscal_period: str = "FY",
+) -> str:
     """Resolve the SEC accession number for one (ticker, fiscal_year).
 
     Two-tier lookup, sidecar first:
@@ -429,34 +623,56 @@ def _resolve_accession(cfg: Settings, ticker: str, fiscal_year: int) -> str:
     """
     # Tier 1: sidecar
     mapping = _load_accession_map(cfg)
-    if ticker in mapping and str(fiscal_year) in mapping[ticker]:
-        return mapping[ticker][str(fiscal_year)]
+    # Tier 1: sidecar. 10-K keys by year; 10-Q keys by "{Qn}FY{year}" (the
+    # regenerated sidecar carries per-quarter keys). 10-K format unchanged.
+    sidecar_key = str(fiscal_year) if form == "10-K" else f"{fiscal_period}FY{fiscal_year}"
+    if ticker in mapping and sidecar_key in mapping[ticker]:
+        return mapping[ticker][sidecar_key]
 
-    # Tier 2: SDK cache (developer-machine fallback)
-    cache_root = Path(cfg.data_dir) / "corpus" / ".cache" / "sec-edgar-filings" / ticker / "10-K"
+    # Tier 2: SDK cache (developer-machine fallback), per-form subdirectory.
+    cache_root = Path(cfg.data_dir) / "corpus" / ".cache" / "sec-edgar-filings" / ticker / form
     if cache_root.is_dir():
-        target_year = str(fiscal_year)
         for accession_dir in sorted(cache_root.iterdir()):
             if not accession_dir.is_dir():
                 continue
-            submission = accession_dir / "full-submission.txt"
-            if not submission.is_file():
-                continue
-            with submission.open(encoding="utf-8", errors="replace") as fh:
-                header = fh.read(4096)
-            for line in header.splitlines():
-                if "CONFORMED PERIOD OF REPORT" in line:
-                    period = line.rsplit(maxsplit=1)[-1].strip()
-                    if period.startswith(target_year):
-                        return accession_dir.name
-                    break
+            if form == "10-K":
+                submission = accession_dir / "full-submission.txt"
+                if not submission.is_file():
+                    continue
+                with submission.open(encoding="utf-8", errors="replace") as fh:
+                    header = fh.read(4096)
+                for line in header.splitlines():
+                    if "CONFORMED PERIOD OF REPORT" in line:
+                        period = line.rsplit(maxsplit=1)[-1].strip()
+                        if period.startswith(str(fiscal_year)):
+                            return accession_dir.name
+                        break
+            else:
+                # 10-Q: match the cached filing's quarter + FY from its iXBRL
+                # cover page (DocumentFiscalPeriodFocus / DocumentFiscalYearFocus).
+                primary = next(iter(accession_dir.glob("primary-document.*")), None)
+                if primary is None:
+                    continue
+                raw = primary.read_text(encoding="utf-8", errors="replace")
+                q = _QUARTER_FOCUS_RE.search(raw)
+                y = _FY_FOCUS_RE.search(raw)
+                # Require BOTH quarter AND fiscal-year focus to match. Matching
+                # on quarter alone (when the FY-focus tag is absent) can bind the
+                # wrong accession when the cache holds the same quarter for two
+                # fiscal years, mislabeling every chunk's provenance.
+                if (
+                    q
+                    and y
+                    and q.group(1).upper() == fiscal_period
+                    and y.group(1) == str(fiscal_year)
+                ):
+                    return accession_dir.name
 
     raise FileNotFoundError(
-        f"accession lookup failed for {ticker} FY{fiscal_year}: not in "
-        f"sidecar (data/corpus/.accession-map.json) and SDK cache either "
+        f"accession lookup failed for {ticker} {form} {fiscal_period}FY{fiscal_year}: "
+        f"not in sidecar (data/corpus/.accession-map.json) and SDK cache either "
         f"absent or missing this entry. Run `docintel-ingest fetch` on a "
-        f"machine with sec.gov access and regenerate the sidecar from "
-        f"the cache."
+        f"machine with sec.gov access and regenerate the sidecar from the cache."
     )
 
 
@@ -465,6 +681,8 @@ def normalize_html(
     ticker: str,
     fiscal_year: int,
     accession: str,
+    form: str = "10-K",
+    fiscal_period: str = "FY",
 ) -> NormalizedFiling:
     """Normalize one HTML filing into a ``NormalizedFiling``. Pure function.
 
@@ -507,28 +725,53 @@ def normalize_html(
     raw_text = _extract_visible_text(html)
     text = _normalize_whitespace(raw_text)
 
-    boundaries = find_item_boundaries(text)
+    # Form-gated segmentation: 10-Q needs PART-awareness (Item numbers repeat
+    # across Part I / Part II); 10-K uses the flat Item finder. Gating keeps
+    # the 10-K path byte-identical.
+    if form == "10-Q":
+        boundaries = find_item_boundaries_10q(text)
+    elif form == "8-K":
+        boundaries = find_item_boundaries_8k(text)
+    else:
+        boundaries = find_item_boundaries(text)
 
     # If the same item code appears multiple times (e.g. table-of-contents
     # PLUS actual heading), keep the LAST occurrence — that's the one with
     # the full body text in its span. The boundaries list preserves document
-    # order, so a simple last-wins dict assignment captures this.
+    # order, so a simple last-wins dict assignment captures this. (For 10-Q,
+    # codes are PART-prefixed so Part I Item 2 and Part II Item 2 don't merge.)
     sections: dict[str, str] = {}
     for code, start, end in boundaries:
         sections[code] = text[start:end].strip()
 
+    # 8-K forces items_missing=[] / ordering_valid=True below (event-driven), so
+    # a total heading-detection failure would otherwise be silent. Surface it.
+    if form == "8-K" and not sections:
+        log.warning(
+            "filing_no_sections_detected",
+            ticker=ticker,
+            accession=accession,
+            note="8-K produced zero sections — no heading matched ITEM_RE_8K",
+        )
+
     # Re-order sections by canonical Item sequence so the on-disk JSON is
-    # human-scannable (Item 1 -> Item 16). Items detected outside the
-    # canonical list (extremely rare) are appended in document order.
-    canonical_codes = [f"Item {c}" for c in CANONICAL_ITEMS]
+    # human-scannable. Items detected outside the canonical list (extremely
+    # rare) are appended in document order.
+    if form == "10-Q":
+        canonical_codes = CANONICAL_ITEMS_10Q
+    elif form == "8-K":
+        canonical_codes = CANONICAL_ITEMS_8K
+    else:
+        canonical_codes = [f"Item {c}" for c in CANONICAL_ITEMS]
     items_found: list[str] = [c for c in canonical_codes if c in sections]
     extras = [c for c in sections if c not in canonical_codes]
     items_found.extend(extras)
 
     # Items in the canonical sequence that are NOT detected. Pitfall 5
     # legitimizes pre-2024 missing Item 1C; the validator records and
-    # surfaces, but does not flag as fatal.
-    items_missing = [c for c in canonical_codes if c not in sections]
+    # surfaces, but does not flag as fatal. 8-K is event-driven — a filing
+    # reports only the events that occurred, so "missing" is not meaningful.
+    items_missing = [] if form == "8-K" else [c for c in canonical_codes if c not in sections]
 
     # Order validation runs over the document-order codes (not the
     # re-sorted items_found) so a real ordering violation surfaces. We
@@ -540,8 +783,12 @@ def normalize_html(
     for idx, code in enumerate(ordering_codes_in_doc_order):
         seen[code] = idx
     deduped_ordering = sorted(seen.keys(), key=lambda c: seen[c])
-    ordering_valid = _validate_ordering(deduped_ordering)
-    if not ordering_valid:
+    # 8-K items are event-ordered, not a fixed subsequence — ordering is always
+    # "valid" (there is nothing to violate). 10-K/10-Q use the subsequence check.
+    ordering_valid = (
+        True if form == "8-K" else _validate_ordering(deduped_ordering, canonical_codes)
+    )
+    if form != "8-K" and not ordering_valid:
         log.warning(
             "filing_ordering_invalid",
             ticker=ticker,
@@ -568,7 +815,14 @@ def normalize_html(
 
     # ``raw_path`` is a relative-to-repo-root string by convention so the
     # committed JSON files are portable across machines (no absolute paths).
-    raw_path = f"data/corpus/raw/{ticker}/FY{fiscal_year}.html"
+    # 10-K keeps the bare ``FY{year}`` segment (byte-identical); 10-Q prefixes
+    # the quarter (``Q3FY{year}``).
+    if form == "8-K":
+        # 8-K is accession-keyed (many per year); no fiscal period in the path.
+        raw_path = f"data/corpus/raw/{ticker}/8K-{accession}.html"
+    else:
+        period = f"FY{fiscal_year}" if fiscal_period == "FY" else f"{fiscal_period}FY{fiscal_year}"
+        raw_path = f"data/corpus/raw/{ticker}/{period}.html"
 
     return NormalizedFiling(
         ticker=ticker,
@@ -578,6 +832,8 @@ def normalize_html(
         raw_path=raw_path,
         sections=sections,
         manifest=manifest,
+        filing_type=form,
+        fiscal_period=fiscal_period,
     )
 
 
@@ -633,60 +889,115 @@ def normalize_all(cfg: Settings, raw_root: Path | None = None) -> int:
     n_skipped_raw_missing = 0
     n_failed = 0
 
+    def _normalize_one(
+        ticker: str,
+        raw_path: Path,
+        form: str,
+        fiscal_period: str,
+        year: int,
+        stem: str,
+        accession: str | None = None,
+    ) -> None:
+        nonlocal n_succeeded, n_skipped_raw_missing, n_failed
+        if not raw_path.exists():
+            n_skipped_raw_missing += 1
+            log.warning(
+                "filing_normalize_skip",
+                ticker=ticker,
+                fiscal_year=year,
+                form=form,
+                raw_path=str(raw_path),
+                reason="raw_missing",
+            )
+            return
+        try:
+            # 8-K passes the accession explicitly (parsed from the stem);
+            # 10-K/10-Q resolve it via the sidecar/cache.
+            if accession is None:
+                accession = _resolve_accession(cfg, ticker, year, form, fiscal_period)
+            html = raw_path.read_text(encoding="utf-8")
+            nf = normalize_html(
+                html, ticker, year, accession, form=form, fiscal_period=fiscal_period
+            )
+        except Exception as exc:
+            n_failed += 1
+            log.error(
+                "filing_normalize_failed",
+                ticker=ticker,
+                fiscal_year=year,
+                form=form,
+                raw_path=str(raw_path),
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+            return
+
+        out_path = out_root / ticker / f"{stem}.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        # ``sort_keys=True`` is the byte-identity guarantor (mirrors MANIFEST.json).
+        out_path.write_text(json.dumps(nf.model_dump(), indent=2, sort_keys=True), encoding="utf-8")
+        n_succeeded += 1
+        log.info(
+            "filing_normalized",
+            ticker=ticker,
+            fiscal_year=year,
+            form=form,
+            accession=accession,
+            items_found_count=len(nf.manifest.items_found),
+            out_path=str(out_path),
+        )
+
     for entry in companies:
-        for year in entry.fiscal_years:
-            raw_path = raw_root / entry.ticker / f"FY{year}.html"
-            if not raw_path.exists():
-                n_skipped_raw_missing += 1
+        for form in entry.forms:
+            if form not in ("10-K", "10-Q", "8-K"):
                 log.warning(
                     "filing_normalize_skip",
                     ticker=entry.ticker,
-                    fiscal_year=year,
-                    raw_path=str(raw_path),
-                    reason="raw_missing",
+                    form=form,
+                    reason="form_not_supported",
                 )
                 continue
-
-            try:
-                accession = _resolve_accession(cfg, entry.ticker, year)
-                html = raw_path.read_text(encoding="utf-8")
-                nf = normalize_html(html, entry.ticker, year, accession)
-            except Exception as exc:
-                n_failed += 1
-                log.error(
-                    "filing_normalize_failed",
-                    ticker=entry.ticker,
-                    fiscal_year=year,
-                    raw_path=str(raw_path),
-                    error_type=type(exc).__name__,
-                    error=str(exc),
-                )
+            if form == "8-K":
+                # 8-K raw files are accession-keyed (8K-{accession}.html), not
+                # year-keyed. The accession parses straight from the stem; the
+                # fiscal year is the filing year (accession middle segment of
+                # {cik}-{yy}-{seq}).
+                for raw_path in sorted((raw_root / entry.ticker).glob("8K-*.html")):
+                    accession = raw_path.stem[len("8K-") :]
+                    fy = _fiscal_year_from_accession(accession)
+                    if fy is None:
+                        n_failed += 1
+                        log.error(
+                            "filing_normalize_failed",
+                            ticker=entry.ticker,
+                            form="8-K",
+                            raw_path=str(raw_path),
+                            reason="unparseable_accession",
+                        )
+                        continue
+                    _normalize_one(
+                        entry.ticker, raw_path, "8-K", "FY", fy, raw_path.stem, accession=accession
+                    )
                 continue
-
-            out_path = out_root / entry.ticker / f"FY{year}.json"
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            # ``sort_keys=True`` is the byte-identity guarantor across Python
-            # dict-ordering differences and Pydantic v2's model_dump iteration
-            # order (PATTERNS.md line 461; mirrors the MANIFEST.json convention).
-            out_path.write_text(
-                json.dumps(nf.model_dump(), indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-
-            n_succeeded += 1
-            section_chars_total = sum(len(s) for s in nf.sections.values())
-            log.info(
-                "filing_normalized",
-                ticker=entry.ticker,
-                fiscal_year=year,
-                accession=accession,
-                items_found_count=len(nf.manifest.items_found),
-                items_missing_count=len(nf.manifest.items_missing),
-                tables_dropped=nf.manifest.tables_dropped,
-                ordering_valid=nf.manifest.ordering_valid,
-                section_chars_total=section_chars_total,
-                out_path=str(out_path),
-            )
+            for year in entry.fiscal_years:
+                if form == "10-K":
+                    _normalize_one(
+                        entry.ticker,
+                        raw_root / entry.ticker / f"FY{year}.html",
+                        "10-K",
+                        "FY",
+                        year,
+                        f"FY{year}",
+                    )
+                else:
+                    # 10-Q: discover the Q-keyed raw files fetch produced
+                    # (Q1FY{year}.html … Q3FY{year}.html); derive the quarter
+                    # from each stem. Missing quarters are simply absent.
+                    for raw_path in sorted((raw_root / entry.ticker).glob(f"Q?FY{year}.html")):
+                        stem = raw_path.stem  # e.g. "Q3FY2024"
+                        _normalize_one(
+                            entry.ticker, raw_path, "10-Q", stem.split("FY")[0], year, stem
+                        )
 
     log.info(
         "normalize_complete",

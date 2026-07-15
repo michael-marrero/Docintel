@@ -71,7 +71,7 @@ def load_snapshot(cfg: Settings, path: Path | None = None) -> list[CompanyEntry]
         reader = csv.DictReader(fh)
         for row in reader:
             fiscal_years = json.loads(row["fiscal_years"])
-            entry = CompanyEntry(
+            fields: dict[str, object] = dict(
                 ticker=row["ticker"],
                 name=row["name"],
                 sector=row["sector"],
@@ -79,7 +79,18 @@ def load_snapshot(cfg: Settings, path: Path | None = None) -> list[CompanyEntry]
                 fiscal_years=fiscal_years,
                 snapshot_date=row["snapshot_date"],
             )
-            rows.append(entry)
+            # Story 1.1: optional ``forms`` column (JSON list). Absent or blank
+            # → CompanyEntry's ["10-K"] default (byte-stable for pre-1.1 CSVs).
+            forms_cell = (row.get("forms") or "").strip()
+            if forms_cell:
+                try:
+                    fields["forms"] = json.loads(forms_cell)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"snapshot row {row.get('ticker')!r}: malformed 'forms' cell "
+                        f"{forms_cell!r} — must be a JSON list, e.g. '[\"10-K\",\"10-Q\"]': {exc}"
+                    ) from exc
+            rows.append(CompanyEntry(**fields))
 
     log.info(
         "snapshot_loaded",

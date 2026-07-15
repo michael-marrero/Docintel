@@ -1,0 +1,24 @@
+{
+  "accession": "0000320193-24-000075",
+  "fetched_at": "1970-01-01T00:00:00+00:00",
+  "filing_type": "8-K",
+  "fiscal_period": "FY",
+  "fiscal_year": 2024,
+  "manifest": {
+    "items_found": [
+      "Item 2.02",
+      "Item 5.02",
+      "Item 9.01"
+    ],
+    "items_missing": [],
+    "ordering_valid": true,
+    "tables_dropped": 0
+  },
+  "raw_path": "tests/fixtures/sample_8k/aapl_0000320193-24-000075_trimmed.html",
+  "sections": {
+    "Item 2.02": "ITEM 2.02 Results of Operations and Financial Condition\n\n\nOn the date of this report, the Company announced its financial results for the\nfiscal quarter. Total net sales and operating income for the quarter are described\nin the press release furnished as an exhibit. The information in this item is being\nfurnished and shall not be deemed filed for purposes of the Exchange Act.",
+    "Item 5.02": "ITEM 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers\n\n\nEffective at the close of business on the date of this report, a member of the\nBoard of Directors notified the Company of a decision to retire. The departure was\nnot the result of any disagreement with the Company on any matter relating to its\noperations, policies, or practices.",
+    "Item 9.01": "ITEM 9.01 Financial Statements and Exhibits\n\n\nThe following exhibit is furnished with this report: a press release announcing the\nCompany's results of operations for the quarter. The exhibit is incorporated herein\nby reference."
+  },
+  "ticker": "AAPL"
+}

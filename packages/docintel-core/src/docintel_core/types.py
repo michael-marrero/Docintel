@@ -50,8 +50,8 @@ from docintel_core.adapters.types import CompletionResponse
 __all__ = [
     "REFUSAL_TEXT_SENTINEL",
     "Answer",
-    "Citation",
     "Chunk",
+    "Citation",
     "CompanyEntry",
     "GenerationResult",
     "IndexManifest",
@@ -112,6 +112,10 @@ class NormalizedFiling(BaseModel):
     # missing Item shows up as an absent key here AND in manifest.items_missing.
     sections: dict[str, str]
     manifest: NormalizedFilingManifest
+    # Story 1.1 / FR-A6: form-type + fiscal-period provenance (see Chunk).
+    # Appended with 10-K defaults so the re-baseline diff is a clean +2 keys.
+    filing_type: Literal["10-K", "10-Q", "8-K", "transcript"] = "10-K"
+    fiscal_period: Literal["FY", "Q1", "Q2", "Q3", "Q4"] = "FY"
 
 
 class Chunk(BaseModel):
@@ -155,6 +159,14 @@ class Chunk(BaseModel):
     next_chunk_id: str | None
     # CD-02: 16-char truncated hex of sha256(text).
     sha256_of_text: str
+    # Story 1.1 / FR-A6: form-type + fiscal-period provenance. Appended (not
+    # inserted) so the 10-K re-baseline diff is a clean +2 keys per line.
+    # Default to the 10-K values so pre-Story-1.1 10-K construction is
+    # byte-identical after re-baseline (AC-4). 8-K has no fiscal quarter — it
+    # carries ``fiscal_period="FY"`` and is disambiguated by accession/date in
+    # the chunk_id and path, not by period.
+    filing_type: Literal["10-K", "10-Q", "8-K", "transcript"] = "10-K"
+    fiscal_period: Literal["FY", "Q1", "Q2", "Q3", "Q4"] = "FY"
 
 
 class RetrievedChunk(BaseModel):
@@ -480,6 +492,11 @@ class CompanyEntry(BaseModel):
     fiscal_years: list[int]
     # ISO-8601 date (``YYYY-MM-DD``). Validated via ``date.fromisoformat``.
     snapshot_date: str
+    # Story 1.1: which SEC forms to ingest for this ticker. The scope source of
+    # truth (snapshot-driven, NOT env-driven — FND-11 / AD-5). Defaults to the
+    # 10-K-only pre-Story-1.1 behaviour so a snapshot CSV with no ``forms``
+    # column parses unchanged (byte-stable). 10-Q/8-K are opt-in per ticker.
+    forms: list[str] = ["10-K"]
 
     @field_validator("ticker")
     @classmethod
@@ -532,6 +549,17 @@ class CompanyEntry(BaseModel):
             ) from exc
         return v
 
+    @field_validator("forms")
+    @classmethod
+    def _forms_valid(cls, v: list[str]) -> list[str]:
+        allowed = {"10-K", "10-Q", "8-K"}
+        if not v:
+            raise ValueError("forms must be non-empty (default is ['10-K']).")
+        bad = [f for f in v if f not in allowed]
+        if bad:
+            raise ValueError(f"forms {bad!r} not in {sorted(allowed)} (Story 1.1 scope).")
+        return v
+
 
 # ---------------------------------------------------------------------------
 # Phase 7 Answer / Citation models and supporting constants
@@ -570,8 +598,48 @@ _ITEM_CODE_TITLE_MAP: dict[str, str] = {
     "Item 16": "Form 10-K Summary",
 }
 
+# 8-K event-item titles (Story 1.6). Distinct dotted keys, merged into the
+# lookup so a 8-K Citation.item_title resolves a human title instead of the raw
+# code. Copied verbatim from docintel_ingest.chunk._CANONICAL_ITEM_TITLES_8K
+# (upward-only import rule: core MUST NOT import ingest). Keep in sync.
+_ITEM_CODE_TITLE_MAP_8K: dict[str, str] = {
+    "Item 1.01": "Entry into a Material Definitive Agreement",
+    "Item 1.02": "Termination of a Material Definitive Agreement",
+    "Item 1.03": "Bankruptcy or Receivership",
+    "Item 1.04": "Mine Safety - Reporting of Shutdowns and Patterns of Violations",
+    "Item 1.05": "Material Cybersecurity Incidents",
+    "Item 2.01": "Completion of Acquisition or Disposition of Assets",
+    "Item 2.02": "Results of Operations and Financial Condition",
+    "Item 2.03": "Creation of a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement",
+    "Item 2.04": "Triggering Events That Accelerate or Increase a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement",
+    "Item 2.05": "Costs Associated with Exit or Disposal Activities",
+    "Item 2.06": "Material Impairments",
+    "Item 3.01": "Notice of Delisting or Failure to Satisfy a Continued Listing Rule or Standard; Transfer of Listing",
+    "Item 3.02": "Unregistered Sales of Equity Securities",
+    "Item 3.03": "Material Modification to Rights of Security Holders",
+    "Item 4.01": "Changes in Registrant's Certifying Accountant",
+    "Item 4.02": "Non-Reliance on Previously Issued Financial Statements or a Related Audit Report or Completed Interim Review",
+    "Item 5.01": "Changes in Control of Registrant",
+    "Item 5.02": "Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers",
+    "Item 5.03": "Amendments to Articles of Incorporation or Bylaws; Change in Fiscal Year",
+    "Item 5.04": "Temporary Suspension of Trading Under Registrant's Employee Benefit Plans",
+    "Item 5.05": "Amendments to the Registrant's Code of Ethics, or Waiver of a Provision of the Code of Ethics",
+    "Item 5.06": "Change in Shell Company Status",
+    "Item 5.07": "Submission of Matters to a Vote of Security Holders",
+    "Item 5.08": "Shareholder Director Nominations",
+    "Item 6.01": "ABS Informational and Computational Material",
+    "Item 6.02": "Change of Servicer or Trustee",
+    "Item 6.03": "Change in Credit Enhancement or Other External Support",
+    "Item 6.04": "Failure to Make a Required Distribution",
+    "Item 6.05": "Securities Act Updating Disclosure",
+    "Item 7.01": "Regulation FD Disclosure",
+    "Item 8.01": "Other Events",
+    "Item 9.01": "Financial Statements and Exhibits",
+}
+_ITEM_CODE_TITLE_MAP.update(_ITEM_CODE_TITLE_MAP_8K)
 
-@functools.lru_cache(maxsize=None)
+
+@functools.cache
 def _load_ticker_name_map() -> dict[str, str]:
     """Load ticker → full company name from the committed companies.snapshot.csv.
 
@@ -592,9 +660,7 @@ def _load_ticker_name_map() -> dict[str, str]:
     ``@functools.lru_cache`` on an instance method holds a reference to
     ``self``, leaking memory. Module-level placement is safe.
     """
-    csv_path = (
-        Path(__file__).parents[4] / "data" / "corpus" / "companies.snapshot.csv"
-    )
+    csv_path = Path(__file__).parents[4] / "data" / "corpus" / "companies.snapshot.csv"
     result: dict[str, str] = {}
     with csv_path.open(encoding="utf-8", newline="") as fh:
         for row in csv.DictReader(fh):
@@ -677,7 +743,7 @@ class Answer(BaseModel):
     prompt_version_hash: str
 
     @model_validator(mode="after")
-    def _citations_required_when_not_refused(self) -> "Answer":
+    def _citations_required_when_not_refused(self) -> Answer:
         """ANS-03 structural invariant: not refused => len(citations) >= 1.
 
         Fires AFTER all fields are constructed (``mode="after"`` is required —
@@ -701,11 +767,11 @@ class Answer(BaseModel):
     @classmethod
     def from_generation_result(
         cls,
-        gr: "GenerationResult",
+        gr: GenerationResult,
         *,
         ticker_name_map: dict[str, str] | None = None,
         item_code_title_map: dict[str, str] | None = None,
-    ) -> "Answer":
+    ) -> Answer:
         """Build Answer from GenerationResult (D-15).
 
         On ``refused=True``: returns ``Answer(refused=True, citations=[],
@@ -713,7 +779,7 @@ class Answer(BaseModel):
         Pitfall 1 in 07-RESEARCH.md).
 
         On ``refused=False``: builds ``Citation`` instances from
-        ``gr.cited_chunk_ids × gr.retrieved_chunks``, parses the
+        ``gr.cited_chunk_ids x gr.retrieved_chunks``, parses the
         ``[confidence: X]`` marker from ``gr.text`` via a lazy
         ``docintel_generate.parse.parse_confidence`` import, and strips the
         marker from ``Answer.text`` (Pitfall 6). If no marker is found,
@@ -738,14 +804,8 @@ class Answer(BaseModel):
             pydantic.ValidationError: if the ANS-03 invariant is violated
                 (``refused=False`` + empty citations after hallucination drop).
         """
-        _ticker_map = (
-            ticker_name_map if ticker_name_map is not None else _load_ticker_name_map()
-        )
-        _item_map = (
-            item_code_title_map
-            if item_code_title_map is not None
-            else _ITEM_CODE_TITLE_MAP
-        )
+        _ticker_map = ticker_name_map if ticker_name_map is not None else _load_ticker_name_map()
+        _item_map = item_code_title_map if item_code_title_map is not None else _ITEM_CODE_TITLE_MAP
 
         # Pitfall 1: check refusal FIRST — do NOT call parse_confidence on
         # refusal text (D-05). confidence="low" is unconditional on this path.
@@ -758,7 +818,7 @@ class Answer(BaseModel):
                 prompt_version_hash=gr.prompt_version_hash,
             )
 
-        # Non-refusal path: build Citations from cited_chunk_ids × retrieved_chunks.
+        # Non-refusal path: build Citations from cited_chunk_ids x retrieved_chunks.
         # Pitfall 5: use rc_by_id.get() / 'if cid in rc_by_id' guard — never
         # bare-index rc_by_id[cid] which would KeyError on any hallucination-dropped
         # ID that Phase 6 did not catch.
@@ -795,13 +855,13 @@ class Answer(BaseModel):
             )
             # model_validator raises above; this line is unreachable but
             # satisfies mypy's return analysis.
-            raise AssertionError("unreachable: model_validator must have raised")  # noqa: TRY004
+            raise AssertionError("unreachable: model_validator must have raised")
 
         # Pitfall 2: parse FIRST, then strip. Never strip first.
         # Lazy in-method import preserves module-level import direction
         # (generate → core; never the reverse at module scope).
         # The ONE allowed cross-package call per CONTEXT.md D-12.
-        from docintel_generate.parse import parse_confidence  # noqa: PLC0415
+        from docintel_generate.parse import parse_confidence
 
         text_stripped, confidence = parse_confidence(gr.text)
 

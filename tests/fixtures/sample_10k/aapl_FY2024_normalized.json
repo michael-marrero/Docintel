@@ -1,6 +1,8 @@
 {
   "accession": "0000320193-24-000123",
   "fetched_at": "1970-01-01T00:00:00+00:00",
+  "filing_type": "10-K",
+  "fiscal_period": "FY",
   "fiscal_year": 2024,
   "manifest": {
     "items_found": [

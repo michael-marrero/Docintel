@@ -38,7 +38,7 @@ which is already public-committed. T-4-V5-04 threat disposition: a leaked
 Qdrant collection reveals the chunk-id set (same as the public corpus) and
 the embeddings (derived from public text). No information escalation.
 
-Two-logger pattern (SP-3): stdlib logger for tenacity ``before_sleep_log``;
+Two-logger pattern (SP-3): stdlib logger for tenacity ``before_sleep_safe``;
 structlog bound logger for all other structured log lines. Same shape as
 ``embedder_bge.py`` lines 35-38.
 
@@ -62,7 +62,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from qdrant_client.models import Distance, PointStruct, VectorParams
 from tenacity import (
-    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -72,7 +71,9 @@ from tenacity import (
 from docintel_core.config import Settings
 from docintel_core.types import Chunk
 
-# Two-logger pattern (SP-3) — stdlib for tenacity before_sleep_log; structlog
+from ._logging import before_sleep_safe
+
+# Two-logger pattern (SP-3) — stdlib for tenacity before_sleep_safe; structlog
 # for all structured log lines. Same shape as embedder_bge.py:35-38.
 _retry_log = logging.getLogger(__name__)
 log = structlog.stdlib.get_logger(__name__)
@@ -371,7 +372,7 @@ class QdrantDenseStore:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type(ResponseHandlingException),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def _delete_collection(self) -> None:
@@ -382,7 +383,7 @@ class QdrantDenseStore:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type(ResponseHandlingException),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def _create_collection(self) -> None:
@@ -396,7 +397,7 @@ class QdrantDenseStore:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type(ResponseHandlingException),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def _upload_points(self, points: list[PointStruct]) -> None:
@@ -413,7 +414,7 @@ class QdrantDenseStore:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type(ResponseHandlingException),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def _query_points(self, query_vector: list[float], k: int) -> Any:
@@ -428,7 +429,7 @@ class QdrantDenseStore:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type(ResponseHandlingException),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def _get_collection_info(self) -> Any:
@@ -445,7 +446,7 @@ class QdrantDenseStore:
         wait=wait_exponential(multiplier=1, min=1, max=20),
         stop=stop_after_attempt(5),
         retry=retry_if_exception_type(ResponseHandlingException),
-        before_sleep=before_sleep_log(_retry_log, logging.WARNING),
+        before_sleep=before_sleep_safe(_retry_log, logging.WARNING),
         reraise=True,
     )
     def _count_points_exact(self) -> Any:

@@ -207,7 +207,17 @@ class Generator:
         # canonical sentinel verbatim when it recognises the retrieved chunks
         # do not answer the question (more impressive failure mode than the
         # Step B hard-floor; says "the LLM is grounded, not just templating").
-        refused = is_refusal(completion.text)
+        #
+        # Zero-citation robustness (EMP-01): a non-refusal answer with no valid
+        # citations is not grounded — per AD-10 (citations non-empty iff not
+        # refused) it IS a refusal. Without this, a generator that occasionally
+        # returns uncited or empty content (e.g. a reasoning model that routes
+        # its answer into a hidden channel, leaving message.content empty)
+        # produces refused=False + [] and crashes the ENTIRE eval at the ANS-03
+        # Answer validator. Classifying it as a refusal is the honest, conservative
+        # outcome (it can only under-count accuracy, never inflate it) and keeps
+        # one bad response from aborting a 32-question run.
+        refused = is_refusal(completion.text) or not cited_chunk_ids
 
         result = GenerationResult(
             text=completion.text,

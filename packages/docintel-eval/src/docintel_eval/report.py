@@ -469,9 +469,7 @@ def render_ablation_markdown(
             # CI flips to [-hi, -lo].
             contrib = -delta
             c_lo, c_hi = -hi, -lo
-            lines.append(
-                f"{label} adds {contrib:+.3f} Hit@3 [95% CI {c_lo:.3f}, {c_hi:.3f}]."
-            )
+            lines.append(f"{label} adds {contrib:+.3f} Hit@3 [95% CI {c_lo:.3f}, {c_hi:.3f}].")
         else:
             lines.append(f"{label}: no Hit@3 delta available.")
         lines.append("")

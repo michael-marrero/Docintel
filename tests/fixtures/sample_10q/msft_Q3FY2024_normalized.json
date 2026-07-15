@@ -1,0 +1,38 @@
+{
+  "accession": "0000789019-24-000090",
+  "fetched_at": "1970-01-01T00:00:00+00:00",
+  "filing_type": "10-Q",
+  "fiscal_period": "Q3",
+  "fiscal_year": 2024,
+  "manifest": {
+    "items_found": [
+      "Part I Item 1",
+      "Part I Item 2",
+      "Part I Item 3",
+      "Part I Item 4",
+      "Part II Item 1",
+      "Part II Item 1A",
+      "Part II Item 2",
+      "Part II Item 5"
+    ],
+    "items_missing": [
+      "Part II Item 3",
+      "Part II Item 4",
+      "Part II Item 6"
+    ],
+    "ordering_valid": true,
+    "tables_dropped": 0
+  },
+  "raw_path": "tests/fixtures/sample_10q/msft_Q3FY2024_trimmed.html",
+  "sections": {
+    "Part I Item 1": "ITEM 1. Financial Statements\n\n\nThe condensed consolidated balance sheets and statements of operations for\nthe quarter are presented on an unaudited basis with comparative figures for\nthe prior-year period. Total revenue and operating income are summarized by\nreportable segment in the accompanying notes.",
+    "Part I Item 2": "ITEM 2. Management's Discussion and Analysis of Financial Condition and Results of Operations\n\n\nNet sales increased during the quarter, driven primarily by growth in cloud\nservices and a favorable shift in product mix. Gross margin expanded relative\nto the prior-year period as higher-margin services represented a larger share\nof total revenue. Operating expenses grew modestly, reflecting continued\ninvestment in research and development and in sales and marketing.\n\n\nLiquidity remains strong. The Company generated positive operating cash flow\nduring the quarter and returned capital to shareholders through dividends and\nshare repurchases. Management believes existing cash and cash equivalents are\nsufficient to meet anticipated operating requirements.",
+    "Part I Item 3": "ITEM 3. Quantitative and Qualitative Disclosures About Market Risk\n\n\nThere have been no material changes in the Company's exposure to market risk\nduring the quarter from the exposures described in the most recent annual\nreport on Form 10-K.",
+    "Part I Item 4": "ITEM 4. Controls and Procedures\n\n\nThe Company's disclosure controls and procedures were effective as of the end\nof the period covered by this report, based on an evaluation conducted by\nmanagement under the supervision of the principal executive and financial\nofficers.",
+    "Part II Item 1": "ITEM 1. Legal Proceedings\n\n\nThe Company is subject to various legal proceedings and claims arising in the\nordinary course of business. Management does not expect the ultimate resolution\nof these matters to have a material adverse effect on the financial statements.",
+    "Part II Item 1A": "ITEM 1A. Risk Factors\n\n\nThere have been no material changes to the risk factors previously disclosed\nin the Company's most recent annual report on Form 10-K, which should be read in\nconjunction with this quarterly report.",
+    "Part II Item 2": "ITEM 2. Unregistered Sales of Equity Securities and Use of Proceeds\n\n\nDuring the quarter the Company repurchased shares of its common stock under a\npublicly announced repurchase program. The repurchases were funded from\navailable cash and did not involve unregistered sales of equity securities.",
+    "Part II Item 5": "ITEM 5. Other Information\n\n\nNone."
+  },
+  "ticker": "MSFT"
+}
