@@ -39,6 +39,22 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 _TRACE_HEADER = b"x-trace-id"
 
 
+def _is_static_asset(scope: Scope) -> bool:
+    """True for static frontend file serving (Story 2.1 mount) — infrastructure,
+    not an application request, so it gets no trace context and writes no record.
+
+    The observability showcase (GET /traces) is about the RAG query pipeline;
+    tracing every ``/app.js`` / ``/tokens.css`` fetch would write an empty-span
+    record per asset per page load and bury the real query traces. API routes are
+    extensionless (``/coverage``, ``/query``, ``/health``, ``/traces``,
+    ``/trace/{uuid}``); the frontend is ``/`` plus files carrying an extension.
+    """
+    if scope.get("method") not in ("GET", "HEAD"):
+        return False
+    path = scope.get("path", "")
+    return path == "/" or "." in path.rsplit("/", 1)[-1]
+
+
 def _validate_trace_id(raw: str | None) -> str:
     """Return a bound-safe trace_id (Security V5).
 
@@ -68,6 +84,12 @@ class TraceIdMiddleware:
         # Non-HTTP scopes (lifespan, websocket) carry no X-Trace-Id and no
         # request-scoped logging context — pass straight through untouched.
         if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Static frontend assets are infrastructure, not traced application
+        # requests — pass through so they don't spam the trace sink (Story 2.1).
+        if _is_static_asset(scope):
             await self.app(scope, receive, send)
             return
 

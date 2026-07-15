@@ -1,0 +1,271 @@
+/* docintel analyst workspace — component styles (Story 2.1).
+ * Every color/size/space is a token from tokens.css (Story 2.0). Zero hard-coded
+ * hex — the token file is the single source of truth (UX-DR1). Depth is tonal
+ * (recessed/canvas/card on hairlines), no shadows (UX-DR3). */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+/* screen-reader-only (announcer, skip context) */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: calc(var(--space-unit) * 6) calc(var(--space-unit) * 6) calc(var(--space-unit) * 20);
+}
+
+/* ---- skip link (a11y) ---- */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--card);
+  color: var(--ink);
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+}
+.skip-link:focus { left: 8px; top: 8px; z-index: 10; }
+
+/* ---- top bar ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: calc(var(--space-unit) * 5);
+}
+.brand {
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+  letter-spacing: var(--type-data-tracking);
+  color: var(--ink);
+}
+.brand-mark { color: var(--accent); }
+
+.theme-toggle {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.theme-toggle:hover { color: var(--ink-dim); border-color: var(--ink-faint); }
+
+/* ---- command bar (UX-DR4/DR15) ---- */
+.cmdbar {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 3);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+}
+.cmdbar .prompt { color: var(--accent); font-weight: 600; }
+
+.cmdbar .query {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-data-size);
+  letter-spacing: var(--type-data-tracking);
+  padding: 0;
+}
+.cmdbar .query::placeholder { color: var(--ink-faint); }
+
+/* blinking block cursor — parks next to the caret. Holds static under
+ * prefers-reduced-motion (UX-DR17). */
+.cmdbar .cursor {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 17px;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  transform: translateY(1px);
+  animation: blink 1.06s steps(1) infinite;
+}
+/* Hide the block cursor once the field has content or loses focus — it stands
+ * in for an empty, focused prompt (terminal feel) not a live text caret. */
+.cmdbar:focus-within .query:not(:placeholder-shown) ~ .cursor { opacity: 0; }
+.cmdbar:not(:focus-within) .cursor { opacity: 0; }
+
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .cmdbar .cursor { animation: none; }
+}
+
+.cmdbar .scope {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* ---- focus ring (never clipped; ≥3:1, 2px offset) ---- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- view region ---- */
+.view { margin-top: calc(var(--space-unit) * 6); }
+
+/* empty / initial state */
+.empty {
+  color: var(--ink-dim);
+  font-size: var(--type-body-size);
+}
+.empty h1 {
+  font-family: var(--font-sans);
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  line-height: var(--type-display-line);
+  letter-spacing: var(--type-display-tracking);
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+.empty .hint {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  margin-top: calc(var(--space-unit) * 4);
+}
+.ticker-hints { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ticker-hint {
+  font-family: var(--font-mono);
+  font-size: var(--type-chip-size);
+  letter-spacing: var(--type-chip-tracking);
+  color: var(--ink-dim);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.ticker-hint:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- title row (shared by generating + brief states) ---- */
+.titlerow {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin: calc(var(--space-unit) * 5) 2px 6px;
+  flex-wrap: wrap;
+}
+.titlerow h1 {
+  font-family: var(--font-sans);
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  letter-spacing: var(--type-display-tracking);
+  margin: 0;
+}
+.genstate {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-dim);
+}
+.genstate .spin {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);  /* glow ring — not app depth (UX-DR3 exempt: it's a status indicator, not a surface) */
+}
+.genstate b { color: var(--accent); font-weight: 600; }
+
+/* ---- section cards (pending placeholders in 2.1; streamed in 2.2) ---- */
+.stack { margin-top: calc(var(--space-unit) * 4); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: var(--space-card-pad) 20px;
+  margin-bottom: 14px;
+}
+.card.pending { background: var(--card-recessed); border-style: dashed; }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  line-height: var(--type-micro-line);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+.eyebrow .tick { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.eyebrow .state { margin-left: auto; letter-spacing: var(--type-meta-tracking); }
+.card h2 {
+  font-family: var(--font-sans);
+  font-size: var(--type-heading-size);
+  font-weight: var(--type-heading-weight);
+  letter-spacing: var(--type-heading-tracking);
+  margin: 0 0 10px;
+}
+.card.pending h2 { color: var(--ink-faint); }
+.ph-line { height: 9px; border-radius: var(--radius-sm); background: var(--hairline); margin: 9px 0; }
+.ph-line.w1 { width: 92%; } .ph-line.w2 { width: 78%; } .ph-line.w3 { width: 60%; }
+
+/* ---- refusal stub (full banner in Story 2.6) ---- */
+.refusal {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--ink-faint);   /* neutral rail — refusal is sober, not teal (UX-DR12) */
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-top: 16px;
+}
+.refusal .rlbl {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--prose);
+  margin-bottom: 6px;
+}
+.refusal .rq {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.refusal p { font-family: var(--font-sans); font-size: var(--type-body-size); color: var(--prose); margin: 0; }
