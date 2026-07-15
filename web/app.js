@@ -13,6 +13,7 @@ import {
   corpusHaveList,
   refusalBannerHTML,
   confidenceSignalHTML,
+  errorBannerHTML,
 } from "/lib.js";
 import { streamBrief } from "/brief.js";
 import { createPanel } from "/panel.js";
@@ -32,6 +33,27 @@ const panel = createPanel($("#source-panel"), {
   onPin: (id) => setActiveChip(id),
   onDismiss: () => setActiveChip(null),
 });
+
+// --- error surface (Story 2.8, UX-DR13/NFR-REL1) ---
+// Every retry is logged (NFR-REL1/AD-4). Backend LLM-call retries log via
+// tenacity before_sleep_log; this logs the user-initiated client retry.
+function logRetry(op) {
+  console.info("[docintel] retry", { op, at: new Date().toISOString() });
+}
+
+// Render a terracotta error banner into `el` (role="alert" is set by the
+// caller) and wire its RETRY. Distinct from the neutral refusal (UX-DR13).
+function wireErrorBanner(el, label, message, onRetry) {
+  el.innerHTML = errorBannerHTML(label, message);
+  const btn = el.querySelector(".retry");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      logRetry(label);
+      onRetry();
+    });
+    btn.focus(); // land keyboard focus on the actionable control
+  }
+}
 
 // Mark the inline chip(s) for `id` active (teal), clearing any prior — or clear
 // all when `id` is null. Several sections may cite the same source; mark each.
@@ -156,9 +178,28 @@ function renderGenerating(ticker) {
       }
     },
     onError() {
-      // Legible failure surface; the full error banner is Story 2.8.
-      const status = $("#brief-status");
-      if (status) status.textContent = "brief stream failed — retry from the command bar";
+      // Retrieval/generation failure → a retryable error banner (UX-DR13),
+      // visually distinct from a refusal. Never wipe already-streamed sections.
+      if (rendered === 0) {
+        view.innerHTML = `<div class="errbanner" role="alert"></div>`;
+        wireErrorBanner(
+          view.querySelector(".errbanner"),
+          "RETRIEVAL FAILED",
+          `The brief for ${company.ticker} failed before any section rendered.`,
+          () => renderGenerating(company.ticker),
+        );
+      } else {
+        const box = document.createElement("div");
+        box.className = "errbanner";
+        box.setAttribute("role", "alert");
+        view.appendChild(box);
+        wireErrorBanner(
+          box,
+          "GENERATION INTERRUPTED",
+          "The brief stream stopped early. Retry to regenerate the full brief.",
+          () => renderGenerating(company.ticker),
+        );
+      }
     },
   });
 }
@@ -269,7 +310,18 @@ async function submitFollowup(question) {
   // would steal focus back to the brief heading).
   if (announcer) announcer.textContent = `Asked: ${question}`;
   exchange.querySelector(".q")?.focus();
+  fillAnswer(exchange, question);
+}
 
+// Fetch and render the answer for one exchange. On failure, an in-thread error
+// banner (UX-DR13) with a RETRY that re-runs this same exchange (Story 2.8).
+async function fillAnswer(exchange, question) {
+  const ans = exchange.querySelector(".answer");
+  ans.className = "answer"; // reset any prior error/refusal state on retry
+  ans.removeAttribute("role"); // drop a stale alert/status role from a prior attempt
+  ans.setAttribute("aria-busy", "true");
+  ans.innerHTML = `<div class="albl"><span class="d"></span> DOCINTEL</div>
+    <p class="section-refused">thinking…</p>`;
   try {
     const res = await fetch("/query", {
       method: "POST",
@@ -278,7 +330,6 @@ async function submitFollowup(question) {
     });
     if (!res.ok) throw new Error(`/query ${res.status}`);
     const answer = (await res.json()).answer;
-    const ans = exchange.querySelector(".answer");
     ans.removeAttribute("aria-busy");
     if (answer.refused) {
       // Honest refusal in-thread (Story 2.6): the same sober banner, no chips,
@@ -292,11 +343,13 @@ async function submitFollowup(question) {
       renderSuggestions(exchange, answer);
     }
   } catch (err) {
-    // Legible failure surface; the full error banner is Story 2.8.
-    const ans = exchange.querySelector(".answer");
+    // Retryable error banner (UX-DR13) — distinct from a refusal, retries in place.
     ans.removeAttribute("aria-busy");
-    ans.innerHTML = `<div class="albl"><span class="d"></span> DOCINTEL</div>
-      <p class="section-refused">Answer failed — retry from the command bar.</p>`;
+    ans.classList.add("errbanner");
+    ans.setAttribute("role", "alert");
+    wireErrorBanner(ans, "GENERATION FAILED", "That question could not be answered right now.", () =>
+      fillAnswer(exchange, question),
+    );
     console.error(err);
   }
 }

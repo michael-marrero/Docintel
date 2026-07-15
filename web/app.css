@@ -119,8 +119,16 @@ body {
 .cmdbar:not(:focus-within) .cursor { opacity: 0; }
 
 @keyframes blink { 50% { opacity: 0; } }
+/* Reduced motion (UX-DR17): freeze ALL blink/pulse/spin/caret motion + any
+ * transition — content still streams (that's JS-driven, not animation). Robust
+ * global reset so a future animation can't leak past the a11y floor. */
 @media (prefers-reduced-motion: reduce) {
-  .cmdbar .cursor { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .cmdbar .scope {
@@ -304,7 +312,8 @@ body {
   background: var(--card-recessed);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
-  overflow: hidden;
+  /* No overflow:hidden — it would clip a focused source row's :focus-visible
+   * ring at the panel edge (UX-DR20: the ring must never be clipped). */
 }
 .panel[hidden] { display: none; }
 .panel-head {
@@ -545,6 +554,41 @@ button.src:hover .srctitle { color: var(--accent-text-light); }
   margin-bottom: 8px;
 }
 .refusal p { font-family: var(--font-sans); font-size: var(--type-body-size); color: var(--prose); margin: 0 0 8px; }
+
+/* ---- error banner (Story 2.8, UX-DR13) — a FAILURE, not a refusal ---- */
+/* Terracotta 2px alert rail + role="alert" (app.js): visually distinct from the
+ * neutral, sober refusal. Retrieval/generation failure with a RETRY. */
+.errbanner {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--alert);   /* terracotta alert rail (UX-DR13) */
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-top: 16px;
+}
+.errbanner.answer { margin: 8px 0 0 18px; }  /* inline in a Q&A exchange */
+.errbanner .errlbl {
+  font-family: var(--font-mono);
+  font-size: var(--type-micro-size);
+  letter-spacing: var(--type-micro-tracking);
+  text-transform: uppercase;
+  color: var(--alert);
+  margin-bottom: 6px;
+}
+.errbanner p { font-family: var(--font-sans); font-size: var(--type-body-size); color: var(--prose); margin: 0 0 10px; }
+.errbanner .retry {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.errbanner .retry:hover { border-color: var(--alert); color: var(--alert); }
 .refusal .have {
   font-family: var(--font-mono);
   font-size: var(--type-meta-size);

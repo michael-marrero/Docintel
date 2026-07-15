@@ -78,6 +78,21 @@ export function isCovered(ticker, companies) {
   return coveredTickers(companies).includes(String(ticker).toUpperCase());
 }
 
+// --- error surface (Story 2.8) — pure; DOM wrapper + retry in app.js ---
+
+/** The error banner inner HTML (Story 2.8, UX-DR13): mono `⚠ <LABEL>` (e.g.
+ * `RETRIEVAL FAILED`), a plain message, and a `⏎ RETRY` control. Pure + escaped.
+ * Visually distinct from a refusal — a terracotta *alert* rail + `role="alert"`
+ * come from the `.errbanner` wrapper (app.js); a refusal is a neutral
+ * `role="status"`. An error is a failure to answer, not an honest refusal. */
+export function errorBannerHTML(label, message) {
+  return (
+    `<div class="errlbl">⚠ ${esc(label)}</div>` +
+    `<p>${esc(message)}</p>` +
+    `<button type="button" class="retry">⏎ RETRY</button>`
+  );
+}
+
 // --- honest refusal (Story 2.6) — pure; DOM wrapper in app.js ---
 
 /** `WHAT I DO HAVE` list items from the covered corpus: `AAPL — Apple Inc.`,

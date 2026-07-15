@@ -24,6 +24,7 @@ import {
   refusalBannerHTML,
   claimsCited,
   confidenceSignalHTML,
+  errorBannerHTML,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -374,4 +375,14 @@ test("confidenceSignalHTML: honest CATEGORY (not a fabricated decimal) + real N/
 test("confidenceSignalHTML: never shown for a refusal, nor without a claims count", () => {
   assert.equal(confidenceSignalHTML({ refused: true, text: "no", citations: [] }), "");
   assert.equal(confidenceSignalHTML({ refused: false, text: "", citations: [] }), ""); // total 0 → no signal
+});
+
+// --- error banner (Story 2.8) ---
+
+test("errorBannerHTML: mono label + message + RETRY, escaped, distinct from refusal", () => {
+  const html = errorBannerHTML("RETRIEVAL FAILED", "The <brief> failed.");
+  assert.match(html, /⚠ RETRIEVAL FAILED/);
+  assert.match(html, /<p>The &lt;brief&gt; failed\.<\/p>/); // message escaped
+  assert.match(html, /<button type="button" class="retry">⏎ RETRY<\/button>/);
+  assert.doesNotMatch(html, /INSUFFICIENT EVIDENCE/); // not a refusal
 });
