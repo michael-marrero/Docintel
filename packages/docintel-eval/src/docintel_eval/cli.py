@@ -69,6 +69,13 @@ def main(argv: list[str] | None = None) -> int:
         help="run baseline + ablation arms; emit comparison table (ABL-01/ABL-02)",
     )
 
+    # calibrate: FR-C5 confidence calibration (Story 3.6) — Brier/ECE/reliability.
+    # Flag-free like run/ablate; writes data/eval/calibration/<ts>/.
+    sub.add_parser(
+        "calibrate",
+        help="run confidence calibration (Brier/ECE/reliability curve) — FR-C5",
+    )
+
     # validate: EVAL-04 well-formedness gate (handler lands in Plan 10-03)
     validate_parser = sub.add_parser(
         "validate",
@@ -95,6 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_eval.ablate import run_ablations
 
         return run_ablations(cfg)
+
+    if args.cmd == "calibrate":
+        # Lazy import INSIDE the branch (Story 3.6, FR-C5).
+        from docintel_eval.calibration import run_calibration
+
+        return run_calibration(cfg)
 
     if args.cmd == "validate":
         from pathlib import Path
