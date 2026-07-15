@@ -79,6 +79,16 @@ def test_empty_corpus_all_latest_are_new(tmp_path: Path) -> None:
     assert result.new == {"AAPL:10-K": {"x", "y"}}
 
 
+def test_out_of_scope_form_is_not_reported_new(tmp_path: Path) -> None:
+    # Review fix (HIGH): a 10-Q for a 10-K-only ticker is out of scope → never
+    # ingested → must NOT be reported "new", else AC-2 ("up to date") never holds.
+    cfg = _seed(tmp_path, {"AAPL": [("FY2024", {"accession": "a", "filing_type": "10-K"})]})
+    # snapshot has no forms column → AAPL forms defaults to ["10-K"].
+    latest = {"AAPL:10-K": {"a"}, "AAPL:10-Q": {"q1", "q2"}}
+    result = detect_new(cfg, latest)
+    assert result.is_up_to_date  # 10-K current; the out-of-scope 10-Q is ignored
+
+
 @pytest.mark.real
 def test_fetch_latest_accessions_live(tmp_path: Path) -> None:
     # @real: hits data.sec.gov. Skipped in offline CI (-m "not real").

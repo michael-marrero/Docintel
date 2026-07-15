@@ -123,7 +123,12 @@ def main(argv: list[str] | None = None) -> int:
         # up-to-date or new-found (reporting, not a failure). Lazy import.
         from docintel_ingest.detect import detect_new, fetch_latest_accessions
 
-        result = detect_new(cfg, fetch_latest_accessions(cfg))
+        try:
+            latest = fetch_latest_accessions(cfg)
+        except Exception as exc:  # network/lookup failure — clean error, not a traceback
+            log.error("detect_failed", error_type=type(exc).__name__, error=str(exc))
+            return 1
+        result = detect_new(cfg, latest)
         # Structured log is the reporting surface (OBS-03 no-print convention);
         # ``summary`` carries the human-readable "up to date" / "N new" message.
         log.info(

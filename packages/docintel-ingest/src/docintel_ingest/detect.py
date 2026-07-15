@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 import structlog
 from docintel_core.config import Settings
@@ -21,6 +23,7 @@ from tenacity import (
     before_sleep_log,
     retry,
     retry_if_exception_type,
+    retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
@@ -89,8 +92,14 @@ def detect_new(cfg: Settings, latest: dict[str, set[str]]) -> DetectionResult:
     network. Returns only non-empty deltas; all empty → ``is_up_to_date`` (AC-2).
     """
     known = corpus_accessions(cfg)
+    # Only IN-SCOPE (ticker, form) pairs count. An out-of-scope form (e.g. a 10-Q
+    # for a 10-K-only ticker) is never ingested, so it must not be reported "new"
+    # — otherwise it would show as new on every run and AC-2 could never hold.
+    in_scope = {_key(e.ticker, form) for e in load_snapshot(cfg) for form in e.forms}
     new: dict[str, set[str]] = {}
     for key, accs in latest.items():
+        if key not in in_scope:
+            continue
         delta = set(accs) - known.get(key, set())
         if delta:
             new[key] = delta
@@ -100,10 +109,15 @@ def detect_new(cfg: Settings, latest: dict[str, set[str]]) -> DetectionResult:
 # --- Live SEC adapter (network; @real only) --------------------------------
 
 _SUPPORTED_FORMS = ("10-K", "10-Q", "8-K")
+_SEC_RATE_LIMIT_SLEEP = 0.15  # SEC fair-access: keep under 10 requests/second
 
 
 @retry(
-    retry=retry_if_exception_type((OSError, TimeoutError, ConnectionError)),
+    # Retry TRANSIENT connection errors only, NOT HTTP status errors: urllib's
+    # HTTPError (4xx/5xx) is a subclass of URLError/OSError, so without the
+    # explicit exclusion a 403/404 would be pointlessly retried 3x.
+    retry=retry_if_exception_type((TimeoutError, ConnectionError, URLError))
+    & retry_if_not_exception_type(HTTPError),
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     before_sleep=before_sleep_log(_retry_log, logging.WARNING),
@@ -111,7 +125,7 @@ _SUPPORTED_FORMS = ("10-K", "10-Q", "8-K")
 )
 def _http_get_json(url: str, user_agent: str) -> object:
     """GET a JSON document from an SEC endpoint (tenacity-wrapped; retries only
-    network transients, never a 4xx). `@real` — network."""
+    transient connection errors, NOT HTTP status errors). `@real` — network."""
     import urllib.request
 
     req = urllib.request.Request(url, headers={"User-Agent": user_agent})
@@ -143,15 +157,25 @@ def fetch_latest_accessions(
     """
     ua = cfg.edgar_user_agent
     cik_map = _ticker_cik_map(ua)
+    if not cik_map:
+        # A total lookup failure must NOT masquerade as "up to date" (an empty
+        # `latest` → is_up_to_date). Fail loudly.
+        raise RuntimeError("EDGAR ticker->CIK lookup returned empty; cannot detect")
     latest: dict[str, set[str]] = {}
     for entry in load_snapshot(cfg):
         cik = cik_map.get(entry.ticker.upper())
         if cik is None:
             log.warning("detect_ticker_no_cik", ticker=entry.ticker)
             continue
+        # Query only the forms IN THIS TICKER'S SCOPE — querying every supported
+        # form would report out-of-scope 10-Q/8-K as "new" forever.
+        wanted = {f for f in forms if f in entry.forms}
+        if not wanted:
+            continue
+        time.sleep(_SEC_RATE_LIMIT_SLEEP)
         subs = _http_get_json(f"https://data.sec.gov/submissions/CIK{cik}.json", ua)
         recent = subs["filings"]["recent"]  # parallel arrays
         for accession, form in zip(recent["accessionNumber"], recent["form"], strict=False):
-            if form in forms:
+            if form in wanted:
                 latest.setdefault(_key(entry.ticker, form), set()).add(accession)
     return latest
