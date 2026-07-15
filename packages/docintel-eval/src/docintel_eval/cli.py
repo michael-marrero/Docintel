@@ -82,6 +82,18 @@ def main(argv: list[str] | None = None) -> int:
         help="run confidence calibration (Brier/ECE/reliability curve) — FR-C5",
     )
 
+    # financebench: FR-C8 (Story 3.7) — ONE regime per run, never merged.
+    fb_parser = sub.add_parser(
+        "financebench",
+        help="run FinanceBench for ONE regime (open-book/oracle-context/closed-book) — FR-C8",
+    )
+    fb_parser.add_argument(
+        "--mode",
+        required=True,
+        choices=["open-book", "oracle-context", "closed-book"],
+        help="the single FinanceBench regime to run (separate invocations, never merged)",
+    )
+
     # per-tier: FR-C9 (Story 3.8) — combine per-tier results.json into one report.
     per_tier_parser = sub.add_parser(
         "per-tier",
@@ -131,6 +143,12 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_eval.calibration import run_calibration
 
         return run_calibration(cfg)
+
+    if args.cmd == "financebench":
+        # Lazy import INSIDE the branch (Story 3.7, FR-C8). One mode per run.
+        from docintel_eval.financebench import run_financebench
+
+        return run_financebench(cfg, args.mode)
 
     if args.cmd == "per-tier":
         # Lazy import INSIDE the branch (Story 3.8, FR-C9).
