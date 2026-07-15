@@ -242,8 +242,44 @@ body {
   margin: 0 0 10px;
 }
 .card.pending h2 { color: var(--ink-faint); }
+.card p {
+  font-family: var(--font-sans);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  color: var(--prose);
+  margin: 0;
+}
+.card .state.done { color: var(--accent); }
 .ph-line { height: 9px; border-radius: var(--radius-sm); background: var(--hairline); margin: 9px 0; }
 .ph-line.w1 { width: 92%; } .ph-line.w2 { width: 78%; } .ph-line.w3 { width: 60%; }
+.section-refused { color: var(--ink-dim); font-style: italic; }
+
+/* status line under the title while streaming */
+.statusline {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta-size);
+  letter-spacing: var(--type-meta-tracking);
+  color: var(--ink-faint);
+  padding: 6px 2px 0;
+}
+
+/* inline citation chip (FR-B2) — built from structured citation data, inert
+ * here; click-to-pin drill-down is Story 2.3 */
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--type-chip-size);
+  letter-spacing: var(--type-chip-tracking);
+  white-space: nowrap;
+  vertical-align: baseline;
+  position: relative;
+  top: -1px;
+  margin-left: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: var(--card-recessed);
+  border: 1px solid var(--hairline);
+  color: var(--ink-dim);
+}
 
 /* ---- refusal stub (full banner in Story 2.6) ---- */
 .refusal {

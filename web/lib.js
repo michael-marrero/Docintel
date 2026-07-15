@@ -77,3 +77,59 @@ export function isCovered(ticker, companies) {
   if (!ticker) return false;
   return coveredTickers(companies).includes(String(ticker).toUpperCase());
 }
+
+// --- rendering (pure; used by brief.js/app.js before innerHTML) ---
+
+const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+/** HTML-escape any user- or corpus-originated text before it reaches innerHTML. */
+export function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ESC[c]);
+}
+
+/** A citation chip label from an Answer citation: `[FY24 · 1A]` (2-digit FY +
+ * item code, "Item " stripped). The corpus lacks a per-citation form type, so
+ * the chip is FY+item, not the mockup's `10-K'24` — honest to the data. */
+export function citationChipLabel(cit) {
+  const yy = String((Number(cit?.fiscal_year) || 0) % 100).padStart(2, "0");
+  const item = String(cit?.item_code ?? "").replace(/^item\s+/i, "").trim();
+  return item ? `[FY${yy} · ${item}]` : `[FY${yy}]`;
+}
+
+// A bracketed token that looks like a retrieval chunk_id: `TICKER-FY2024-…`.
+// Used to distinguish a hallucinated citation (drop, AD-10) from legitimate
+// bracketed prose the corpus/LLM may emit (`[sic]`, `[1]`, `[iii]`) — which we
+// must KEEP, not silently delete.
+const CHUNK_ID_RE = /^[A-Za-z]+-FY\d{4}-/;
+
+/** Render a section's answer text to HTML with inline citation chips (FR-B2).
+ * A `[chunk_id]` token the synthesis prompt emits becomes a chip built from
+ * structured citation data (never string-parsed markup); a chunk-id-shaped token
+ * not in the citation set is a hallucination and is dropped with its leading
+ * space (AD-10); any other bracketed prose is preserved verbatim. All text is
+ * escaped. */
+export function citedTextToHTML(text, citations) {
+  const byId = new Map((citations ?? []).map((c) => [c.chunk_id, c]));
+  const re = /\[([A-Za-z0-9._-]+)\]/g;
+  let html = "";
+  let last = 0;
+  let m;
+  const src = String(text ?? "");
+  while ((m = re.exec(src)) !== null) {
+    const between = src.slice(last, m.index);
+    const cit = byId.get(m[1]);
+    if (cit) {
+      html += esc(between);
+      html += `<span class="chip" data-chunk-id="${esc(cit.chunk_id)}">${esc(citationChipLabel(cit))}</span>`;
+    } else if (CHUNK_ID_RE.test(m[1])) {
+      // hallucinated citation → drop it and one preceding space (no orphan gap)
+      html += esc(between.replace(/ +$/, ""));
+    } else {
+      // legitimate bracketed prose (e.g. "[sic]") → keep verbatim
+      html += esc(between) + esc(m[0]);
+    }
+    last = m.index + m[0].length;
+  }
+  html += esc(src.slice(last));
+  return html;
+}

@@ -1,13 +1,23 @@
 // docintel analyst workspace — bootstrap + state machine (Story 2.1).
 // Talks to the API over HTTP only (AD-15): GET /coverage here; the brief stream
 // (2.2), source panel (2.3), Q&A (2.4), refusal (2.6) attach at the marked seams.
-import { parseCommand, formatScopeLabel, coveredTickers, isCovered } from "/lib.js";
+import {
+  parseCommand,
+  formatScopeLabel,
+  coveredTickers,
+  isCovered,
+  esc,
+  citedTextToHTML,
+} from "/lib.js";
+import { streamBrief } from "/brief.js";
 
 const $ = (sel) => document.querySelector(sel);
 const view = $("#view");
 const input = $("#command-input");
 const scopeLabel = $("#scope-label");
 const announcer = $("#announcer");
+
+let activeStream = null; // the in-flight brief EventSource, if any
 
 // Announce a state transition to assistive tech via the dedicated live region,
 // and move focus to the newly-rendered heading so keyboard/AT users land on the
@@ -17,14 +27,6 @@ function transition(message) {
   if (announcer) announcer.textContent = message;
   const heading = view.querySelector("[data-focus]");
   if (heading) heading.focus();
-}
-
-// Escape any text that originates from the user or the corpus before it reaches
-// innerHTML. The command echo + ticker are user-controlled — never trust them.
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]),
-  );
 }
 
 // --- coverage state (loaded once on boot) ---
@@ -68,16 +70,17 @@ function renderEmpty() {
   }
 }
 
-// Covered ticker → generating-brief placeholder. The real streamed sections land
-// in Story 2.2 (this is the transition target required by AC-2 / UX-DR16).
+// Covered ticker → stream a four-section cited brief (Story 2.2). Renders four
+// pending cards, then fills each as its `section` SSE event arrives (UX-DR16).
 function renderGenerating(ticker) {
+  if (activeStream) activeStream.close(); // supersede any in-flight brief
   // Guard every row's ticker — a declared-but-unindexed filer may lack one.
   const company =
     companies.find((c) => String(c.ticker ?? "").toUpperCase() === ticker) ?? { name: ticker, ticker };
   const SECTIONS = ["Business & moat", "Financial trajectory", "Risk factors", "Recent material events"];
   const cards = SECTIONS.map(
-    (title) => `
-      <div class="card pending">
+    (title, i) => `
+      <div class="card pending" data-section-index="${i}">
         <p class="eyebrow"><span class="tick"></span> ${esc(title).toUpperCase()}
           <span class="state">QUEUED</span></p>
         <h2>${esc(title)}</h2>
@@ -89,9 +92,54 @@ function renderGenerating(ticker) {
       <h1 tabindex="-1" data-focus>${esc(company.name)}</h1>
       <div class="genstate"><span class="spin"></span> GENERATING <b>· LIVE</b></div>
     </div>
+    <div class="statusline"><span id="brief-status" aria-live="polite">synthesizing · 0 of ${SECTIONS.length} sections</span></div>
     <div class="stack">${cards}</div>`;
   transition(`Generating brief for ${company.name}`);
-  // TODO(2.2): open the brief stream (EventSource/fetch-stream) and fill sections.
+
+  let rendered = 0;
+  let chips = 0;
+  activeStream = streamBrief(company.ticker, {
+    onSection(evt) {
+      const card = view.querySelector(`[data-section-index="${evt.index}"]`);
+      if (!card) return; // unexpected/duplicate index — don't miscount
+      fillSectionCard(card, evt);
+      rendered += 1;
+      chips += card.querySelectorAll(".chip").length; // count chips ACTUALLY shown, not provided
+      const status = $("#brief-status");
+      if (status)
+        status.textContent = `synthesizing · ${rendered} of ${SECTIONS.length} sections · ${chips} claims cited`;
+    },
+    onDone() {
+      const gs = view.querySelector(".genstate");
+      if (gs) gs.innerHTML = "GENERATED";
+      const status = $("#brief-status");
+      if (status) status.textContent = `${rendered} sections · ${chips} claims cited`;
+    },
+    onRefused() {
+      // Only take over the view if nothing has rendered — never wipe good,
+      // already-streamed sections (the backend only refuses first-and-only today).
+      if (rendered === 0) renderRefusalStub(company.ticker);
+    },
+    onError() {
+      // Legible failure surface; the full error banner is Story 2.8.
+      const status = $("#brief-status");
+      if (status) status.textContent = "brief stream failed — retry from the command bar";
+    },
+  });
+}
+
+// Fill one pending section card with its streamed, cited answer.
+function fillSectionCard(card, evt) {
+  const ans = evt.answer;
+  card.classList.remove("pending");
+  const body = ans.refused
+    ? `<p class="section-refused">Not covered in the filings.</p>`
+    : `<p>${citedTextToHTML(ans.text, ans.citations)}</p>`;
+  card.innerHTML = `
+    <p class="eyebrow"><span class="tick"></span> ${esc(evt.title).toUpperCase()}
+      <span class="state done">✓ RENDERED</span></p>
+    <h2>${esc(evt.title)}</h2>
+    ${body}`;
 }
 
 // Uncovered ticker → refusal path (AC-3). Minimal, sober stub; the full banner
@@ -115,9 +163,22 @@ function submitCommand(raw) {
     if (isCovered(cmd.ticker, companies)) renderGenerating(cmd.ticker);
     else renderRefusalStub(cmd.ticker);
   } else {
-    // TODO(2.4): route free-text questions to the Q&A thread over POST /query.
-    renderGenerating(cmd.question); // placeholder until Q&A lands
+    renderAskPlaceholder(cmd.question);
   }
+}
+
+// Free-text questions get a Q&A thread over POST /query in Story 2.4. Until then
+// an honest placeholder — NOT a mis-routed brief stream for the sentence.
+function renderAskPlaceholder(question) {
+  if (activeStream) activeStream.close();
+  view.innerHTML = `
+    <div class="empty">
+      <h1 tabindex="-1" data-focus>Q&amp;A is coming</h1>
+      <p>Cited follow-up answers land in the next build. For now, type a covered ticker for a brief.</p>
+      <div class="hint">YOU ASKED</div>
+      <p class="section-refused">${esc(question)}</p>
+    </div>`;
+  transition("Q&A is not available yet");
 }
 
 // --- theme (dark default; light co-equal, persisted) ---

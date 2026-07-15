@@ -8,6 +8,9 @@ import {
   formatScopeLabel,
   coveredTickers,
   isCovered,
+  esc,
+  citationChipLabel,
+  citedTextToHTML,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -91,4 +94,38 @@ test("isCovered: case-insensitive, excludes not-in-corpus and malformed", () => 
   assert.equal(isCovered("ZZZZ", COMPANIES), false);
   assert.equal(isCovered("", COMPANIES), false);
   assert.equal(isCovered(null, COMPANIES), false);
+});
+
+test("esc: escapes the five HTML metacharacters", () => {
+  assert.equal(esc(`<a href="x">&'`), "&lt;a href=&quot;x&quot;&gt;&amp;&#39;");
+  assert.equal(esc(null), "");
+});
+
+test("citationChipLabel: FY + item code (Item stripped)", () => {
+  assert.equal(citationChipLabel({ fiscal_year: 2024, item_code: "Item 1A" }), "[FY24 · 1A]");
+  assert.equal(citationChipLabel({ fiscal_year: 2023, item_code: "Item 7" }), "[FY23 · 7]");
+  assert.equal(citationChipLabel({ fiscal_year: 2024, item_code: "" }), "[FY24]");
+});
+
+test("citedTextToHTML: inline chips from known ids, prose escaped", () => {
+  const citations = [{ chunk_id: "AAPL-FY2024-Item-1A-018", fiscal_year: 2024, item_code: "Item 1A" }];
+  const html = citedTextToHTML("Risk is <high> here [AAPL-FY2024-Item-1A-018].", citations);
+  assert.match(html, /Risk is &lt;high&gt; here/); // prose escaped
+  assert.match(html, /<span class="chip" data-chunk-id="AAPL-FY2024-Item-1A-018">\[FY24 · 1A\]<\/span>/);
+});
+
+test("citedTextToHTML: hallucinated chunk-id-shaped token dropped, no orphan space (AD-10)", () => {
+  const html = citedTextToHTML("Claim [GHOST-FY2099-Item-9-999].", []);
+  assert.equal(html, "Claim."); // dropped WITH its leading space
+  assert.doesNotMatch(html, /span/);
+});
+
+test("citedTextToHTML: legitimate bracketed prose is preserved, not eaten", () => {
+  assert.equal(citedTextToHTML("the filing [sic] states x.", []), "the filing [sic] states x.");
+  assert.equal(citedTextToHTML("see note [1] here.", []), "see note [1] here.");
+});
+
+test("citedTextToHTML: no citations / empty text is safe", () => {
+  assert.equal(citedTextToHTML("", []), "");
+  assert.equal(citedTextToHTML(null, null), "");
 });
