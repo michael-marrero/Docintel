@@ -135,6 +135,59 @@ def health() -> HealthResponse:
 
 
 # ---------------------------------------------------------------------------
+# /coverage  (Story 1.5 — the browsable coverage view's data source; AD-15)
+# ---------------------------------------------------------------------------
+
+
+class CoverageCompany(BaseModel):
+    """One row of the coverage view: declared scope + indexed counts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ticker: str
+    name: str
+    sector: str
+    forms: list[str]
+    fiscal_years: list[int]
+    filing_counts: dict[str, int]
+    transcript_count: int
+    latest_period: str | None
+    in_corpus: bool
+
+
+class CoverageCorpus(BaseModel):
+    """The corpus-wide coverage summary (the `CORPUS · N FILERS · FY..-FY..` label)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    company_count: int
+    forms: list[str]
+    fy_min: int | None
+    fy_max: int | None
+    has_transcripts: bool
+    snapshot_date: str
+
+
+class CoverageResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    corpus: CoverageCorpus
+    companies: list[CoverageCompany]
+
+
+@app.get("/coverage", response_model=CoverageResponse, tags=["coverage"])
+def coverage() -> CoverageResponse:
+    """Browsable corpus coverage: declared scope + indexed counts (Story 1.5).
+
+    Backed by the ingest-layer coverage facade + the corpus MANIFEST. Lazy import
+    keeps ``import docintel_api.main`` cheap (mirrors ``_generator``).
+    """
+    from docintel_ingest.coverage import build_coverage_view
+
+    return CoverageResponse.model_validate(build_coverage_view(_settings()))
+
+
+# ---------------------------------------------------------------------------
 # POST /query — UI-01 query path; D-01/D-02; deferred Phase 12 D-05
 # ---------------------------------------------------------------------------
 

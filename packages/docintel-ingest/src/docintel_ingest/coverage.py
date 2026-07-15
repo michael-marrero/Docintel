@@ -82,3 +82,78 @@ class Coverage:
 def load_coverage(cfg: Settings, snapshot_path: Path | None = None) -> Coverage:
     """Load the corpus coverage from the committed snapshot (single source, AD-5)."""
     return Coverage(companies=tuple(load_snapshot(cfg, snapshot_path)))
+
+
+# Period recency ordering (annual is "latest" within a fiscal year).
+_PERIOD_ORDER = {"FY": 5, "Q4": 4, "Q3": 3, "Q2": 2, "Q1": 1}
+
+
+def _fmt_latest_period(periods: list[tuple[int, str]]) -> str | None:
+    """Format the most-recent (fiscal_year, period) as e.g. ``FY2024`` / ``FY2024 · Q3``."""
+    if not periods:
+        return None
+    year = max(y for y, _ in periods)
+    within = [p for y, p in periods if y == year]
+    best = max(within, key=lambda p: _PERIOD_ORDER.get(p, 0))
+    return f"FY{year}" if best == "FY" else f"FY{year} · {best}"
+
+
+def build_coverage_view(cfg: Settings) -> dict:
+    """Assemble the browsable coverage view (Story 1.5): declared scope + indexed counts.
+
+    Scope (name/sector/forms/fiscal_years) comes from the coverage facade; per-company
+    filing counts, transcript count, and latest indexed period come from the corpus
+    ``MANIFEST.json`` (the published corpus artifact). JSON-ready and deterministic;
+    an absent/unreadable manifest yields zero indexed counts (scope still renders).
+    """
+    companies = load_snapshot(cfg)
+    tickers = sorted({c.ticker for c in companies})
+
+    # Index the published manifest's filings by ticker (best-effort; absent → empty).
+    by_ticker: dict[str, list[dict]] = {}
+    manifest_path = Path(cfg.data_dir) / "corpus" / "MANIFEST.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for filing in manifest.get("filings", []):
+                by_ticker.setdefault(filing["ticker"], []).append(filing)
+        except (json.JSONDecodeError, KeyError, OSError):
+            by_ticker = {}
+
+    rows: list[dict] = []
+    for c in companies:
+        filings = by_ticker.get(c.ticker, [])
+        counts: dict[str, int] = {}
+        transcript_count = 0
+        periods: list[tuple[int, str]] = []
+        for f in filings:
+            ftype = f.get("filing_type", "10-K")
+            counts[ftype] = counts.get(ftype, 0) + 1
+            if ftype == "transcript":
+                transcript_count += 1
+            else:
+                periods.append((int(f.get("fiscal_year", 0)), str(f.get("fiscal_period", "FY"))))
+        rows.append(
+            {
+                "ticker": c.ticker,
+                "name": c.name,
+                "sector": c.sector,
+                "forms": sorted(c.forms),
+                "fiscal_years": sorted(c.fiscal_years),
+                "filing_counts": dict(sorted(counts.items())),
+                "transcript_count": transcript_count,
+                "latest_period": _fmt_latest_period(periods),
+                "in_corpus": bool(filings),
+            }
+        )
+
+    all_years = sorted({y for c in companies for y in c.fiscal_years})
+    corpus = {
+        "company_count": len(tickers),
+        "forms": sorted({f for c in companies for f in c.forms}),
+        "fy_min": all_years[0] if all_years else None,
+        "fy_max": all_years[-1] if all_years else None,
+        "has_transcripts": any(r["transcript_count"] > 0 for r in rows),
+        "snapshot_date": companies[0].snapshot_date if companies else "",
+    }
+    return {"corpus": corpus, "companies": rows}

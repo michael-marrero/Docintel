@@ -5,6 +5,10 @@ description = "FastAPI service for docintel (depends on docintel-core)"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "docintel-core",
+    # Story 1.5: GET /coverage serves the corpus coverage view (scope + manifest
+    # counts). Downward dep (core < ingest < api); the coverage/snapshot/manifest
+    # path imports no torch/selectolax and is lazy-imported in the endpoint.
+    "docintel-ingest",
     "fastapi==0.136.1",
     "uvicorn[standard]==0.46.0",
     # torch + sentence-transformers are pinned in packages/docintel-core/pyproject.toml

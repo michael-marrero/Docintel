@@ -46,6 +46,7 @@ from docintel_core.config import Settings
 from docintel_core.types import REFUSAL_TEXT_SENTINEL, Answer
 
 from docintel_ui.citations import build_sources_list, render_citation_badges
+from docintel_ui.coverage_view import scope_label, status_html, table_html
 from docintel_ui.eval_view import (
     _find_eval_report,
     load_ablation_manifest,
@@ -152,6 +153,67 @@ def _fetch_traces(api_url: str) -> tuple[bool, list[dict[str, Any]] | str]:
         return False, f"{type(exc).__name__}: {exc}"
     except ValueError as exc:  # JSON decode failure
         return False, f"Invalid JSON from {api_url}/traces: {exc}"
+
+
+# ---------------------------------------------------------------------------
+# Coverage view (Story 1.5) — the browsable front-door corpus scope
+# ---------------------------------------------------------------------------
+
+
+def _fetch_coverage(api_url: str) -> tuple[bool, dict[str, Any] | str]:
+    """Call GET {api_url}/coverage (Story 1.5; AD-15 — UI reads coverage via API only).
+
+    Mirrors ``_fetch_traces``: sync httpx.get, X-Trace-Id header, 3s timeout,
+    never-raises ``(ok, payload)`` return.
+    """
+    trace_id = str(uuid.uuid4())
+    try:
+        resp = httpx.get(f"{api_url}/coverage", headers={"X-Trace-Id": trace_id}, timeout=3.0)
+        resp.raise_for_status()
+        body = resp.json()
+        if not isinstance(body, dict) or "companies" not in body or "corpus" not in body:
+            return False, f"Unexpected /coverage payload: {type(body).__name__}"
+        return True, body
+    except httpx.HTTPError as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    except ValueError as exc:  # JSON decode failure
+        return False, f"Invalid JSON from {api_url}/coverage: {exc}"
+
+
+def _render_coverage(settings: Settings) -> None:
+    """Front-door coverage view (Story 1.5): status label + browsable table (AD-15 — API only)."""
+    ok, body = _fetch_coverage(settings.api_url)
+    if not ok:
+        st.warning(f"Coverage unavailable from {settings.api_url}/coverage: {body}")
+        return
+    corpus: dict[str, Any] = body["corpus"]  # type: ignore[index]
+    companies: list[dict[str, Any]] = body["companies"]  # type: ignore[index]
+    st.html(status_html(corpus))
+    st.caption(
+        "docintel only answers from the filings below. Anything outside this set "
+        "returns a refusal, not a guess."
+    )
+    query = (
+        st.text_input(
+            "Filter coverage",
+            value="",
+            placeholder="Filter by company or ticker (e.g. AAPL)",
+            label_visibility="collapsed",
+        )
+        .strip()
+        .lower()
+    )
+    rows = [
+        c
+        for c in companies
+        if not query or query in c["ticker"].lower() or query in c["name"].lower()
+    ]
+    st.html(table_html(rows))
+    st.caption(
+        f"Showing {len(rows)} of {corpus['company_count']} companies · "
+        f"{scope_label(corpus)}. docintel will not answer about companies, "
+        "sectors, or periods not listed here."
+    )
 
 
 def _render_stage_bars(trace: dict[str, Any]) -> None:
@@ -450,6 +512,13 @@ def main() -> None:
         f"Production-shaped RAG over SEC 10-K filings · UI v{__version__} · "
         f"provider={settings.llm_provider}"
     )
+
+    # ---------------- Coverage (front door — Story 1.5) ----------------
+    # Rendered above the tabs so the analyst sees what's answerable before asking
+    # (epics 1.5 empty-state, UX-DR9/16). Fetched over HTTP only (AD-15).
+    st.subheader("Corpus coverage")
+    st.caption("What docintel can answer — browse before you ask.")
+    _render_coverage(settings)
 
     # ---------------- API health probe ----------------
     st.subheader("API health")
