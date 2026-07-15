@@ -76,6 +76,17 @@ def main(argv: list[str] | None = None) -> int:
         help="run confidence calibration (Brier/ECE/reliability curve) — FR-C5",
     )
 
+    # per-tier: FR-C9 (Story 3.8) — combine per-tier results.json into one report.
+    per_tier_parser = sub.add_parser(
+        "per-tier",
+        help="combine per-tier eval reports (open/sealed) into one comparison — FR-C9",
+    )
+    per_tier_parser.add_argument(
+        "specs",
+        nargs="+",
+        help="one or more '<tier>:<report_dir>' (e.g. open:data/eval/reports/AAA)",
+    )
+
     # validate: EVAL-04 well-formedness gate (handler lands in Plan 10-03)
     validate_parser = sub.add_parser(
         "validate",
@@ -108,6 +119,12 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_eval.calibration import run_calibration
 
         return run_calibration(cfg)
+
+    if args.cmd == "per-tier":
+        # Lazy import INSIDE the branch (Story 3.8, FR-C9).
+        from docintel_eval.per_tier import run_per_tier
+
+        return run_per_tier(cfg, args.specs)
 
     if args.cmd == "validate":
         from pathlib import Path
