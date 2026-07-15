@@ -107,22 +107,43 @@ def build_coverage_view(cfg: Settings) -> dict:
     an absent/unreadable manifest yields zero indexed counts (scope still renders).
     """
     companies = load_snapshot(cfg)
-    tickers = sorted({c.ticker for c in companies})
 
-    # Index the published manifest's filings by ticker (best-effort; absent → empty).
+    # Merge duplicate ticker rows (the snapshot may carry them — 1.3 review): first
+    # row wins name/sector, forms/fiscal_years union. One rendered row per ticker,
+    # so len(rows) == company_count (no "Showing 19 of 18").
+    merged: dict[str, dict] = {}
+    order: list[str] = []
+    for c in companies:
+        if c.ticker not in merged:
+            merged[c.ticker] = {
+                "name": c.name,
+                "sector": c.sector,
+                "forms": set(c.forms),
+                "fiscal_years": set(c.fiscal_years),
+            }
+            order.append(c.ticker)
+        else:
+            merged[c.ticker]["forms"].update(c.forms)
+            merged[c.ticker]["fiscal_years"].update(c.fiscal_years)
+
+    # Index the published manifest's filings by ticker (best-effort; absent/
+    # unreadable → empty; a filing missing "ticker" is skipped, not fatal to the rest).
     by_ticker: dict[str, list[dict]] = {}
     manifest_path = Path(cfg.data_dir) / "corpus" / "MANIFEST.json"
     if manifest_path.is_file():
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            for filing in manifest.get("filings", []):
-                by_ticker.setdefault(filing["ticker"], []).append(filing)
-        except (json.JSONDecodeError, KeyError, OSError):
-            by_ticker = {}
+        except (json.JSONDecodeError, OSError):
+            manifest = {"filings": []}
+        for filing in manifest.get("filings", []):
+            ticker = filing.get("ticker")
+            if ticker:
+                by_ticker.setdefault(ticker, []).append(filing)
 
     rows: list[dict] = []
-    for c in companies:
-        filings = by_ticker.get(c.ticker, [])
+    for ticker in order:
+        info = merged[ticker]
+        filings = by_ticker.get(ticker, [])
         counts: dict[str, int] = {}
         transcript_count = 0
         periods: list[tuple[int, str]] = []
@@ -132,14 +153,20 @@ def build_coverage_view(cfg: Settings) -> dict:
             if ftype == "transcript":
                 transcript_count += 1
             else:
-                periods.append((int(f.get("fiscal_year", 0)), str(f.get("fiscal_period", "FY"))))
+                # A malformed fiscal_year (null / non-numeric) must not 500 the
+                # endpoint — the module's contract is graceful degradation.
+                try:
+                    fy = int(f.get("fiscal_year", 0))
+                except (TypeError, ValueError):
+                    continue
+                periods.append((fy, str(f.get("fiscal_period", "FY"))))
         rows.append(
             {
-                "ticker": c.ticker,
-                "name": c.name,
-                "sector": c.sector,
-                "forms": sorted(c.forms),
-                "fiscal_years": sorted(c.fiscal_years),
+                "ticker": ticker,
+                "name": info["name"],
+                "sector": info["sector"],
+                "forms": sorted(info["forms"]),
+                "fiscal_years": sorted(info["fiscal_years"]),
                 "filing_counts": dict(sorted(counts.items())),
                 "transcript_count": transcript_count,
                 "latest_period": _fmt_latest_period(periods),
@@ -149,7 +176,7 @@ def build_coverage_view(cfg: Settings) -> dict:
 
     all_years = sorted({y for c in companies for y in c.fiscal_years})
     corpus = {
-        "company_count": len(tickers),
+        "company_count": len(order),
         "forms": sorted({f for c in companies for f in c.forms}),
         "fy_min": all_years[0] if all_years else None,
         "fy_max": all_years[-1] if all_years else None,

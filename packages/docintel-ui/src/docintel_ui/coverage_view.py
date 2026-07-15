@@ -25,7 +25,7 @@ MONO = "ui-monospace,'SF Mono',Menlo,Consolas,monospace"
 def scope_label(corpus: dict[str, Any]) -> str:
     """`CORPUS · N FILERS · FY..-FY..` scope label (epics 1.5 AC-1)."""
     fy_min, fy_max = corpus.get("fy_min"), corpus.get("fy_max")
-    span = f"FY{fy_min}-FY{fy_max}" if fy_min and fy_max else "—"
+    span = f"FY{fy_min}-FY{fy_max}" if fy_min is not None and fy_max is not None else "—"
     return f"CORPUS · {corpus.get('company_count', 0)} FILERS · {span}"
 
 
@@ -39,7 +39,7 @@ def status_html(corpus: dict[str, Any]) -> str:
     forms = html.escape(" / ".join(corpus.get("forms", [])) or "—")
     tr = " + EARNINGS TRANSCRIPTS" if corpus.get("has_transcripts") else ""
     fy_min, fy_max = corpus.get("fy_min"), corpus.get("fy_max")
-    span = f"FY{fy_min}&ndash;FY{fy_max}" if fy_min and fy_max else "—"
+    span = f"FY{fy_min}&ndash;FY{fy_max}" if fy_min is not None and fy_max is not None else "—"
     updated = html.escape(str(corpus.get("snapshot_date", "")))
     seg = f"padding-left:14px;border-left:1px solid {RULE};"
     return (
@@ -69,7 +69,7 @@ def table_html(rows: list[dict[str, Any]]) -> str:
             chips = "".join(
                 f'<span style="font-family:{MONO};font-size:9.5px;padding:2px 6px;border-radius:4px;'
                 f'background:#0F1318;border:1px solid {RULE};color:{DIM};margin-right:5px;">'
-                f"{html.escape(form)} &times;{cnt}</span>"
+                f"{html.escape(form)} &times;{int(cnt)}</span>"
                 for form, cnt in counts.items()
             )
         else:

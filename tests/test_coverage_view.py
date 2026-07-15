@@ -86,3 +86,50 @@ def test_build_coverage_view_no_manifest_still_renders_scope(tmp_path: Path) -> 
     assert view["companies"][0]["in_corpus"] is False
     assert view["companies"][0]["filing_counts"] == {}
     assert view["companies"][0]["latest_period"] is None
+
+
+def test_duplicate_ticker_rows_merge_to_one(tmp_path: Path) -> None:
+    # Review fix: dupes merge to one row (union forms/years); len(rows)==company_count.
+    cfg = _seed(
+        tmp_path,
+        [
+            _row("AAPL", "Apple", "Tech", "[2023]", '["10-K"]'),
+            _row("AAPL", "Apple", "Tech", "[2024]", '["10-Q"]'),
+        ],
+    )
+    view = build_coverage_view(cfg)
+    assert view["corpus"]["company_count"] == 1
+    assert len(view["companies"]) == 1
+    aapl = view["companies"][0]
+    assert aapl["fiscal_years"] == [2023, 2024]
+    assert aapl["forms"] == ["10-K", "10-Q"]
+
+
+def test_malformed_manifest_fiscal_year_does_not_crash(tmp_path: Path) -> None:
+    # Review fix: a null/non-numeric fiscal_year must degrade, not 500 the endpoint.
+    cfg = _seed(
+        tmp_path,
+        [_row("AAPL", "Apple", "Tech", "[2024]", '["10-K"]')],
+        manifest_filings=[
+            {"ticker": "AAPL", "filing_type": "10-K", "fiscal_period": "FY", "fiscal_year": None},
+            {"ticker": "AAPL", "filing_type": "10-K", "fiscal_period": "FY", "fiscal_year": 2024},
+        ],
+    )
+    view = build_coverage_view(cfg)  # must not raise
+    aapl = view["companies"][0]
+    assert aapl["filing_counts"] == {"10-K": 2}  # both counted
+    assert aapl["latest_period"] == "FY2024"  # the malformed period skipped
+
+
+def test_manifest_filing_missing_ticker_does_not_wipe_others(tmp_path: Path) -> None:
+    # Review fix: one bad filing (no ticker) must not discard the whole manifest.
+    cfg = _seed(
+        tmp_path,
+        [_row("AAPL", "Apple", "Tech", "[2024]", '["10-K"]')],
+        manifest_filings=[
+            {"filing_type": "10-K", "fiscal_period": "FY", "fiscal_year": 2024},  # no ticker
+            {"ticker": "AAPL", "filing_type": "10-K", "fiscal_period": "FY", "fiscal_year": 2024},
+        ],
+    )
+    view = build_coverage_view(cfg)
+    assert view["companies"][0]["filing_counts"] == {"10-K": 1}  # AAPL still indexed

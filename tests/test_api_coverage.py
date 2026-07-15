@@ -30,8 +30,7 @@ def test_get_coverage_200_and_shape(client: TestClient) -> None:
     assert _COMPANY_KEYS <= set(body["companies"][0])
 
 
-def test_get_coverage_rejects_unknown_route_shape(client: TestClient) -> None:
-    # A well-formed scope label is derivable: N filers + a fiscal-year span.
+def test_get_coverage_corpus_field_types(client: TestClient) -> None:
     body = client.get("/coverage").json()
     corpus = body["corpus"]
     assert isinstance(corpus["company_count"], int)
