@@ -371,6 +371,111 @@ def brief(ticker: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# GET /trust — Story 3.9 in-app trust/accuracy panel (UX-DR10, AD-15)
+# ---------------------------------------------------------------------------
+
+
+class TrustResponse(BaseModel):
+    """The proof-report headline the trust/accuracy panel renders (Story 3.9).
+
+    ``source`` is ``"baseline"`` when the committed baseline-locked report was
+    read, or ``"placeholder"`` when no proof report exists yet — so Epic 2's
+    panel renders without a hard runtime dependency on Epic 3 (AC-2). The panel
+    consumes THIS endpoint over HTTP only (AD-15); the server reads the committed
+    report file, the browser never touches the filesystem.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["baseline", "placeholder"]
+    representative: bool
+    faithfulness: dict[str, Any] | None
+    citation_accuracy: dict[str, Any] | None
+    manifest: dict[str, Any] | None
+
+
+def _placeholder_trust() -> TrustResponse:
+    """No committed proof report → an honest placeholder (AC-2)."""
+    return TrustResponse(
+        source="placeholder",
+        representative=False,
+        faithfulness=None,
+        citation_accuracy=None,
+        manifest=None,
+    )
+
+
+@app.get("/trust", response_model=TrustResponse, tags=["trust"])
+def trust() -> TrustResponse:
+    """Serve the baseline-locked eval report's headline for the trust panel.
+
+    Reads ``data/eval/baseline.json`` → the locked ``report_dir`` → its
+    ``results.json`` (a committed repo artifact), and returns faithfulness +
+    citation-accuracy + the manifest. Any missing/malformed artifact degrades to
+    a placeholder rather than 500 — the panel must always render (AC-2).
+    """
+    import json
+
+    baseline_path = Path("data/eval/baseline.json")
+    if not baseline_path.is_file():
+        return _placeholder_trust()
+    try:
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        report_dir = Path(str(baseline.get("report_dir", ""))).resolve()
+        # Confine under data/eval/reports/ (defense-in-depth on a trusted file).
+        reports_root = Path("data/eval/reports").resolve()
+        if not (report_dir == reports_root or reports_root in report_dir.parents):
+            return _placeholder_trust()
+        results = json.loads((report_dir / "results.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return _placeholder_trust()
+
+    manifest = results.get("manifest", {})
+    faith = results.get("faithfulness", {})
+    per_q = results.get("per_question", [])
+
+    # Citation accuracy headline: mean per-question citation precision over
+    # non-refused answers that actually cited (n_citations > 0). Computed here —
+    # results.json carries it per-question, not as a top-level field.
+    answered = [r for r in per_q if not r.get("refused") and int(r.get("n_citations", 0)) > 0]
+    if answered:
+        cit_mean = sum(float(r.get("citation_precision", 0.0)) for r in answered) / len(answered)
+        citation_accuracy: dict[str, Any] | None = {
+            "precision": cit_mean,
+            "n_answered": len(answered),
+        }
+    else:
+        citation_accuracy = None
+
+    return TrustResponse(
+        source="baseline",
+        representative=bool(manifest.get("representative", False)),
+        faithfulness={
+            "pass_rate": faith.get("faithfulness_pass_rate"),
+            "ci": faith.get("faithfulness_ci"),
+            "n_answered": faith.get("n_answered"),
+        },
+        citation_accuracy=citation_accuracy,
+        manifest={
+            k: manifest.get(k)
+            for k in (
+                "embedder_name",
+                "reranker_name",
+                "generator_name",
+                "judge_name",
+                "prompt_version_hash",
+                "git_sha",
+                "provider",
+                "n_questions",
+                "dataset_hash",
+                "run_timestamp_utc",
+                "representative",
+            )
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /traces + GET /trace/{id} — UI-01 traces tab; D-10
 # ---------------------------------------------------------------------------
 

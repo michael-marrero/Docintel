@@ -22,11 +22,28 @@
   <div class="app">
     <header class="topbar">
       <span class="brand"><span class="brand-mark">▮</span> docintel</span>
-      <button id="theme-toggle" class="theme-toggle" type="button"
-              aria-label="Toggle light theme" aria-pressed="false">
-        <span class="theme-toggle-label">THEME</span>
-      </button>
+      <div class="topbar-actions">
+        <!-- Persistent trust affordance (Story 3.9, UX-DR10) -->
+        <button id="trust-open" class="trust-open" type="button"
+                aria-haspopup="dialog" aria-label="How accurate is this?">
+          HOW ACCURATE?
+        </button>
+        <button id="theme-toggle" class="theme-toggle" type="button"
+                aria-label="Toggle light theme" aria-pressed="false">
+          <span class="theme-toggle-label">THEME</span>
+        </button>
+      </div>
     </header>
+
+    <!-- Trust/accuracy panel (Story 3.9). Consumes GET /trust over HTTP only
+         (AD-15). Native <dialog> — Esc-closable, focus-trapped, no library. -->
+    <dialog id="trust-dialog" class="trust-dialog" aria-label="Trust and accuracy">
+      <div class="trust-head">
+        <span class="trust-title">HOW ACCURATE IS THIS?</span>
+        <button id="trust-close" class="trust-close" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="trust-body" class="trust-body" aria-live="polite">Loading…</div>
+    </dialog>
 
     <!-- Command bar: keyboard-native front door (UX-DR4, UX-DR15) -->
     <form id="command-bar" class="cmdbar" autocomplete="off" role="search"

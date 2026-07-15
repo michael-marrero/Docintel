@@ -78,6 +78,66 @@ export function isCovered(ticker, companies) {
   return coveredTickers(companies).includes(String(ticker).toUpperCase());
 }
 
+// --- trust/accuracy panel (Story 3.9, UX-DR10) — pure; fetch+dialog in trust.js ---
+
+/** Format a rate in [0,1] as a percentage, or "—" when absent. */
+function pct(v) {
+  return Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—";
+}
+
+/** The trust/accuracy panel body (Story 3.9): headline citation-accuracy +
+ * faithfulness in teal mono with a 95%-CI band + the eval manifest. Pure +
+ * escaped. `data` is the GET /trust payload. A placeholder (source ==
+ * "placeholder") or a non-representative run is labeled honestly — the panel
+ * never presents non-proof as proof (AD-11). */
+export function trustPanelHTML(data) {
+  const d = data ?? {};
+  if (d.source === "placeholder" || !d.manifest) {
+    return (
+      `<p class="trust-note">Proof numbers aren't wired yet. Run the eval harness ` +
+      `(<code>docintel-eval run</code>) to populate this panel.</p>`
+    );
+  }
+  const f = d.faithfulness ?? {};
+  const c = d.citation_accuracy ?? {};
+  const ci = Array.isArray(f.ci) && f.ci.length === 2 ? f.ci : null;
+  const band = ci ? `95% CI ${pct(ci[0])}–${pct(ci[1])}` : "";
+  const warn = d.representative
+    ? ""
+    : `<p class="trust-warn">NON-REPRESENTATIVE (stub run) — not publishable proof.</p>`;
+
+  const m = d.manifest;
+  const rows = [
+    ["generator", m.generator_name],
+    ["embedder", m.embedder_name],
+    ["reranker", m.reranker_name],
+    ["judge", m.judge_name],
+    ["provider", m.provider],
+    ["prompt hash", m.prompt_version_hash],
+    ["git sha", m.git_sha],
+    ["dataset hash", m.dataset_hash],
+    ["n questions", m.n_questions],
+    ["run (UTC)", m.run_timestamp_utc],
+  ]
+    .filter(([, v]) => v != null && v !== "")
+    .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`)
+    .join("");
+
+  return (
+    warn +
+    `<div class="trust-metrics">` +
+    `<div class="tm"><span class="tm-lbl">CITATION ACCURACY</span>` +
+    `<span class="tm-val">${esc(pct(c.precision))}</span>` +
+    `<span class="tm-sub">N=${esc(String(c.n_answered ?? "—"))}</span></div>` +
+    `<div class="tm"><span class="tm-lbl">FAITHFULNESS</span>` +
+    `<span class="tm-val">${esc(pct(f.pass_rate))}</span>` +
+    `<span class="tm-sub tm-ci">${esc(band)}</span></div>` +
+    `</div>` +
+    `<div class="trust-manifest"><div class="trust-mlbl">EVAL MANIFEST</div>` +
+    `<table>${rows}</table></div>`
+  );
+}
+
 // --- error surface (Story 2.8) — pure; DOM wrapper + retry in app.js ---
 
 /** The error banner inner HTML (Story 2.8, UX-DR13): mono `⚠ <LABEL>` (e.g.

@@ -25,6 +25,7 @@ import {
   claimsCited,
   confidenceSignalHTML,
   errorBannerHTML,
+  trustPanelHTML,
 } from "../../web/lib.js";
 
 const COVERED = ["NWL", "AAPL", "BRK.B"];
@@ -385,4 +386,39 @@ test("errorBannerHTML: mono label + message + RETRY, escaped, distinct from refu
   assert.match(html, /<p>The &lt;brief&gt; failed\.<\/p>/); // message escaped
   assert.match(html, /<button type="button" class="retry">⏎ RETRY<\/button>/);
   assert.doesNotMatch(html, /INSUFFICIENT EVIDENCE/); // not a refusal
+});
+
+// --- trust/accuracy panel (Story 3.9) ---
+
+const TRUST = {
+  source: "baseline",
+  representative: true,
+  faithfulness: { pass_rate: 0.8928, ci: [0.728, 0.9629], n_answered: 28 },
+  citation_accuracy: { precision: 0.6905, n_answered: 21 },
+  manifest: {
+    generator_name: "nemotron-super-49b", embedder_name: "bge", reranker_name: "bge-reranker-base",
+    judge_name: "glm", provider: "real", prompt_version_hash: "65da07f1ba3e",
+    git_sha: "8278e8a9", dataset_hash: "5d9f8792", n_questions: 32, run_timestamp_utc: "2026-07-10T22:00:00Z",
+  },
+};
+
+test("trustPanelHTML: teal-mono headline numbers + 95% CI band + manifest", () => {
+  const html = trustPanelHTML(TRUST);
+  assert.match(html, /CITATION ACCURACY.*69\.0%/s);
+  assert.match(html, /FAITHFULNESS.*89\.3%/s);
+  assert.match(html, /95% CI 72\.8%–96\.3%/); // CI band
+  assert.match(html, /nemotron-super-49b/); // manifest generator
+  assert.doesNotMatch(html, /trust-warn/); // representative → no warning
+});
+
+test("trustPanelHTML: placeholder when no report (AC-2), non-representative flagged", () => {
+  assert.match(trustPanelHTML({ source: "placeholder" }), /docintel-eval run/);
+  assert.match(trustPanelHTML({ ...TRUST, representative: false }), /NON-REPRESENTATIVE/);
+});
+
+test("trustPanelHTML: manifest values are escaped (XSS)", () => {
+  const evil = { ...TRUST, manifest: { ...TRUST.manifest, generator_name: "<img src=x onerror=alert(1)>" } };
+  const html = trustPanelHTML(evil);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img src=x/);
 });
