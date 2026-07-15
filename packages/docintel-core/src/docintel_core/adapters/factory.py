@@ -40,11 +40,65 @@ already so we keep TYPE_CHECKING for ``Generator``).
 
 from __future__ import annotations
 
+import ipaddress
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from docintel_core.adapters.stub.embedder import StubEmbedder
 from docintel_core.adapters.stub.reranker import StubReranker
 from docintel_core.adapters.types import AdapterBundle, IndexStoreBundle
+
+
+class SealedTierViolation(RuntimeError):
+    """AD-17: a sealed-tier deployment tried to construct an egressing adapter."""
+
+
+def _is_local_url(url: str | None) -> bool:
+    """True iff ``url``'s host is local (loopback, private IP, ``.local``/``.internal``,
+    or a bare docker service name) — i.e. a request to it never leaves the perimeter."""
+    if not url:
+        return False
+    host = urlparse(url).hostname or ""
+    if host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return True
+    if host.endswith((".local", ".internal")):
+        return True
+    if "." not in host and ":" not in host:
+        return True  # bare docker-compose service name (e.g. "qdrant", "nim")
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+def ensure_sealed_egress_free(cfg: Settings) -> None:
+    """AD-17: in the ``sealed`` tier, reject any adapter that would leave the
+    perimeter, so a sealed process makes ZERO external network calls. No-op for the
+    ``open`` tier and for stub mode (all-local by construction). Raises
+    ``SealedTierViolation`` when a hosted/remote surface is configured under sealed.
+
+    ponytail: host-locality is a heuristic (loopback/private/bare-service-name); a
+    determined operator pointing a "local" DNS name at a public IP defeats it — the
+    upgrade path is an egress-blocking network policy at the container, which is the
+    real air-gap enforcement. This guard catches the honest misconfiguration.
+    """
+    if cfg.tier != "sealed" or cfg.llm_provider == "stub":
+        return
+    if cfg.llm_real_provider == "anthropic":
+        raise SealedTierViolation(
+            "sealed tier forbids the Anthropic provider (hosted egress); "
+            "use a local OpenAI-compatible endpoint (DOCINTEL_LLM_REAL_PROVIDER=openai)"
+        )
+    if not _is_local_url(cfg.openai_base_url):
+        raise SealedTierViolation(
+            "sealed tier requires a local DOCINTEL_OPENAI_BASE_URL "
+            f"(loopback/private/service-name host); got {cfg.openai_base_url!r}"
+        )
+    if not _is_local_url(cfg.qdrant_url):
+        raise SealedTierViolation(
+            f"sealed tier requires a local DOCINTEL_QDRANT_URL; got {cfg.qdrant_url!r}"
+        )
+
 
 # TYPE_CHECKING guard: these imports run only under mypy/pyright, never at runtime.
 # The real adapter modules (Wave 4) do not exist yet; this guard keeps mypy happy
@@ -82,6 +136,7 @@ def make_adapters(cfg: Settings) -> AdapterBundle:
     Returns:
         AdapterBundle with embedder, reranker, llm, and judge adapters.
     """
+    ensure_sealed_egress_free(cfg)  # AD-17: reject egress under the sealed tier
     if cfg.llm_provider == "stub":
         from docintel_core.adapters.stub.judge import StubLLMJudge
         from docintel_core.adapters.stub.llm import StubLLMClient
@@ -157,6 +212,7 @@ def make_index_stores(cfg: Settings) -> IndexStoreBundle:
         and ``bm25`` (Bm25sStore) adapters. Phase 10's eval manifest header
         reads ``bundle.dense.name`` and ``bundle.bm25.name`` from this bundle.
     """
+    ensure_sealed_egress_free(cfg)  # AD-17: a remote qdrant_url is rejected under sealed
     if cfg.llm_provider == "stub":
         from docintel_core.adapters.real.bm25s_store import Bm25sStore
         from docintel_core.adapters.real.numpy_dense import NumpyDenseStore

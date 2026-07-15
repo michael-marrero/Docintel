@@ -23,7 +23,18 @@ services:
     image: docintel-api:local
     container_name: docintel-api
     environment:
-      DOCINTEL_LLM_PROVIDER: stub
+      # Provider + tier (Epic 4). Default = the offline-first stub demo; override
+      # via .env for the open tier (BYO hosted key) or sealed tier (local-only).
+      DOCINTEL_LLM_PROVIDER: ${DOCINTEL_LLM_PROVIDER:-stub}
+      DOCINTEL_TIER: ${DOCINTEL_TIER:-open}
+      DOCINTEL_LLM_REAL_PROVIDER: ${DOCINTEL_LLM_REAL_PROVIDER:-anthropic}
+      # Secrets pass from the host env (never baked into the image — NFR-SEC3).
+      DOCINTEL_ANTHROPIC_API_KEY: ${DOCINTEL_ANTHROPIC_API_KEY:-}
+      DOCINTEL_OPENAI_API_KEY: ${DOCINTEL_OPENAI_API_KEY:-}
+      DOCINTEL_OPENAI_BASE_URL: ${DOCINTEL_OPENAI_BASE_URL:-}
+      # Offline license (AD-18). Empty → the unlicensed demo grant.
+      DOCINTEL_LICENSE_KEY: ${DOCINTEL_LICENSE_KEY:-}
+      DOCINTEL_LICENSE_PUBLIC_KEY_HEX: ${DOCINTEL_LICENSE_PUBLIC_KEY_HEX:-}
       DOCINTEL_GIT_SHA: ${GIT_SHA:-unknown}
       DOCINTEL_DATA_DIR: /app/data
     ports:

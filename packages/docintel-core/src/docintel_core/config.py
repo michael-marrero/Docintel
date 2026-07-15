@@ -36,6 +36,26 @@ class Settings(BaseSettings):
         description="Flips all LLM/embedding adapters between stub and real providers.",
     )
 
+    # Deployment tier (Epic 4, AD-17). `open` = BYO hosted provider key (only the
+    # LLM call may leave the perimeter); `sealed` = local-only / air-gapped — the
+    # factory rejects any egressing adapter so a sealed process makes ZERO external
+    # network calls. A construction-time posture (AD-2), not a hot-path branch.
+    tier: Literal["open", "sealed"] = Field(
+        default="open",
+        description="Deployment tier: 'open' (BYO hosted key) or 'sealed' (local-only, zero egress).",
+    )
+
+    # Offline license token (Epic 4, AD-18). A signed token (licensee/expiry/scope)
+    # verified ENTIRELY OFFLINE at startup against the bundled public key — never a
+    # vendor network call. None → the deterministic stub verifier grants a dev
+    # license (offline-first default). Secret: never logged, never in /health.
+    license_key: SecretStr | None = Field(default=None)
+
+    # Path to the vendor's Ed25519 PUBLIC key (hex, 32 bytes) bundled with the
+    # deployment. When set, license verification uses the real Ed25519 adapter
+    # (unforgeable); when None, the deterministic stub verifier is used (dev/demo).
+    license_public_key_hex: str | None = Field(default=None)
+
     # Which real LLM provider drives generation (D-09). Ignored in stub mode.
     # The judge always uses the complement provider (D-04, cross-family bias avoidance).
     llm_real_provider: Literal["anthropic", "openai"] = Field(

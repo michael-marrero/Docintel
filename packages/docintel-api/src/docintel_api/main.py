@@ -24,6 +24,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware import Middleware
 from starlette.requests import Request
+from starlette.responses import Response
 
 from docintel_api.middleware import TraceIdMiddleware
 
@@ -132,6 +133,53 @@ def health() -> HealthResponse:
         provider=settings.llm_provider,
         git_sha=settings.git_sha,
         timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /ready — Story 4.8 readiness probe (FR-E7, operability)
+# ---------------------------------------------------------------------------
+
+
+class ReadyResponse(BaseModel):
+    """Readiness for self-host operability (Story 4.8). ``ready`` iff the index is
+    present AND the license (if configured) verifies — i.e. the service can serve
+    grounded, licensed answers. Non-secret only (no token, no key)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ready: bool
+    tier: Literal["open", "sealed"]
+    provider: Literal["stub", "real"]
+    checks: dict[str, Any]
+    license: dict[str, Any]
+
+
+def _index_ready(settings: Settings) -> bool:
+    """Lightweight index-presence check (no full load): the dense store or the
+    index manifest exists under ``index_dir``."""
+    root = Path(settings.index_dir)
+    return (root / "dense").exists() or (root / "MANIFEST.json").exists()
+
+
+@app.get("/ready", response_model=ReadyResponse, tags=["meta"])
+def ready(response: Response) -> ReadyResponse:
+    """Readiness probe: index present + license valid. Returns 503 when not ready
+    (orchestrator-friendly) with the payload either way (operator visibility)."""
+    from docintel_core.license import license_status
+
+    settings = _settings()
+    index_ok = _index_ready(settings)
+    lic = license_status(settings)
+    is_ready = index_ok and bool(lic.get("licensed"))
+    if not is_ready:
+        response.status_code = 503
+    return ReadyResponse(
+        ready=is_ready,
+        tier=settings.tier,
+        provider=settings.llm_provider,
+        checks={"index": index_ok, "license": bool(lic.get("licensed"))},
+        license=lic,
     )
 
 
