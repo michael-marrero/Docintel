@@ -10,18 +10,17 @@ Production-shaped Retrieval-Augmented Generation system over SEC 10-K filings. P
 
 ## Authoritative sources
 
-Read these first when picking up work:
+This is a **BMAD-exclusive** repo. Read these first when picking up work:
 
-1. **`/Users/michaelmarrero/Downloads/projectspec.md`** — original engineering spec (Sections 1–12). Locks the stack, the architecture, the phase structure, and the operating rules. Defer to it.
-2. **`.planning/PROJECT.md`** — current project state, core value, key decisions.
-3. **`.planning/ROADMAP.md`** — 14 phases (13 v1 + Phase 14 v2 deferred). Every requirement is mapped. Depends-on chains encode hard sequencing constraints.
-4. **`.planning/REQUIREMENTS.md`** — REQ-IDs and traceability table.
-5. **`.planning/research/SUMMARY.md`** — synthesized findings from 4 parallel research agents (Stack, Features, Architecture, Pitfalls). Has the roadmapper quick-reference at the end.
-6. **`.planning/research/{STACK,FEATURES,ARCHITECTURE,PITFALLS}.md`** — drill into specifics when planning a phase.
+1. **`/Users/michaelmarrero/Downloads/projectspec.md`** — original engineering spec (Sections 1–12). Locks the stack, the architecture, and the operating rules. Defer to it.
+2. **`_bmad-output/implementation-artifacts/sprint-status.yaml`** — current epic/story status (source of truth for what's done and what's next).
+3. **`_bmad-output/implementation-artifacts/*.md`** — per-story specs (`<epic>-<story>-*.md`) and `deferred-work.md`.
+4. **`_bmad-output/planning-artifacts/`** — PRD, epics, requirements.
+5. **`docs/`** — architecture, data models, API contracts, deployment/dev guides (local only, gitignored).
 
 ## Operating rules (from spec §10)
 
-- **One phase = one branch:** `git checkout -b phase/<N>-<name>` before any code.
+- **One story = one branch:** `git checkout -b story/<epic>-<story>-<name>` before any code.
 - **Tests before code where possible**, especially for the eval harness.
 - **No hidden state.** Every config goes through `src/docintel/config.py` (Pydantic v2 + `pydantic-settings`). No magic env reads in random modules.
 - **All prompts live in `packages/docintel-generate/src/docintel_generate/prompts.py`**, versioned with a hash. Grep for inline string-literal prompts must return zero matches.
@@ -31,14 +30,12 @@ Read these first when picking up work:
 - **Commit `data/eval/reports/*.md`** — they are part of the artifact.
 - **README is rewritten last** — from real measurements, not from the plan.
 
-## Hard sequencing constraints
+## Engineering canaries (easy to miss, expensive to get wrong)
 
-Encoded in ROADMAP.md `Depends on` lines, but worth surfacing here because they're easy to miss:
-
-- **Phase 2 (adapters/protocols/stubs) must land before Phase 4 (embedding/indexing).** If protocols slip, eval-in-CI becomes theater.
-- **Phase 5 carries the reranker silent-truncation canary as a structural acceptance gate.** Cross-encoder must measurably improve top-3 hit rate vs. dense-only on ≥5 hand-written cases. If that gate fails, look at BGE 512-token truncation FIRST — before suspecting hybrid retrieval, RRF, or chunk size. This is the most common subtle failure mode and the canary exists specifically to catch it.
-- **Phase 9 (metrics) depends on Phase 7 (Answer schema) AND Phase 8 (ground truth).** Both must exist; ground truth is parallelizable with Phases 4–7.
-- **Phase 13 (API+UI+polish) depends on Phase 11 (ablation) AND Phase 12 (observability).** Phase 13 carries disproportionate recruiter weight — multi-hop hero GIF, hoverable citations, README from measurements, ≥8 ADRs in DECISIONS.md. Protect this phase's time.
+- **Adapters/protocols/stubs must land before embedding/indexing.** If protocols slip, eval-in-CI becomes theater.
+- **Reranker silent-truncation is the #1 subtle failure.** The cross-encoder must measurably improve top-3 hit rate vs. dense-only on ≥5 hand-written cases. If that gate fails, look at BGE 512-token truncation FIRST — before suspecting hybrid retrieval, RRF, or chunk size. The canary exists specifically to catch it.
+- **Metrics depend on the Answer schema AND ground truth.** Both must exist before scoring.
+- **The API+UI+polish work carries disproportionate recruiter weight** — multi-hop hero GIF, hoverable citations, README from measurements, ≥8 ADRs in DECISIONS.md. Protect its time.
 
 ## Demo story (locked)
 
@@ -50,17 +47,17 @@ Hero GIF answers a **multi-hop comparative question across companies** (e.g., "W
 - **One-command demo.** `git clone && docker-compose up` produces a working demo on a fresh machine. Non-negotiable per spec §11.
 - **Eval-in-CI.** GitHub Actions runs the full eval suite on every PR (stub mode). Reports committed under `data/eval/reports/<timestamp>/` with a mandatory manifest header (`embedder.name`, `reranker.name`, `generator.name`, `prompt_version_hash`, git SHA).
 - **Corpus = SEC 10-Ks**, 10–20 companies, last 3 years. Stored under `data/corpus/` (gitignored). Provide `make fetch-corpus` for reproducibility.
-- **`.planning/` is gitignored** (commit_docs=false). Planning docs stay local; the public repo is just the source.
+- **BMAD workspace + generated docs stay local.** `_bmad/`, `_bmad-output/`, and `docs/` are gitignored — the public repo is just the source, tests, and committed eval reports. Commits are code + tests only.
 
-## How to start a new phase
+## How to run a story (BMAD)
+
+Per-story cycle: branch → dev → test → code-review → commit. All four epics (1–4) are `done`; see `sprint-status.yaml` for status and `deferred-work.md` for what's parked.
 
 ```
-/gsd-discuss-phase <N>     # gather context, clarify approach
-/gsd-plan-phase <N>        # create PLAN.md with task breakdown + verification loop
-/gsd-execute-phase <N>     # execute plans with atomic commits
+create-story        # spec the next story from the epic
+dev-story           # implement against the story spec
+code-review         # adversarial review in fresh context
 ```
-
-Phase 1 is up next.
 
 ---
-*Generated 2026-04-28 after `/gsd-new-project` initialization.*
+*BMAD-exclusive repo. GSD artifacts removed 2026-07-15.*

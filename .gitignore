@@ -59,6 +59,11 @@ Thumbs.db
 # Editor / agent workspace state
 .claude/
 
+# BMAD workspace + generated docs — local only, never pushed
+_bmad/
+_bmad-output/
+docs/
+
 # Test fixtures that intentionally contain leaked-key shapes
 # (the file is *.example so it's tracked, but a copy named leaked_key.txt is not)
 tests/fixtures/leaked_key.txt
