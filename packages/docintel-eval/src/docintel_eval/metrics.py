@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from docintel_core.types import Answer
 
 __all__ = [
+    "CONFIDENCE_PROB",
+    "CalibrationResult",
     "CitationAccuracyResult",
     "FaithfulnessResult",
     "LatencyResult",
@@ -35,14 +37,18 @@ __all__ = [
     "RetrievalMetricsResult",
     "_is_refusal",
     "bootstrap_delta_ci",
+    "brier_score",
+    "compute_calibration",
     "compute_citation_accuracy",
     "compute_faithfulness",
     "compute_latency_stats",
     "compute_refusal_matrix",
     "compute_retrieval_metrics",
+    "expected_calibration_error",
     "hit_at_k",
     "mrr",
     "reciprocal_rank",
+    "reliability_bins",
     "wilson_ci",
 ]
 
@@ -780,4 +786,151 @@ def compute_latency_stats(
         cost_per_query_usd=cost_per_query,
         n_queries=n,
         representative=is_representative,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FR-C5 (Story 3.6): confidence calibration — Brier score, ECE, reliability curve
+# ---------------------------------------------------------------------------
+
+#: Categorical→probability mapping (Story 3.6). The runtime confidence signal is
+#: the LLM's *categorical* self-report (``Answer.confidence`` ∈ {high,medium,low};
+#: Story 2.7). Calibration needs a predicted probability of correctness, so we map
+#: each category to a representative probability. This mapping is the DECLARED prior
+#: whose calibration the reliability curve then measures — it is not itself a
+#: calibrated number. Documented + surfaced on every CalibrationResult.
+CONFIDENCE_PROB: dict[str, float] = {"high": 0.9, "medium": 0.6, "low": 0.3}
+
+
+def brier_score(probs: list[float], outcomes: list[bool]) -> float:
+    """Brier score = mean((p - y)^2) over paired (predicted prob, binary outcome).
+
+    Lower is better; 0.0 is perfect. Raises ValueError on length mismatch or empty
+    input (undefined). Pure — no I/O.
+    """
+    if len(probs) != len(outcomes):
+        raise ValueError("brier_score requires equal-length probs and outcomes")
+    if not probs:
+        raise ValueError("brier_score requires at least one observation")
+    p = np.asarray(probs, dtype=float)
+    y = np.asarray(outcomes, dtype=float)
+    return float(np.mean((p - y) ** 2))
+
+
+def reliability_bins(
+    probs: list[float], outcomes: list[bool], *, n_bins: int = 10
+) -> list[dict[str, float]]:
+    """Reliability-curve bins (FR-C5). Partition [0,1] into ``n_bins`` equal-width
+    bins; for each NON-EMPTY bin report mean predicted confidence vs observed
+    accuracy. Perfect calibration ⇒ accuracy ≈ confidence in every bin.
+
+    Each bin dict: ``{bin_lo, bin_hi, mean_confidence, accuracy, count}``. Empty
+    bins are omitted (honest — a bin with no samples has no accuracy). Pure.
+    """
+    if len(probs) != len(outcomes):
+        raise ValueError("reliability_bins requires equal-length probs and outcomes")
+    p = np.asarray(probs, dtype=float)
+    y = np.asarray(outcomes, dtype=float)
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    bins: list[dict[str, float]] = []
+    for i in range(n_bins):
+        lo, hi = edges[i], edges[i + 1]
+        # Last bin is closed on the right so p==1.0 lands somewhere.
+        in_bin = (p >= lo) & (p < hi) if i < n_bins - 1 else (p >= lo) & (p <= hi)
+        count = int(in_bin.sum())
+        if count == 0:
+            continue
+        bins.append(
+            {
+                "bin_lo": float(lo),
+                "bin_hi": float(hi),
+                "mean_confidence": float(p[in_bin].mean()),
+                "accuracy": float(y[in_bin].mean()),
+                "count": count,
+            }
+        )
+    return bins
+
+
+def expected_calibration_error(
+    probs: list[float], outcomes: list[bool], *, n_bins: int = 10
+) -> float:
+    """Expected Calibration Error (FR-C5): sum over bins of
+    ``(count/N) * |accuracy - mean_confidence|``. 0.0 is perfectly calibrated.
+    Pure; reuses ``reliability_bins``.
+    """
+    n = len(probs)
+    if n == 0:
+        raise ValueError("expected_calibration_error requires at least one observation")
+    ece = 0.0
+    for b in reliability_bins(probs, outcomes, n_bins=n_bins):
+        ece += (b["count"] / n) * abs(b["accuracy"] - b["mean_confidence"])
+    return float(ece)
+
+
+class CalibrationResult(BaseModel):
+    """FR-C5 confidence-calibration result (Story 3.6). Frozen contract.
+
+    ``brier`` and ``ece`` are the headline calibration numbers; ``reliability`` is
+    the per-bin curve. ``representative`` (AD-11) is False in stub mode — the stub
+    judge fails every answer, so ``correct`` is all-False and the numbers are
+    non-representative (published honestly, labeled). ``confidence_prob_map``
+    surfaces the declared categorical→probability prior (CONFIDENCE_PROB).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    brier: float
+    ece: float
+    n: int
+    n_bins: int
+    reliability: list[dict[str, float]]
+    representative: bool
+    confidence_prob_map: dict[str, float]
+
+
+def compute_calibration(
+    confidences: list[str],
+    correct: list[bool],
+    *,
+    n_bins: int = 10,
+    representative: bool = False,
+) -> CalibrationResult:
+    """FR-C5: calibrate the categorical confidence signal against correctness.
+
+    Maps each categorical confidence (``high``/``medium``/``low``) to a predicted
+    probability via ``CONFIDENCE_PROB`` (unknown labels → 0.5), then computes Brier,
+    ECE, and the reliability curve against the paired ``correct`` outcomes.
+
+    Args:
+        confidences: per-answer categorical confidence labels.
+        correct:     per-answer correctness (e.g. faithfulness-judge pass).
+        n_bins:      reliability-curve bin count (default 10).
+        representative: AD-11 flag — pass ``provider != "stub"``.
+
+    Returns:
+        Frozen CalibrationResult. Empty input → all-zero result (n=0), never raises,
+        so a stub/empty run reports honestly rather than crashing.
+    """
+    if len(confidences) != len(correct):
+        raise ValueError("compute_calibration requires equal-length inputs")
+    if not confidences:
+        return CalibrationResult(
+            brier=0.0,
+            ece=0.0,
+            n=0,
+            n_bins=n_bins,
+            reliability=[],
+            representative=representative,
+            confidence_prob_map=dict(CONFIDENCE_PROB),
+        )
+    probs = [CONFIDENCE_PROB.get(str(c).lower(), 0.5) for c in confidences]
+    return CalibrationResult(
+        brier=brier_score(probs, correct),
+        ece=expected_calibration_error(probs, correct, n_bins=n_bins),
+        n=len(confidences),
+        n_bins=n_bins,
+        reliability=reliability_bins(probs, correct, n_bins=n_bins),
+        representative=representative,
+        confidence_prob_map=dict(CONFIDENCE_PROB),
     )

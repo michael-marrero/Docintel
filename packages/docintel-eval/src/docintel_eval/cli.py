@@ -69,6 +69,42 @@ def main(argv: list[str] | None = None) -> int:
         help="run baseline + ablation arms; emit comparison table (ABL-01/ABL-02)",
     )
 
+    # brief-eval: FR-C1/FR-C6 brief scoring (Story 3.1) — the headline surface.
+    sub.add_parser(
+        "brief-eval",
+        help="score generated briefs (Hit@K/MRR/faithfulness/citation/latency) — FR-C1/FR-C6",
+    )
+
+    # calibrate: FR-C5 confidence calibration (Story 3.6) — Brier/ECE/reliability.
+    # Flag-free like run/ablate; writes data/eval/calibration/<ts>/.
+    sub.add_parser(
+        "calibrate",
+        help="run confidence calibration (Brier/ECE/reliability curve) — FR-C5",
+    )
+
+    # financebench: FR-C8 (Story 3.7) — ONE regime per run, never merged.
+    fb_parser = sub.add_parser(
+        "financebench",
+        help="run FinanceBench for ONE regime (open-book/oracle-context/closed-book) — FR-C8",
+    )
+    fb_parser.add_argument(
+        "--mode",
+        required=True,
+        choices=["open-book", "oracle-context", "closed-book"],
+        help="the single FinanceBench regime to run (separate invocations, never merged)",
+    )
+
+    # per-tier: FR-C9 (Story 3.8) — combine per-tier results.json into one report.
+    per_tier_parser = sub.add_parser(
+        "per-tier",
+        help="combine per-tier eval reports (open/sealed) into one comparison — FR-C9",
+    )
+    per_tier_parser.add_argument(
+        "specs",
+        nargs="+",
+        help="one or more '<tier>:<report_dir>' (e.g. open:data/eval/reports/AAA)",
+    )
+
     # validate: EVAL-04 well-formedness gate (handler lands in Plan 10-03)
     validate_parser = sub.add_parser(
         "validate",
@@ -95,6 +131,30 @@ def main(argv: list[str] | None = None) -> int:
         from docintel_eval.ablate import run_ablations
 
         return run_ablations(cfg)
+
+    if args.cmd == "brief-eval":
+        # Lazy import INSIDE the branch (Story 3.1, FR-C1/FR-C6).
+        from docintel_eval.brief_runner import run_brief_eval
+
+        return run_brief_eval(cfg)
+
+    if args.cmd == "calibrate":
+        # Lazy import INSIDE the branch (Story 3.6, FR-C5).
+        from docintel_eval.calibration import run_calibration
+
+        return run_calibration(cfg)
+
+    if args.cmd == "financebench":
+        # Lazy import INSIDE the branch (Story 3.7, FR-C8). One mode per run.
+        from docintel_eval.financebench import run_financebench
+
+        return run_financebench(cfg, args.mode)
+
+    if args.cmd == "per-tier":
+        # Lazy import INSIDE the branch (Story 3.8, FR-C9).
+        from docintel_eval.per_tier import run_per_tier
+
+        return run_per_tier(cfg, args.specs)
 
     if args.cmd == "validate":
         from pathlib import Path

@@ -17,6 +17,7 @@ import {
 } from "/lib.js";
 import { streamBrief } from "/brief.js";
 import { createPanel } from "/panel.js";
+import { wireTrust } from "/trust.js";
 
 const $ = (sel) => document.querySelector(sel);
 const view = $("#view");
@@ -411,5 +412,7 @@ $("#command-bar").addEventListener("submit", (e) => {
   submitCommand(input.value);
 });
 initTheme();
+// Trust/accuracy panel (Story 3.9) — persistent "HOW ACCURATE?" affordance.
+wireTrust($("#trust-open"), $("#trust-close"), $("#trust-dialog"), $("#trust-body"));
 input.focus();
 loadCoverage();
