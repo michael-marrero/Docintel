@@ -15,7 +15,7 @@ SHELL := /usr/bin/env bash
 # Resolve git SHA for Docker builds; falls back to "unknown" outside a checkout.
 GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
-.PHONY: help test lint format lock-check build build-api build-ui \
+.PHONY: help test lint format lock-check build build-api \
         serve demo down fetch-corpus build-indices ablate-chunk-sweep \
         baseline-lock readme-paste eval
 
@@ -32,9 +32,8 @@ help: ## Show all targets with their current status
 	@echo "    ablate-chunk-sweep  Phase 11 ABL-01 chunk-size sweep {300,450,600} — REAL-mode only; alternate indices are gitignored"
 	@echo "    baseline-lock  Phase 14 EMP-01 / D-08: lock v1.0 baseline from a representative real-eval report (usage: make baseline-lock TS=<timestamp>)"
 	@echo "    readme-paste   Phase 14 EMP-02 / D-10: paste real numbers from baseline.json into README.md PASTE-REAL-NUMBERS block"
-	@echo "    build          docker build both api and ui targets"
+	@echo "    build          docker build the api image"
 	@echo "    build-api      docker build --target api"
-	@echo "    build-ui       docker build --target ui"
 	@echo "    serve          docker compose up (foreground)"
 	@echo "    demo           alias of serve (will diverge in Phase 13)"
 	@echo "    down           docker compose down"
@@ -59,15 +58,12 @@ format: ## Auto-format with ruff and black
 lock-check: ## Fail if uv.lock is out of sync with pyproject.toml(s)
 	uv lock --check
 
-build: build-api build-ui ## Build both Docker targets
+build: build-api ## Build the Docker image
 
 build-api: ## Build the api Docker image
 	docker build --target api -t docintel-api:local --build-arg GIT_SHA=$(GIT_SHA) -f docker/Dockerfile .
 
-build-ui: ## Build the ui Docker image
-	docker build --target ui -t docintel-ui:local --build-arg GIT_SHA=$(GIT_SHA) -f docker/Dockerfile .
-
-serve: ## docker compose up (both api and ui)
+serve: ## docker compose up (api serves the web/ workspace)
 	GIT_SHA=$(GIT_SHA) docker compose up
 
 demo: serve ## Alias of `serve` in Phase 1; Phase 13 will pre-load demo data first
@@ -215,9 +211,9 @@ baseline-lock: ## Phase 14 EMP-01 / D-08: lock v1.0 baseline from a representati
 # defensive single-replacement). Pre-condition: data/eval/baseline.json must
 # exist (the user runs `make baseline-lock TS=<ts>` first per D-08).
 #
-# Per Pitfall 5, this target does NOT touch packages/docintel-ui/ — the
-# Streamlit Eval-Results tab auto-flips on disk-read once a representative
-# real-eval report directory is present (see ADR-013).
+# This target only rewrites README's PASTE-REAL-NUMBERS block; the in-app
+# trust panel reads eval reports from disk, so it auto-reflects a representative
+# real-eval report directory once present (see ADR-013).
 # ---------------------------------------------------------------------------
 
 readme-paste: ## Phase 14 EMP-02 / D-10: paste real numbers from baseline.json into README.md PASTE-REAL-NUMBERS block

@@ -1,10 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# docintel — multi-target Dockerfile.
+# docintel — Dockerfile for the api service (serves the static web/ workspace).
 #
 # Build:
 #   docker build --target api -t docintel-api:test --build-arg GIT_SHA=$(git rev-parse HEAD) -f docker/Dockerfile .
-#   docker build --target ui  -t docintel-ui:test  --build-arg GIT_SHA=$(git rev-parse HEAD) -f docker/Dockerfile .
 #
 # CONTEXT.md D-05 / D-06 / D-08 / D-09: single Dockerfile, BGE pre-warm in `api` only,
 # image-size cap < 3 GiB enforced by CI, git_sha injected via ARG.
@@ -60,7 +59,6 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .python-version ./
 COPY packages/docintel-core/pyproject.toml      packages/docintel-core/pyproject.toml
 COPY packages/docintel-api/pyproject.toml       packages/docintel-api/pyproject.toml
-COPY packages/docintel-ui/pyproject.toml        packages/docintel-ui/pyproject.toml
 COPY packages/docintel-eval/pyproject.toml      packages/docintel-eval/pyproject.toml
 
 # Sync the shared package only; per-target stages add their own.
@@ -132,36 +130,3 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
     CMD curl -fsS http://localhost:8000/health || exit 1
 
 ENTRYPOINT ["/entrypoint-api.sh"]
-
-
-# ============================================================================
-# Stage: ui — Streamlit UI (slim, no ML weights)
-# ============================================================================
-FROM base AS ui
-
-# Install ui package + its deps (Streamlit, httpx). NO sentence-transformers
-# in the ui image — keeps it well under 1 GiB.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --package docintel-ui
-
-# Phase 13 gap closure 13-08 (CR-01): the Eval-Results tab's
-# `_find_eval_report(settings.data_dir)` reads `/app/data/eval/reports/...`;
-# without these baked in the tab renders "No eval report found" on a fresh
-# clone. Selective COPY — NOT the 55M corpus that the ui doesn't need;
-# this keeps the ui image lean. No `traces-seed.jsonl` either — the ui
-# fetches traces from the api over HTTP, never reads the seed directly.
-COPY data/eval/reports/stub-sample/    /app/data/eval/reports/stub-sample/
-COPY data/eval/ablations/stub-sample/  /app/data/eval/ablations/stub-sample/
-COPY data/eval/ground_truth/           /app/data/eval/ground_truth/
-
-EXPOSE 8501
-
-HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8501/_stcore/health || exit 1
-
-CMD ["streamlit", "run", \
-     "/app/packages/docintel-ui/src/docintel_ui/streamlit_app.py", \
-     "--server.address=0.0.0.0", \
-     "--server.port=8501", \
-     "--server.headless=true", \
-     "--browser.gatherUsageStats=false"]

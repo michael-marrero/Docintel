@@ -13,10 +13,9 @@ anchors is fragile). This helper uses ``re.sub(..., flags=re.DOTALL, count=1)``
 so the replacement is auditable and the regex is anchored on the
 HTML-comment markers that survive markdown rendering.
 
-Per Pitfall 5, this helper does NOT touch ``packages/docintel-ui/`` — the
-Streamlit Eval-Results tab auto-flips on disk-read at
-``packages/docintel-ui/src/docintel_ui/eval_view.py:128-137`` once a
-``representative: true`` report directory is on disk.
+This helper only rewrites the README ``PASTE-REAL-NUMBERS`` block; the in-app
+trust panel reads eval reports directly from disk, so no code change is needed
+once a ``representative: true`` report directory is present.
 
 Usage::
 

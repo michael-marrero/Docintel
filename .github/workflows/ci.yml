@@ -232,21 +232,11 @@ jobs:
             --load \
             .
 
-      - name: Build ui image
-        run: |
-          docker build \
-            --target ui \
-            --build-arg GIT_SHA=${{ github.sha }} \
-            -t docintel-ui:ci \
-            -f docker/Dockerfile \
-            --load \
-            .
-
       - name: Assert image size < 3 GiB (CONTEXT.md D-08)
         run: |
           set -euo pipefail
           MAX=3221225472  # 3 * 1024^3
-          for img in docintel-api:ci docintel-ui:ci; do
+          for img in docintel-api:ci; do
             sz=$(docker image inspect "$img" --format='{{.Size}}')
             echo "  $img: $sz bytes"
             if [ "$sz" -ge "$MAX" ]; then
@@ -255,17 +245,15 @@ jobs:
             fi
           done
 
-      - name: Save images for compose-smoke job
+      - name: Save image for compose-smoke job
         run: |
           docker save docintel-api:ci -o /tmp/docintel-api.tar
-          docker save docintel-ui:ci  -o /tmp/docintel-ui.tar
 
       - uses: actions/upload-artifact@v4
         with:
           name: docintel-images
           path: |
             /tmp/docintel-api.tar
-            /tmp/docintel-ui.tar
           retention-days: 1
 
   compose-smoke:
@@ -281,13 +269,11 @@ jobs:
           name: docintel-images
           path: /tmp
 
-      - name: Load prebuilt images
+      - name: Load prebuilt image
         run: |
           docker load -i /tmp/docintel-api.tar
-          docker load -i /tmp/docintel-ui.tar
-          # Tag with the names docker-compose.yml expects so it does NOT rebuild.
+          # Tag with the name docker-compose.yml expects so it does NOT rebuild.
           docker tag docintel-api:ci docintel-api:local
-          docker tag docintel-ui:ci  docintel-ui:local
 
       - name: Bring up the stack
         env:
@@ -300,7 +286,7 @@ jobs:
       - name: Wait for healthchecks
         run: |
           set -euo pipefail
-          for svc in api ui; do
+          for svc in api; do
             for i in {1..30}; do
               health=$(docker inspect --format='{{.State.Health.Status}}' "docintel-$svc" 2>/dev/null || echo "missing")
               echo "  $svc: $health (attempt $i/30)"
@@ -314,12 +300,11 @@ jobs:
             fi
           done
 
-      - name: Curl /health (api) and /_stcore/health (ui)
+      - name: Curl /health (api)
         run: |
           set -euo pipefail
           curl -fsS http://localhost:8000/health | tee /tmp/health.json
           jq -e '.status == "ok" and .service == "docintel-api" and .provider == "stub"' /tmp/health.json
-          curl -fsS http://localhost:8501/_stcore/health
 
       - name: Tear down
         if: always()

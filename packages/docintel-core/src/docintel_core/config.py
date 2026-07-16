@@ -103,10 +103,6 @@ class Settings(BaseSettings):
     # Injected by Docker build (ARG GIT_SHA → ENV DOCINTEL_GIT_SHA). Defaults to "unknown" locally.
     git_sha: str = Field(default="unknown")
 
-    # URL the UI uses to reach the API. Default targets compose's `api` service.
-    # Consumed by docintel-ui (Plan 04). Lives here so config.py remains the only env reader (D-18).
-    api_url: str = Field(default="http://api:8000")
-
     # Phase 3 amendment (D-19). SEC fair-access policy requires a
     # descriptive User-Agent on every request. Format: "Name email@example.com".
     # Required in real-fetch mode; stub-mode CI never hits sec.gov so a default

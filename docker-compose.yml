@@ -3,8 +3,8 @@
 # Spec §11 "Definition of Done": `git clone && docker-compose up` produces a
 # working demo on a fresh machine.
 #
-# CONTEXT.md D-07: both services run from as-built images on a shared network,
-# X-Trace-Id propagates between them, no bind mounts in the default compose
+# The api serves the static web/ analyst workspace at / (StaticFiles mount),
+# so a single service backs the demo. No bind mounts in the default compose
 # (an opt-in docker-compose.dev.yml override may add hot-reload in Phase 3+).
 # CONTEXT.md D-09: GIT_SHA flows through ARG → ENV DOCINTEL_GIT_SHA.
 # CONTEXT.md D-11: DOCINTEL_LLM_PROVIDER=stub is set explicitly here even
@@ -53,35 +53,6 @@ services:
       # skip path. retries=3 × interval=10s still catches genuinely broken
       # containers within ~60s of total startup time.
       start_period: 30s
-      retries: 3
-    restart: unless-stopped
-
-  ui:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-      target: ui
-      args:
-        GIT_SHA: ${GIT_SHA:-unknown}
-    image: docintel-ui:local
-    container_name: docintel-ui
-    depends_on:
-      api:
-        condition: service_healthy
-    environment:
-      DOCINTEL_LLM_PROVIDER: stub
-      DOCINTEL_GIT_SHA: ${GIT_SHA:-unknown}
-      # The UI calls the api by container hostname on the shared network.
-      DOCINTEL_API_URL: http://api:8000
-    ports:
-      - "8501:8501"
-    networks:
-      - docintel-net
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8501/_stcore/health"]
-      interval: 10s
-      timeout: 3s
-      start_period: 10s
       retries: 3
     restart: unless-stopped
 
